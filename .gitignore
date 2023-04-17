@@ -1,0 +1,5 @@
+**/esp32s3.svd
+**/debug.cfg
+**/debug_custom.json
+**/private/
+**/.vscode/
