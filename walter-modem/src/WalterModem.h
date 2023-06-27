@@ -153,6 +153,16 @@
 #define WALTER_MODEM_MAX_PDP_CTXTS 8
 
 /**
+ * @brief The maximum number of COAP profiles that the library can support.
+ */
+#define WALTER_MODEM_MAX_COAP_PROFILES 3
+
+/**
+ * @brief The maximum number of HTTP profiles that the library can support.
+ */
+#define WALTER_MODEM_MAX_HTTP_PROFILES 3
+
+/**
  * @brief The maximum number of characters of an operator name.
  */
 #define WALTER_MODEM_OPERATOR_MAX_SIZE 16
@@ -190,6 +200,12 @@
 #define WALTER_MODEM_GNSS_MAX_SATS 32
 
 /**
+ * @brief The maximum size of the message for the MQTT/COAP data to send to the
+ * server.
+ */
+#define WALTER_MODEM_MQTT_MAX_MESSAGE_LEN 1024
+
+/**
  * @brief This enum groups status codes of functions and operational components
  * of the modem.
  */
@@ -202,6 +218,11 @@ typedef enum {
     WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT,
     WALTER_MODEM_STATE_NO_FREE_SOCKET,
     WALTER_MODEM_STATE_NO_SUCH_SOCKET,
+    WALTER_MODEM_STATE_NO_SUCH_PROFILE,
+    WALTER_MODEM_STATE_NOT_EXPECTING_RING,
+    WALTER_MODEM_STATE_AWAITING_RING,
+    WALTER_MODEM_STATE_BUSY,
+    WALTER_MODEM_STATE_NO_DATA
 } WalterModemState;
 
 /**
@@ -349,7 +370,10 @@ typedef enum {
     WALTER_MODEM_RSP_PARSER_START_LF,
     WALTER_MODEM_RSP_PARSER_DATA,
     WALTER_MODEM_RSP_PARSER_DATA_PROMPT,
-    WALTER_MODEM_RSP_PARSER_END_LF
+    WALTER_MODEM_RSP_PARSER_DATA_HTTP_START1,
+    WALTER_MODEM_RSP_PARSER_DATA_HTTP_START2,
+    WALTER_MODEM_RSP_PARSER_END_LF,
+    WALTER_MODEM_RSP_PARSER_RAW
 } WalterModemRspParserState;
 
 /**
@@ -359,7 +383,8 @@ typedef enum {
     WALTER_MODEM_CMD_TYPE_TX,
     WALTER_MODEM_CMD_TYPE_TX_WAIT,
     WALTER_MODEM_CMD_TYPE_WAIT,
-    WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT
+    WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT,
+    WALTER_MODEM_CMD_TYPE_TX_WAIT_NOLF
 } WalterModemCmdType;
 
 /**
@@ -469,10 +494,13 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_CME_ERROR,
     WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID,
     WALTER_MODEM_RSP_DATA_TYPE_BANDSET_CFG_SET,
-    WALTER_MDOEM_RSP_DATA_TYPE_PDP_ADDR,
+    WALTER_MODEM_RSP_DATA_TYPE_PDP_ADDR,
     WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID,
     WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA,
-    WALTER_MODEM_RSP_DATA_TYPE_CLOCK
+    WALTER_MODEM_RSP_DATA_TYPE_CLOCK,
+    WALTER_MODEM_RSP_DATA_TYPE_MQTT,
+    WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
+    WALTER_MODEM_RSP_DATA_TYPE_COAP
 } WalterModemRspDataType;
 
 /**
@@ -533,6 +561,15 @@ typedef enum {
     WALTER_MODEM_SOCKET_STATE_LISTENING = 5,
     WALTER_MODEM_SOCKET_STATE_CLOSED = 6
 } WalterModemSocketState;
+
+/**
+ * @brief The state of a http context.
+ */
+typedef enum {
+    WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE,
+    WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING,
+    WALTER_MODEM_HTTP_CONTEXT_STATE_GOT_RING
+} WalterModemHttpContextState;
 
 /**
  * @brief The protocol that us used by the socket. 
@@ -619,6 +656,155 @@ typedef enum {
     WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC = 0,
     WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS = 1,
 } WalterModemGNSSAssistanceType;
+
+/**
+ * @brief The possible statuses of a MQTT flush
+ */
+typedef enum {
+    WALTER_MODEM_MQTT_STATUS_IDLE,
+    WALTER_MODEM_MQTT_STATUS_SENDING,
+    WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE,
+    WALTER_MODEM_MQTT_STATUS_RESPONSE_READY,
+    WALTER_MODEM_MQTT_STATUS_INVALID_RESPONSE
+} WalterModemMqttStatus;
+
+/**
+ * @brief The possible option codes for the COAP message.
+ */
+typedef enum {
+    WALTER_MODEM_COAP_OPT_CODE_IF_MATCH = 1,
+    WALTER_MODEM_COAP_OPT_CODE_URI_HOST = 3,
+    WALTER_MODEM_COAP_OPT_CODE_ETAG = 4,
+    WALTER_MODEM_COAP_OPT_CODE_IF_NONE_MATCH = 5,
+    WALTER_MODEM_COAP_OPT_CODE_OBSERVE = 6,
+    WALTER_MODEM_COAP_OPT_CODE_URI_PORT = 7,
+    WALTER_MODEM_COAP_OPT_CODE_LOCATION_PATH = 8,
+    WALTER_MODEM_COAP_OPT_CODE_URI_PATH = 11,
+    WALTER_MODEM_COAP_OPT_CODE_CONTENT_TYPE = 12,
+    WALTER_MODEM_COAP_OPT_CODE_MAX_AGE = 14,
+    WALTER_MODEM_COAP_OPT_CODE_URI_QUERY = 15,
+    WALTER_MODEM_COAP_OPT_CODE_ACCEPT = 17,
+    WALTER_MODEM_COAP_OPT_CODE_TOKEN = 19,
+    WALTER_MODEM_COAP_OPT_CODE_LOCATION_QUERY = 20,
+    WALTER_MODEM_COAP_OPT_CODE_BLOCK2 = 23,
+    WALTER_MODEM_COAP_OPT_CODE_SIZE2 = 28,
+    WALTER_MODEM_COAP_OPT_CODE_PROXY_URI = 35,
+    WALTER_MODEM_COAP_OPT_CODE_SIZE1 = 60
+} WalterModemCoapOptCode;
+
+/**
+ * @brief The possible option values for the COAP message.
+ */
+typedef enum {
+    WALTER_MODEM_COAP_OPT_VALUE_TEXT_PLAIN = 0,
+    WALTER_MODEM_COAP_OPT_VALUE_TEXT_XML = 1,
+    WALTER_MODEM_COAP_OPT_VALUE_TEXT_CSV = 2,    
+    WALTER_MODEM_COAP_OPT_VALUE_TEXT_HTML = 3,
+    WALTER_MODEM_COAP_OPT_VALUE_IMAGE_GIF = 21,
+    WALTER_MODEM_COAP_OPT_VALUE_IMAGE_JPEG = 22,
+    WALTER_MODEM_COAP_OPT_VALUE_IMAGE_PNG = 23,
+    WALTER_MODEM_COAP_OPT_VALUE_IMAGE_TIFF = 24,
+    WALTER_MODEM_COAP_OPT_VALUE_AUDIO_RAW = 25,
+    WALTER_MODEM_COAP_OPT_VALUE_VIDEO_RAW = 26,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_LINK_FORMAT = 40,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_XML = 41,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_OCTET_STREAM = 42,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_RDF_XML = 43,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_SOAP_XML = 44,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_ATOM_XML = 45,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_XMPP_XML = 46,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_EXI = 47,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_FASTINFOSET = 48,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_SOAP_FASTINFOSET = 49,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_JSON = 50,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_X_OBIX_BINARY = 51,
+    WALTER_MODEM_COAP_OPT_VALUE_APPLICATION_CBOR = 60
+} WalterModemCoapOptValue;
+
+/**
+ * @brief The possible option values for the COAP message.
+ */
+typedef enum {
+    /**
+     * @brief Set of overwrite an option. 
+     */
+    WALTER_MODEM_COAP_OPT_SET = 0,
+
+    /**
+     * @brief Delete one or all options.
+     */
+    WALTER_MODEM_COAP_OPT_DELETE = 1,
+
+    /**
+     * @brief Read a single option.
+     */
+    WALTER_MODEM_COAP_OPT_READ = 2,
+
+    /**
+     * @brief Allows adding more values to repeatable options.
+     */
+    WALTER_MODEM_COAP_OPT_EXTEND = 3
+} WalterModemCoapOptAction;
+
+/**
+ * @brief The possible CoAP send types.
+ */
+typedef enum {
+    WALTER_MODEM_COAP_SEND_TYPE_CON = 0,
+    WALTER_MODEM_COAP_SEND_TYPE_NON = 1,
+    WALTER_MODEM_COAP_SEND_TYPE_ACK = 2,
+    WALTER_MODEM_COAP_SEND_TYPE_RST = 3
+} WalterModemCoapSendType;
+
+/**
+ * @brief The possible CoAP send methods.
+ */
+typedef enum {
+    WALTER_MODEM_COAP_SEND_METHOD_NONE = 0,
+    WALTER_MODEM_COAP_SEND_METHOD_GET = 1,
+    WALTER_MODEM_COAP_SEND_METHOD_POST = 2,
+    WALTER_MODEM_COAP_SEND_METHOD_PUT = 3,
+    WALTER_MODEM_COAP_SEND_METHOD_DELETE = 4,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_CREATED = 201,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_DELETED = 202,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_VALID = 203,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_CHANGED = 204,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_CONTENT = 205,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE = 231,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_BAD_REQUEST = 400,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_UNAUTHORIZED = 401,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_BAD_OPTION = 402,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_FORBIDDEN = 403,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_NOT_FOUND = 404,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_METHOD_NOT_ALLOWED = 405,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_NOT_ACCEPTABLE = 406,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_PRECONDITION_FAILED = 412,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_REQUEST_ENTITY_TOO_LARGE = 413,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_UNSUPPORTED_MEDIA_TYPE = 415,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_INTERNAL_SERVER_ERROR = 500,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_NOT_IMPLEMENTED = 501,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_BAD_GATEWAY = 502,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_SERVICE_UNAVAILABLE = 503,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_GATEWAY_TIMEOUT = 504,
+    WALTER_MODEM_COAP_SEND_RSP_CODE_PROXYING_NOT_SUPPORTED = 505
+} WalterModemCoapSendMethodRsp;
+
+/**
+ * @brief The possible commands for a HTTP query operation.
+ */
+typedef enum {
+    WALTER_MODEM_HTTP_QUERY_CMD_GET,
+    WALTER_MODEM_HTTP_QUERY_CMD_HEAD,
+    WALTER_MODEM_HTTP_QUERY_CMD_DELETE
+} WalterModemHttpQueryCmd;
+
+/**
+ * @brief The possible commands for a HTTP send operation.
+ */
+typedef enum {
+    WALTER_MODEM_HTTP_QUERY_CMD_POST,
+    WALTER_MODEM_HTTP_QUERY_CMD_PUT
+} WalterModemHttpSendCmd;
 
 /**
  * @brief This structure represents the 
@@ -835,6 +1021,130 @@ typedef struct {
 } WalterModemPDPAddressList;
 
 /**
+ * @brief This structure contains the CoAP-MQTT message. 
+ */
+typedef struct {
+    /**
+     * @brief The MQTT topic number.
+     */
+    int topic;
+
+    /**
+     * @brief The data size af the message.
+     */
+    uint8_t dataSize;
+
+    /**
+     * @brief The data of the message.
+     */
+    uint8_t *data;
+} WalterModemMqttMessage;
+
+/**
+ * @brief This structure represents the MQTT data. 
+ */
+typedef struct {
+
+    /**
+     * @brief MQTT status code
+     */
+    WalterModemMqttStatus status;
+
+    /**
+     * @brief The amount of the messages.
+     */
+    int messageCount;
+
+    /**
+     * @brief The array containing the MQTT messages.
+     */
+    WalterModemMqttMessage messages[16];
+} WalterModemMqttData;
+
+/**
+ * @brief This strucure represents the data in a walter coap message received.
+ */
+typedef struct {
+    /**
+     * @brief The id of the message. 
+     */
+    int messageId;
+
+    /**
+     * @brief The token of the message.
+     */
+    const char *token;
+
+    /**
+     * @brief The CoAP connection type. 
+     */
+    WalterModemCoapSendType type;
+
+    /**
+     * @brief This type contains the response code or method of the message.
+     */
+    WalterModemCoapSendMethodRsp methodRsp;
+
+    /**
+     * @brief The length of the payload data.
+     * 
+     */
+    int length;
+
+    /**
+     * @brief The payload of the message.
+     */
+    uint8_t *payload;
+} WalterModemCoapMessage;
+
+/**
+ * @brief This strucure represents a COAP response
+ */
+typedef struct {
+    /*
+     * @brief Profile id as received from the modem
+     * (if one does not trust the modem, one might want to compare it
+     * with the profile id for which data was requested)
+     */
+    uint8_t profileId;
+
+    /* @brief message id
+     */
+    uint16_t messageId;
+
+    /*
+     * @brief send type (con non ack rst)
+     */
+    WalterModemCoapSendType sendType;
+    
+    /*
+     * @brief method or response code
+     */
+    WalterModemCoapSendMethodRsp methodRsp;
+
+    /**
+     * @brief length of the message
+     */
+    uint16_t length;
+} WalterModemCoapResponse;
+
+/**
+ * @brief This strucure represents a http response
+ */
+typedef struct {
+    /*
+     * @brief http response status code
+     * including our own code to indicate errors during httpDidRing
+     */
+    uint8_t httpStatus;
+
+    /**
+     * @brief content length
+     */
+    uint16_t contentLength;
+} WalterModemHttpResponse;
+
+/**
  * @brief This union groups the response data of all different commands.
  */
 union uWalterModemRspData {
@@ -882,6 +1192,21 @@ union uWalterModemRspData {
      * @brief Unix timestamp of the current time and date in the modem.
      */
     int64_t clock;
+
+    /**
+     * @brief The MQTT data 
+     */
+    WalterModemMqttData mqttData;
+
+    /**
+     * @brief HTTP response
+     */
+    WalterModemHttpResponse httpResponse;
+
+    /**
+     * @brief COAP response
+     */
+    WalterModemCoapResponse coapResponse;
 };
 
 /**
@@ -947,9 +1272,10 @@ typedef struct sWalterModemCmd {
 
     /**
      * @brief Pointer to the data buffer to transmit in case of a
-     * WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT command.
+     * WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT command,
+     * or as a target buffer for data coming from the library.
      */
-    const uint8_t *data;
+    uint8_t *data;
 
     /**
      * @brief The number of bytes in the data buffer.
@@ -1095,6 +1421,11 @@ typedef struct {
      * @brief The pool of buffers used by the parser and AT response handlers.
      */
     WalterModemParserBuffer pool[WALTER_MODEM_AT_RSP_POOL_SIZE] = {};
+
+    /**
+     * @brief In raw data chunk parser state, we remember nr expected bytes
+     */
+    uint16_t rawChunkSize = 0;
 } WalterModemATParserData;
 
 /**
@@ -1276,7 +1607,7 @@ typedef struct {
  */
 typedef struct {
     /**
-     * @brief The state of 
+     * @brief The state of the socket (in its lifecycle)
      */
     WalterModemSocketState state = WALTER_MODEM_SOCKET_STATE_FREE;
 
@@ -1348,6 +1679,161 @@ typedef struct {
     uint16_t localPort = 0;
 } WalterModemSocket;
 
+typedef struct {
+    /**
+     * @brief Message id (initialized 0 so message id 0 is not permitted
+     * in our COAP implementation)
+     */
+    uint16_t messageId;
+
+    /**
+     * @brief Send type (con / non / ack / rst)
+     */
+    WalterModemCoapSendType sendType;
+
+    /**
+     * @brief Method or response code
+     */
+    WalterModemCoapSendMethodRsp methodRsp;
+
+    /**
+     * @brief Message size
+     */
+    uint16_t length;
+} WalterModemCoapRing;
+
+/**
+ * @brief This structure represents a coap context with
+ * its current state info.
+ */
+typedef struct {
+    /**
+     * @brief Connection status: connected or disconnected
+     */
+    bool connected;
+
+    /**
+     * @brief Up to 8 COAP RING notifications
+     */
+    WalterModemCoapRing rings[8];
+} WalterModemCoapContext;
+
+/**
+ * @brief This structure represents a http connection context with
+ * its current state info.
+ */
+typedef struct {
+    /**
+     * @brief Connection status: connected or disconnected
+     * (only relevant for TLS where you first need to call httpConnect
+     * and poll until connected jumps to true)
+     */
+    bool connected;
+
+    /**
+     * @brief Context state: idle, expecting ring, got ring
+     */
+    WalterModemHttpContextState state;
+
+    /**
+     * @brief Last incoming ring: http status code
+     */
+    uint8_t httpStatus;
+
+    /**
+     * @brief Last incoming ring: length
+     */
+    uint16_t contentLength;
+
+    /**
+     * @brief Target buffer to hold content type header after ring URC
+     */
+    char *contentType;
+
+    /**
+     * @brief Target content type header buffer size
+     */
+    uint16_t contentTypeSize;
+} WalterModemHttpContext;
+
+/**
+ * @brief This structure represents one MQTT bridge command within a COAP
+ * message.
+ */
+typedef struct {
+    /**
+     * @brief The topic of the command.
+     */
+    uint8_t topic;
+
+    /**
+     * @brief The number of bytes in the in the data array.
+     */
+    uint8_t data_len;
+
+    /**
+     * @brief The data bytes for the commend.
+     * 
+     */
+    uint8_t data[257];  /* max len: topic+len byte+255 bytes */
+} WalterMqttCommand;
+
+/**
+ * @brief This structure represents the state of the DPTechnics MQTT bridge.
+ */
+typedef struct {
+    /**
+     * @brief Client ID
+     */
+    uint8_t clientId = 1;       /* simple identification byte for now */
+
+    /**
+     * @brief COAP server name
+     */
+    char serverName[WALTER_MODEM_HOSTNAME_BUF_SIZE] = { 0 };
+
+    /**
+     * @brief COAP server port
+     */
+    uint16_t port = 0;
+
+    /**
+     * @brief COAP message being composed 
+     */
+    uint8_t messageOut[WALTER_MODEM_MQTT_MAX_MESSAGE_LEN];
+
+    /**
+     * @brief Length of the COAP message being composed so far
+     */
+    uint16_t messageOutLen = 0;
+    
+    /**
+     * @brief COAP message received
+     */
+    uint8_t messageIn[WALTER_MODEM_MQTT_MAX_MESSAGE_LEN];
+
+    /**
+     * @brief Length of the COAP message received
+     */
+    uint16_t messageInLen = 0;
+
+    /**
+     * @brief COAP message id of the message being composed or sent
+     */
+    uint16_t curMessageId = 1;         /* start at 1; 0 is invalid value */
+
+    /**
+     * @brief Last acked message id so we know how much to catch up
+     *
+     */
+    uint16_t lastAckedMessageId = 0;  /* * 0 means nothing received yet */
+
+    /**
+     * @brief Status indicator for last mqtt flush command
+     */
+    WalterModemMqttStatus status = WALTER_MODEM_MQTT_STATUS_IDLE;
+} WalterMqttBridge;
+
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem
  * and positioning functionality.
@@ -1386,6 +1872,23 @@ class WalterModem
          */
         static inline WalterModemSocket
             _socketSet[WALTER_MODEM_MAX_SOCKETS] = {};
+
+        /**
+         * @brief The set with COAP contexts
+         */
+        static inline WalterModemCoapContext
+            _coapContextSet[WALTER_MODEM_MAX_COAP_PROFILES] = { 0 };
+
+        /**
+         * @brief The set with HTTP contexts (array index = profile id)
+         */
+        static inline WalterModemHttpContext
+            _httpContextSet[WALTER_MODEM_MAX_HTTP_PROFILES] = { 0 };
+
+        /**
+         * @brief HTTP profile for which we are currently awaiting data
+         */
+        static inline uint8_t _httpCurrentProfile = 0xff;
 
         /**
          * @brief The task in which AT commands and responses are handled.
@@ -1499,6 +2002,11 @@ class WalterModem
          */
         static inline void* _usrGNSSfixHandlerArgs = NULL;
 
+        /*
+         * @brief COAP/MQTT state
+         */
+        static inline WalterMqttBridge mqttBridge;
+
         /**
          * @brief Get a command from the command pool.
          * 
@@ -1605,6 +2113,13 @@ class WalterModem
         static void _socketRelease(WalterModemSocket *sock);
 
         /**
+         * @brief Test if the new buffer line starts a raw data chunk
+         *
+         * @return Size of the expected raw data chunk
+         */
+        static uint16_t _extractRawBufferChunkSize();
+
+        /**
          * @brief Handle an AT data byte.
          * 
          * This function is used by the AT data parser to add a databyte to 
@@ -1612,10 +2127,11 @@ class WalterModem
          * to.
          * 
          * @param data The data byte to handle.
+         * @param raw Raw mode (do not scan for ending \r)
          * 
          * @return None.
          */
-        static void _addATByteToBuffer(char data);
+        static void _addATByteToBuffer(char data, bool raw);
 
         /**
          * @brief Copy the currently received data buffer into the task queue.
@@ -1689,7 +2205,7 @@ class WalterModem
                 WalterModemState result) = NULL,
             void *completeHandlerArg = NULL,
             WalterModemCmdType type = WALTER_MODEM_CMD_TYPE_TX_WAIT,
-            const uint8_t *data = NULL,
+            uint8_t *data = NULL,
             uint16_t dataSize = 0,
             uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMTS);
 
@@ -1892,6 +2408,357 @@ class WalterModem
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
+
+        /**
+         * @brief Configure a HTTP profile.
+         * 
+         * This function will configure a HTTP profile with parameters
+         * such as server name and auth info. The profile info is stored
+         * persistently in the modem, so it is possible to store connection
+         * info once, using an Arduino sketch to prepare all settings,
+         * and later rely on this preconfigured profile in the modem
+         * without the need to set the parameters again in the actual
+         * Arduino sketch used in production.
+         *
+         * TLS not supported for now. Neither are file uploads/downloads.
+         * 
+         * @param profileId HTTP profile id (0, 1 or 2)
+         * @param serverName The server name to connect to.
+         * @param port The port of the server to connect to.
+         * @param useBasicAuth Set true to use basic auth and send username/pw.
+         * @param authUser Username.
+         * @param authPass Password.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool httpConfigProfile(
+            uint8_t profileId,
+            const char *serverName,
+            uint16_t port = 80,
+            bool useBasicAuth = false,
+            const char *authUser = "",
+            const char *authPass = "",
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Make http connection using a predefined profile
+         * configured using httpConfigProfile. Note that this
+         * modem command is buggy (see comment in httpGetContextStatus
+         * implementation). It will also return OK while establishing
+         * the connection in the background, so you need to poll with
+         * httpGetContextStatus to discover when the connection is ready
+         * to be used.
+         *
+         * @param profileId HTTP profile id (0, 1 or 2)
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool httpConnect(
+                uint8_t profileId,
+                WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);
+
+        /**
+         * @brief Close http connection for the given http context.
+         * Avoid connect and disconnect if possible (see comments
+         * in implementation)
+         *
+         * @param profileId HTTP profile id (0, 1 or 2)
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool httpClose(
+                uint8_t profileId,
+                WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);
+
+        /**
+         * @brief Get connection status of a http context.
+         * Avoid connect and disconnect if possible (see comments
+         * in implementation)
+         *
+         * @param profileId The profile id (0, 1 or 2) of the context
+         *
+         * @return True if context for given http context is connected,
+         * false if not.
+         */
+        static bool httpGetContextStatus(uint8_t profileId);
+
+        /**
+         * @brief Perform a http get, delete or head request.
+         * No need to first open the connection with the buggy httpConnect
+         * command unless you need TLS.
+         *
+         * @param profileId The profile id (0, 1 or 2) of the http context
+         * @param command get, delete or head
+         * @param uri The URI
+         * @param contentTypeBuf Optional user buffer to store content type
+         * header in.
+         * @param contentTypeBufSize Size of the user buffer, including
+         * @param rsp Response object
+         * @param cb Callback
+         * @param args Callback args
+         * terminating null byte.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool httpQuery(
+                uint8_t profileId,
+                WalterModemHttpQueryCmd httpQueryCmd,
+                const char *uri,
+                char *contentTypeBuf = NULL,
+                uint16_t contentTypeBufSize = 0,
+                WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);
+
+        /**
+         * @brief Fetch http response to earlier http request, if any
+         *
+         * @param profileId Profile for which to get response
+         * @param targetBuf User buffer to store response in.
+         * @param targetBufSize Size of the user buffer, including space for a
+         * terminating null byte.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         *
+         * @return True on success, false if no data arrived or error
+         * or no data expected (eg no ring received).
+         */
+        static bool httpDidRing(
+                uint8_t profileId,
+                uint8_t *targetBuf,
+                uint16_t targetBufSize,
+                WalterModemRsp *rsp = NULL);
+
+        /**
+         * @brief Initialize the COAP to MQTT bridge.
+         * 
+         * This fuction will set the serverName and port.
+         * 
+         * @param serverName The name of the server to connect to.
+         * @param port The port of the server.
+         * @param clientId Our client ID
+         * 
+         * @return True on success, false on error.
+         */
+        static bool initMqttBridge(const char *serverName = "",
+            uint16_t port = 0, uint8_t clientId = 1);
+
+        /**
+         * @brief Add a publish message to the queue.
+         * 
+         * This function will add the message to send the data to the server.
+         * 
+         * @param topic The topic of the message.
+         * @param len The length of the data.
+         * @param data The data to send.
+         * 
+         * @return True on success, false on error.
+         */
+        static bool mqttPublish(uint8_t topic, uint8_t len, uint8_t *data);
+
+        /**
+         * @brief Send of the messages in the message buffer.
+         * 
+         * This function will send all the messages in the message buffer in the
+         * MQTT bridge (if there are any), and ask the server for new incoming
+         * messages since the last mqttCommunicate call.
+         * 
+         * @return True on success, false on error. 
+         */
+        static bool mqttCommunicate(void);
+
+        /**
+         * @brief Poll the API for a received MQTT response
+         */
+        static bool mqttDidRing(WalterModemRsp *rsp);
+
+        /**
+         * @brief Create a COAP context.
+         * 
+         * This function will create a COAP context, will the context is open in
+         * the walter can send commands to a remote server and can receive
+         * responses and requests from the server. This needs to be called 
+         * send, set the options and the receive the data.
+         * 
+         * @param profileId COAP profile id (0 is used by the mqtt bridge)
+         * @param serverName The server name to connect to.
+         * @param port The port of the server to connect to.
+         * @param localPort The local port to use.
+         * @param dtlsEnabled True if dtls is enabled
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool coapCreateContext(
+            uint8_t profileId,
+            const char *serverName,
+            int port,    
+            int localPort = 0,
+            bool dtlsEnabled = false,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Close a COAP context.
+         * 
+         * This function will close a COAP context previously opened with
+         * coapCreateContext. To change parameters such as the server name,
+         * you must first close the context using this call. Eventually
+         * the context will be automatically closed after the timeout.
+         * 
+         * @param profileId COAP profile id (0 is used by the mqtt bridge)
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool coapClose(
+            uint8_t profileId,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Get connection status of a COAP context.
+         *
+         * @param profileId The profile id (0, 1 or 2) of the context
+         *
+         * @return True if context with the profile id is connected,
+         * false if not.
+         */
+        static bool coapGetContextStatus(uint8_t profileId);
+
+        /**
+         * @brief Set COAP header.
+         * 
+         * This function will set the header of the next message to send.
+         * This is not necessary, when you do not set the header the message id 
+         * and the token will be set to random values.
+         *  
+         * @param profileId COAP profile id (1 or 2)
+         * @param messageId The message id of the next message to send.
+         * @param token The token of the next message to send as a string of
+         * 16 hex digits for a max token length of 8 bytes, with default
+         * value "NO_TOKEN" which is the magic value to send a datagram
+         * without token.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool coapSetHeader(
+            uint8_t profileId,
+            int messageId = 1,
+            const char *token = "NO_TOKEN",
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Set the options for the next COAP message.
+         * 
+         * @param profileId COAP profile id (1 or 2)
+         * @param action The action code of the option.
+         * @param code The code of the options.
+         * @param values The optional values array, expected as a comma
+         * delimited string of up to 6 strings or recognized option values
+         * (see WalterModemCoapOptValue)
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *  
+         * @return True on success, false otherwise.
+         */
+        static bool coapSetOptions(
+            uint8_t profileId,
+             WalterModemCoapOptAction action,
+             WalterModemCoapOptCode code,
+             const char *const values = NULL,
+             WalterModemRsp *rsp = NULL,
+             walterModemCb cb = NULL,
+             void *args = NULL);
+
+        /**
+         * @brief Send a datagram (with header set and options set before)
+         * 
+         * This function will send a COAP message.
+         * 
+         * @param profileId COAP profile id (1 or 2)
+         * @param type The type of message (NON, CON, ACK, RST) which implies
+         * whether it is a request or response (reqtype).
+         * @param methodRsp The method or response code.
+         * @param length The length of the payload.
+         * @param payload The payload to send max 1024 bytes.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *  
+         * @return True on success, false otherwise.
+         */
+        static bool coapSendData(
+            uint8_t profileId,
+            WalterModemCoapSendType type,
+            WalterModemCoapSendMethodRsp methodRsp,
+            int length,
+            uint8_t *payload,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Fetch incoming COAP messages, if any
+         *
+         * @param profileId Profile for which to get incoming data
+         * @param targetBuf User buffer to store response in.
+         * @param targetBufSize Size of the user buffer, including space for a
+         * terminating null byte.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         *
+         * @return True on success, false if no data arrived or error
+         * or no data expected (eg no ring received).
+         */
+        static bool coapDidRing(
+                uint8_t profileId,
+                uint8_t *targetBuf,
+                uint16_t targetBufSize,
+                WalterModemRsp *rsp = NULL);
 
         /**
          * @brief Get the network registration state.
@@ -2306,7 +3173,7 @@ class WalterModem
          * @return True on success, false otherwise.
          */
         static bool socketSend(
-            const uint8_t *data,
+            uint8_t *data,
             uint16_t dataSize,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
@@ -2335,7 +3202,7 @@ class WalterModem
          * @return True on success, false otherwise.
          */
         static bool socketSend(
-            const char *str,
+            char *str,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL,

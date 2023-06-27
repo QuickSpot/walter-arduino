@@ -62,6 +62,21 @@
 #define SERV_PORT 1999
 
 /**
+ * @brief COAP profile used for COAP tests
+ */
+#define COAP_PROFILE 1
+
+/**
+ * @brief HTTP profile
+ */
+#define HTTP_PROFILE 1
+
+/**
+ * @brief COAP connect timeout in milliseconds
+ */
+#define COAP_CONNECT_TIMEOUT_MS 30000
+
+/**
  * @brief The modem instance.
  */
 WalterModem modem;
@@ -73,19 +88,48 @@ WalterModem modem;
 uint8_t dataBuf[8] = { 0 };
 
 /**
+ * @brief Buffer for incoming COAP response
+ */
+uint8_t incomingBuf[256] = { 0 };
+
+/**
  * @brief The counter used in the ping packets. 
  */
 uint16_t counter = 0;
+
+/**
+ * @brief Last COAP connect attempt
+ */
+unsigned long lastCoapConnectAttempt = 0;
+
+bool refreshCoapContext() {
+  unsigned long curMillis = millis();
+
+  if(!modem.coapGetContextStatus(COAP_PROFILE)) {
+    if(lastCoapConnectAttempt == 0 || curMillis - lastCoapConnectAttempt > COAP_CONNECT_TIMEOUT_MS) {
+      Serial.print("Creating COAP connection profile context\r\n");
+
+      modem.coapCreateContext(COAP_PROFILE, "coap.me", 5683);
+      lastCoapConnectAttempt = millis();
+    } else {
+      Serial.print("(COAP context invalid; context create attempt will soon follow\r\n");
+    }
+
+    return false;
+  }
+
+  return true;
+}
 
 void setup() {
   Serial.begin(115200);
   delay(5000);
 
-  Serial.println("Walter modem test v0.0.1");
+  Serial.print("Walter modem test v0.0.1\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\n",
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
     dataBuf[0],
     dataBuf[1],
     dataBuf[2],
@@ -94,29 +138,29 @@ void setup() {
     dataBuf[5]);
 
   if(WalterModem::begin(&Serial2)) {
-    Serial.println("Modem initialization OK");
+    Serial.print("Modem initialization OK\r\n");
   } else {
-    Serial.println("Modem initialization ERROR");
+    Serial.print("Modem initialization ERROR\r\n");
     return;
   }
 
   if(modem.checkComm()) {
-    Serial.println("Modem communication is ok");
+    Serial.print("Modem communication is ok\r\n");
   } else {
-    Serial.println("Modem communication error");
+    Serial.print("Modem communication error\r\n");
     return;
   }
 
   WalterModemRsp rsp = {};
   if(modem.getOpState(&rsp)) {
-    Serial.printf("Modem operational state: %d\n", rsp.data.opState);
+    Serial.printf("Modem operational state: %d\r\n", rsp.data.opState);
   } else {
-    Serial.println("Could not retrieve modem operational state");
+    Serial.print("Could not retrieve modem operational state\r\n");
     return;
   }
 
   if(modem.getRadioBands(&rsp)) {
-    Serial.println("Modem is configured for the following bands:");
+    Serial.print("Modem is configured for the following bands:\r\n");
     
     for(int i = 0; i < rsp.data.bandSelCfgSet.count; ++i) {
       WalterModemBandSelection *bSel = rsp.data.bandSelCfgSet.config + i;
@@ -126,14 +170,14 @@ void setup() {
         bSel->bands);
     }
   } else {
-    Serial.println("Could not retrieve configured radio bands");
+    Serial.print("Could not retrieve configured radio bands\r\n");
     return;
   }
 
   if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
-    Serial.println("Successfully set operational state to NO RF");
+    Serial.print("Successfully set operational state to NO RF\r\n");
   } else {
-    Serial.println("Could not set operational state to NO RF");
+    Serial.print("Could not set operational state to NO RF\r\n");
     return;
   }
 
@@ -141,46 +185,42 @@ void setup() {
   delay(2000);
 
   if(modem.unlockSIM()) {
-    Serial.println("Successfully unlocked SIM card");
+    Serial.print("Successfully unlocked SIM card\r\n");
   } else {
-    Serial.println("Could not unlock SIM card");
+    Serial.print("Could not unlock SIM card\r\n");
     return;
   }
 
   /* Create PDP context */
-  if(modem.createPDPContext(
-    "soracom.io",
-    WALTER_MODEM_PDP_AUTH_PROTO_PAP,
-    "sora",
-    "sora"))
+  if(modem.createPDPContext())
   {
-    Serial.println("Created PDP context");
+    Serial.print("Created PDP context\r\n");
   } else {
-    Serial.println("Could not create PDP context");
+    Serial.print("Could not create PDP context\r\n");
     return;
   }
 
   /* Authenticate the PDP context */
   if(modem.authenticatePDPContext()) {
-    Serial.println("Authenticated the PDP context");
+    Serial.print("Authenticated the PDP context\r\n");
   } else {
-    Serial.println("Could not authenticate the PDP context");
+    Serial.print("Could not authenticate the PDP context\r\n");
     return;
   }
 
   /* Set the operational state to full */
   if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
-    Serial.println("Successfully set operational state to FULL");
+    Serial.print("Successfully set operational state to FULL\r\n");
   } else {
-    Serial.println("Could not set operational state to FULL");
+    Serial.print("Could not set operational state to FULL\r\n");
     return;
   }
 
   /* Set the network operator selection to automatic */
   if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println("Network selection mode to was set to automatic");
+    Serial.print("Network selection mode to was set to automatic\r\n");
   } else {
-    Serial.println("Could not set the network selection mode to automatic");
+    Serial.print("Could not set the network selection mode to automatic\r\n");
     return;
   }
 
@@ -192,54 +232,61 @@ void setup() {
     delay(100);
     regState = modem.getNetworkRegState();
   }
-  Serial.println("Connected to the network");
+  Serial.print("Connected to the network\r\n");
 
   /* Activate the PDP context */
   if(modem.setPDPContextActive(true)) {
-    Serial.println("Activated the PDP context");
+    Serial.print("Activated the PDP context\r\n");
   } else {
-    Serial.println("Could not activate the PDP context");
+    Serial.print("Could not activate the PDP context\r\n");
     return;
   }
 
   /* Attach the PDP context */
   if(modem.attachPDPContext(true)) {
-    Serial.println("Attached to the PDP context");
+    Serial.print("Attached to the PDP context\r\n");
   } else {
-    Serial.println("Could not attach to the PDP context");
+    Serial.print("Could not attach to the PDP context\r\n");
     return;
   }
 
   if(modem.getPDPAddress(&rsp)) {
-    Serial.println("PDP context address list: ");
-    Serial.printf("  - %s\n", rsp.data.pdpAddressList.pdpAddress);
+    Serial.print("PDP context address list:\r\n");
+    Serial.printf("  - %s\r\n", rsp.data.pdpAddressList.pdpAddress);
     if(rsp.data.pdpAddressList.pdpAddress2[0] != '\0') {
-      Serial.printf("  - %s\n", rsp.data.pdpAddressList.pdpAddress2);
+      Serial.printf("  - %s\r\n", rsp.data.pdpAddressList.pdpAddress2);
     }
   } else {
-    Serial.println("Could not retrieve PDP context addresses");
+    Serial.print("Could not retrieve PDP context addresses\r\n");
     return;
   }
 
   /* Construct a socket */
   if(modem.createSocket(&rsp)) {
-    Serial.println("Created a new socket");
+    Serial.print("Created a new socket\r\n");
   } else {
-    Serial.println("Could not create a new socket");
+    Serial.print("Could not create a new socket\r\n");
   }
 
   /* Configure the socket */
   if(modem.configSocket()) {
-    Serial.println("Successfully configured the socket");
+    Serial.print("Successfully configured the socket\r\n");
   } else {
-    Serial.println("Could not configure the socket");
+    Serial.print("Could not configure the socket\r\n");
   }
 
   /* Connect to the UDP test server */
   if(modem.connectSocket(SERV_ADDR, SERV_PORT, SERV_PORT)) {
-    Serial.printf("Connected to UDP server %s:%d\n", SERV_ADDR, SERV_PORT);
+    Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
   } else {
-    Serial.println("Could not connect UDP socket");
+    Serial.print("Could not connect UDP socket\r\n");
+  }
+
+  /* Configure http profile for a simple test */
+  if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io")) {
+    Serial.print("Successfully configured the http profile\r\n");
+  } else {
+    Serial.print("Failed to configure HTTP profile\r\n");
   }
 }
 
@@ -247,13 +294,88 @@ void loop() {
   dataBuf[6] = counter >> 8;
   dataBuf[7] = counter & 0xFF;
 
+  WalterModemRsp rsp = {};
+
   if(modem.socketSend(dataBuf, 8)) {
-    Serial.printf("Transmitted counter value %d\n", counter);
+    Serial.printf("Transmitted counter value %d\r\n", counter);
     counter += 1;
   } else {
-    Serial.println("Could not transmit data");
+    Serial.print("Could not transmit data\r\n");
     delay(1000);
     ESP.restart();
+  }
+
+  if(refreshCoapContext()) {
+    static short receiveAttemptsLeft = 0;
+
+    if(!receiveAttemptsLeft) {
+      if(modem.coapSetHeader(COAP_PROFILE, counter)) {
+        Serial.printf("Set COAP header with message id %d\r\n", counter);
+      } else {
+        Serial.print("Could not set COAP header\r\n");
+        delay(1000);
+        ESP.restart();
+      }
+
+      if(modem.coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
+        WALTER_MODEM_COAP_SEND_METHOD_GET, 8, dataBuf)) {
+        Serial.print("Sent COAP datagram\r\n");
+        receiveAttemptsLeft = 3;
+      } else {
+        Serial.print("Could not send COAP datagram\r\n");
+        delay(1000);
+        ESP.restart();
+      }
+    } else {
+      receiveAttemptsLeft--;
+      Serial.print("Checking for incoming COAP message or response\r\n");
+
+      while(modem.coapDidRing(COAP_PROFILE, incomingBuf, sizeof(incomingBuf), &rsp)) {
+        receiveAttemptsLeft = 0;
+
+        Serial.print("COAP incoming:\r\n");
+        Serial.printf("profileId: %d (profile ID used by us: %d)\r\n",
+          rsp.data.coapResponse.profileId, COAP_PROFILE);
+        Serial.printf("Message id: %d\r\n", rsp.data.coapResponse.messageId);
+        Serial.printf("Send type (CON, NON, ACK, RST): %d\r\n",
+          rsp.data.coapResponse.sendType);
+        Serial.printf("Method or response code: %d\r\n",
+          rsp.data.coapResponse.methodRsp);
+        Serial.printf("Data (%d bytes):\r\n", rsp.data.coapResponse.length);
+
+        for(size_t i = 0; i < rsp.data.coapResponse.length; i++) {
+          Serial.printf("[%02x  %c] ", incomingBuf[i], incomingBuf[i]);
+        }
+        Serial.print("\r\n");
+      }
+    }
+  }
+
+  /* HTTP test */
+  static short httpReceiveAttemptsLeft = 0;
+  static char ctbuf[32];
+
+  if(!httpReceiveAttemptsLeft) {
+    if(modem.httpQuery(HTTP_PROFILE, WALTER_MODEM_HTTP_QUERY_CMD_GET, "/", ctbuf, sizeof(ctbuf))) {
+      Serial.print("http query performed\r\n");
+      httpReceiveAttemptsLeft = 3;
+    } else {
+      Serial.print("http query failed\r\n");
+      delay(1000);
+      ESP.restart();
+    }
+  } else {
+    httpReceiveAttemptsLeft--;
+
+    if(modem.httpDidRing(HTTP_PROFILE, incomingBuf, sizeof(incomingBuf), &rsp)) {
+      httpReceiveAttemptsLeft = 0;
+
+      Serial.printf("http status code: %d\r\n", rsp.data.httpResponse.httpStatus);
+      Serial.printf("content type: %s\r\n", ctbuf);
+      Serial.printf("%s", incomingBuf);
+    } else {
+      Serial.print("HTTP response not yet received\r\n");
+    }
   }
 
   delay(10000);
