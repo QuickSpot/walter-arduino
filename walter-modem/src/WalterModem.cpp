@@ -329,7 +329,7 @@ static const char* _intToStrDigit(int num, int pos)
     int tmp = num;
     int digitCount = 1;
 
-    while(tmp > 10) {
+    while(tmp >= 10) {
         pow *= 10;
         tmp /= 10;
         digitCount += 1;
