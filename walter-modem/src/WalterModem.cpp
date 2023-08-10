@@ -57,6 +57,7 @@
 #include <string.h>
 #include <Arduino.h>
 #include <condition_variable>
+#include <esp_task_wdt.h>
 
 /**
  * @brief The RX pin on which modem data is received.
@@ -329,7 +330,7 @@ static const char* _intToStrDigit(int num, int pos)
     int tmp = num;
     int digitCount = 1;
 
-    while(tmp >= 10) {
+    while(tmp > 10) {
         pow *= 10;
         tmp /= 10;
         digitCount += 1;
@@ -413,14 +414,16 @@ static const char* _pdpTypeStr(WalterModemPDPType type)
 }
 
 /**
- * @brief Convert an UTC time to an UTC timestamp.
+ * @brief Convert a time string to a unix timestamp.
  * 
- * This function converts a string to an UTC timestamp.
+ * No time zone is taken into consideration.
+ * If the time string is a local time, the time zone offset
+ * must be compensated afterwards.
  * 
  * @param timeStr The string to convert.
  * @param format The time format to parse.
  * 
- * @return The UTC timestamp or -1 on error. 
+ * @return The unix timestamp or -1 on error. 
  */
 static int64_t strTotime(
     const char *timeStr,
@@ -431,11 +434,13 @@ static int64_t strTotime(
         return -1;
     }
 
-    time_t utcTime = std::mktime(&tm);
-    time_t localTime = std::mktime(std::localtime(&utcTime));
-    time_t offset = localTime - utcTime;
+    /* without setting time zone, mktime will assume UTC+00 on arduino,
+     * thus behaving like timegm.
+     */
 
-    return (int64_t) (utcTime - offset);
+    time_t utcTime = std::mktime(&tm);
+
+    return (int64_t) utcTime;
 }
 
 WalterModemCmd* WalterModem::_cmdPoolGet()
@@ -652,8 +657,7 @@ uint16_t WalterModem::_extractRawBufferChunkSize()
                 chunkSize += (_parserData.buf->data[i] - '0');
             }
 
-            return chunkSize + _strLitLen("\r\nOK\r\n")
-                + (chunkSize ? _strLitLen("\r\n") : 0);
+            return chunkSize + _strLitLen("\r\nOK\r\n");
         } else {
             return _strLitLen("\r\nOK\r\n");
         }
@@ -722,9 +726,24 @@ void WalterModem::_handleRxData()
             if(data == ' ') {
                 _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
                 _queueRxBuffer();
+            } else if(data == '>') {
+                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP;
             } else {
                 /* state might have changed after detecting end \r */
                 if(_parserData.state == WALTER_MODEM_RSP_PARSER_DATA_PROMPT) {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                }
+            }
+            break;
+
+        case WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP:
+            _addATByteToBuffer(data, false);
+            if(data == '>') {
+                _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
+                _queueRxBuffer();
+            } else {
+                /* state might have changed after detecting end \r */
+                if(_parserData.state == WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP) {
                     _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
                 }
             }
@@ -764,7 +783,7 @@ void WalterModem::_handleRxData()
                     _parserData.rawChunkSize = chunkSize;
                     _parserData.buf->data[_parserData.buf->size++] = '\r';
                     _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
-                }  else {
+                } else {
                     _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
                     _queueRxBuffer();
                 }
@@ -798,11 +817,18 @@ void WalterModem::_handleRxData()
 
 void WalterModem::_queueProcessingTask(void *args)
 {
+    /* init watchdog for internal queue processing task */
+    if(_watchdogTimeout) {
+        esp_task_wdt_add(NULL);
+    }
+
     WalterModemTaskQueueItem qItem = { };
     WalterModemCmd *curCmd = NULL;
-    TickType_t blockTime = portMAX_DELAY;
+    TickType_t blockTime = WALTER_MODEM_CMD_TIMEOUT_TICKS;
 
     while(true) {
+        tickleWatchdog();
+
         if(xQueueReceive(_taskQueue.handle, &qItem, blockTime) == pdTRUE) {
             if(qItem.cmd != NULL) {
                 if(curCmd == NULL) {
@@ -817,7 +843,7 @@ void WalterModem::_queueProcessingTask(void *args)
             }
         }
 
-        blockTime = portMAX_DELAY;
+        blockTime = WALTER_MODEM_CMD_TIMEOUT_TICKS;
 
         if(curCmd != NULL) {
             switch(curCmd->state) {
@@ -943,7 +969,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
 {
     if(queueError) {
         _finishQueueCmd(cmd, WALTER_MODEM_STATE_NO_MEMORY);
-        return portMAX_DELAY;
+        return WALTER_MODEM_CMD_TIMEOUT_TICKS;
     }
 
     switch(cmd->type) {
@@ -1000,7 +1026,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
             break;
     }
 
-    return portMAX_DELAY;
+    return WALTER_MODEM_CMD_TIMEOUT_TICKS;
 }
 
 static void coap_received(const WalterModemRsp *rsp, void *args)
@@ -1042,7 +1068,7 @@ void WalterModem::_processQueueRsp(
         _regState = (WalterModemNetworkRegState) ceReg;
         //TODO: call correct handlers
     }
-    else if(_buffStartsWith(buff, "> "))
+    else if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>"))
     {
         if(cmd != NULL &&
            cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT &&
@@ -1505,8 +1531,14 @@ void WalterModem::_processQueueRsp(
         buff->data[buff->size - 1] = '\0';
         char *data = (char*) buff->data + _strLitLen("+CCLK: \"");
         cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_CLOCK;
-        cmd->rsp->data.clock = strTotime(data, "%y/%m/%d,%H:%M:%S");
-
+        int64_t utcTime = strTotime(data, "%y/%m/%d,%H:%M:%S");
+        uint8_t tzOffset;
+        if(data[17] == '+') {
+            tzOffset = atoi(data + 18) * 15 * 60;
+        } else {
+            tzOffset = atoi(data + 18) * -15 * 60;
+        }
+        cmd->rsp->data.clock = utcTime - tzOffset;
         if(cmd->rsp->data.clock < WALTER_MODEM_MIN_VALID_TIMESTAMP) {
             cmd->rsp->data.clock = -1;
         }
@@ -1835,14 +1867,6 @@ void WalterModem::_processQueueRsp(
                 if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
                     break;
                 }
-                if(_coapContextSet[profileId].rings[ringIdx].messageId
-                        == messageId
-                        && _coapContextSet[profileId].rings[ringIdx].sendType
-                        == sendType
-                        && _coapContextSet[profileId].rings[ringIdx].methodRsp
-                        == reqRspCodeRaw) {
-                    break;
-                }
             }
 
             if(ringIdx == sizeof(_coapContextSet[profileId].rings)
@@ -1854,13 +1878,12 @@ void WalterModem::_processQueueRsp(
                 return;
             }
 
-            if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
-                _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
-                _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
-                _coapContextSet[profileId].rings[ringIdx].methodRsp =
-                    (WalterModemCoapSendMethodRsp ) reqRspCodeRaw;
-                _coapContextSet[profileId].rings[ringIdx].length = length;
-            }
+            _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
+            _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
+            _coapContextSet[profileId].rings[ringIdx].methodRsp =
+                (WalterModemCoapSendMethodRsp ) reqRspCodeRaw;
+            _coapContextSet[profileId].rings[ringIdx].length = length;
+
         }
     }
     else if(_buffStartsWith(buff, "+SQNCOAPCONNECTED: "))
@@ -1974,10 +1997,15 @@ after_processing_logic:
     buff->free = true;
 }
 
-bool WalterModem::begin(HardwareSerial *uart)
+bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
 {
     if(_initialized) {
         return true;
+    }
+
+    _watchdogTimeout = watchdogTimeout;
+    if(watchdogTimeout) {
+        esp_task_wdt_init(watchdogTimeout, true);
     }
     
     _taskQueue.handle = xQueueCreateStatic(WALTER_MODEM_TASK_QUEUE_MAX_ITEMS,
@@ -2026,6 +2054,13 @@ bool WalterModem::begin(HardwareSerial *uart)
 
     _initialized = true;
     return true;
+}
+
+void WalterModem::tickleWatchdog(void)
+{
+    if(_watchdogTimeout) {
+        esp_task_wdt_reset();
+    }
 }
 
 void WalterModem::setATHandler(
@@ -2174,8 +2209,8 @@ bool WalterModem::httpGetContextStatus(uint8_t profileId)
 
 bool WalterModem::httpQuery(
     uint8_t profileId,
-    WalterModemHttpQueryCmd httpQueryCmd,
     const char *uri,
+    WalterModemHttpQueryCmd httpQueryCmd,
     char *contentTypeBuf,
     uint16_t contentTypeBufSize,
     WalterModemRsp *rsp,
@@ -2213,6 +2248,56 @@ bool WalterModem::httpQuery(
 
     _runCmd(arr("AT+SQNHTTPQRY=", _atNum(profileId), ",",
                 _atNum(httpQueryCmd), ",", _atStr(uri)),
+            "OK", rsp, cb, args, completeHandler,
+            (void *) (_httpContextSet + profileId));
+    _returnAfterReply();
+}
+
+bool WalterModem::httpSend(
+    uint8_t profileId,
+    const char *uri,
+    uint8_t *data,
+    uint16_t dataSize,
+    WalterModemHttpSendCmd httpSendCmd,
+    WalterModemHttpPostParam httpPostParam = WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM,
+    char *contentTypeBuf,
+    uint16_t contentTypeBufSize,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+    }
+
+    if(_httpContextSet[profileId].state !=
+            WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
+        _returnState(WALTER_MODEM_STATE_BUSY, rsp, cb, args);
+    }
+
+    _httpContextSet[profileId].contentType = contentTypeBuf;
+    _httpContextSet[profileId].contentTypeSize = contentTypeBufSize;
+
+    auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result)
+    {
+        WalterModemHttpContext *ctx =
+            (WalterModemHttpContext *) cmd->completeHandlerArg;
+
+        if(result == WALTER_MODEM_STATE_OK) {
+            ctx->state = WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING;
+        }
+    };
+
+    /* FIXME: just like coapCreateContext _atStr is unsafe here
+     * (use blocking call for now - check other _atStr's + coapSetOptions'
+     * careless use of the passed values string).
+     * We also use default values "" instead of NULL because _atStr
+     * does not protect us as opposed to _strncpy_s used elsewhere
+     */
+
+    _runCmd(arr("AT+SQNHTTPSND=", _atNum(profileId), ",",
+                _atNum(httpSendCmd), ",", _atStr(uri), ",",
+                _atNum(dataSize), ",", _atNum(httpPostParam)),
             "OK", rsp, cb, args, completeHandler,
             (void *) (_httpContextSet + profileId));
     _returnAfterReply();

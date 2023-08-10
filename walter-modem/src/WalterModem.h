@@ -370,6 +370,7 @@ typedef enum {
     WALTER_MODEM_RSP_PARSER_START_LF,
     WALTER_MODEM_RSP_PARSER_DATA,
     WALTER_MODEM_RSP_PARSER_DATA_PROMPT,
+    WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP,
     WALTER_MODEM_RSP_PARSER_DATA_HTTP_START1,
     WALTER_MODEM_RSP_PARSER_DATA_HTTP_START2,
     WALTER_MODEM_RSP_PARSER_END_LF,
@@ -802,9 +803,20 @@ typedef enum {
  * @brief The possible commands for a HTTP send operation.
  */
 typedef enum {
-    WALTER_MODEM_HTTP_QUERY_CMD_POST,
-    WALTER_MODEM_HTTP_QUERY_CMD_PUT
+    WALTER_MODEM_HTTP_SEND_CMD_POST,
+    WALTER_MODEM_HTTP_SEND_CMD_PUT
 } WalterModemHttpSendCmd;
+
+/**
+ * @brief The possible post params for a HTTP send operation.
+ */
+typedef enum {
+    WALTER_MODEM_HTTP_POST_PARAM_URL_ENCODED = 0,
+    WALTER_MODEM_HTTP_POST_PARAM_TEXT_PLAIN = 1,
+    WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM = 2,
+    WALTER_MODEM_HTTP_POST_PARAM_FORM_DATA = 3,
+    WALTER_MODEM_HTTP_POST_PARAM_JSON = 4
+} WalterModemHttpPostParam;
 
 /**
  * @brief This structure represents the 
@@ -1847,6 +1859,11 @@ class WalterModem
         static inline bool _initialized = false;
 
         /**
+         * @brief We remember the configured watchdog timeout.
+         */
+        static inline uint8_t _watchdogTimeout = false;
+
+        /**
          * @brief The hardware serial peripheral used to talk to the modem.
          */
         static inline HardwareSerial *_uart = NULL;
@@ -2272,10 +2289,24 @@ class WalterModem
          * can only be called once, all consecutive calls will be no-ops. 
          * 
          * @param uart The hardware serial used to talk to the modem.
+         * @param watchdogTimeout Timeout in seconds before auto-reboot.
+         * If set to nonzero, you must call tickleWatchdog before the
+         * timeout expires. Use a value larger than 30 seconds;
+         * say 40 seconds at least.
          * 
          * @return True on success, false on error.
          */
-        static bool begin(HardwareSerial *uart);
+        static bool begin(HardwareSerial *uart, uint8_t watchdogTimeout = 0);
+
+        /**
+         * @brief Tickle watchdog
+         *
+         * This function will reset the watchdog timer. It must be called
+         * regularly and before the configured timeout expires.
+         *
+         * @return None.
+         */
+        static void tickleWatchdog(void);
 
         /**
          * @brief Set the AT response handler.
@@ -2506,25 +2537,59 @@ class WalterModem
         /**
          * @brief Perform a http get, delete or head request.
          * No need to first open the connection with the buggy httpConnect
-         * command unless you need TLS.
+         * command unless you need TLS + a private key.
          *
          * @param profileId The profile id (0, 1 or 2) of the http context
-         * @param command get, delete or head
          * @param uri The URI
+         * @param httpQueryCmd get, delete or head
          * @param contentTypeBuf Optional user buffer to store content type
          * header in.
          * @param contentTypeBufSize Size of the user buffer, including
+         * terminating null byte.
          * @param rsp Response object
          * @param cb Callback
          * @param args Callback args
-         * terminating null byte.
          *
          * @return True on success, false otherwise.
          */
         static bool httpQuery(
                 uint8_t profileId,
-                WalterModemHttpQueryCmd httpQueryCmd,
                 const char *uri,
+                WalterModemHttpQueryCmd httpQueryCmd = WALTER_MODEM_HTTP_QUERY_CMD_GET,
+                char *contentTypeBuf = NULL,
+                uint16_t contentTypeBufSize = 0,
+                WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);
+
+        /**
+         * @brief Perform a http post or put request.
+         * No need to first open the connection with the buggy httpConnect
+         * command unless you need TLS + a private key.
+         *
+         * @param profileId The profile id (0, 1 or 2) of the http context
+         * @param uri The URI
+         * @param data Data to be sent to the server
+         * @param dataSize Length of the data buffer to be sent to the server
+         * @param httpSendCmd post or put
+         * @param httpPostParam content type (enum value)
+         * @param contentTypeBuf Optional user buffer to store content type
+         * header in.
+         * @param contentTypeBufSize Size of the user buffer, including
+         * terminating null byte.
+         * @param rsp Response object
+         * @param cb Callback
+         * @param args Callback args
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool httpSend(
+                uint8_t profileId,
+                const char *uri,
+                uint8_t *data,
+                uint16_t dataSize,
+                WalterModemHttpSendCmd httpSendCmd = WALTER_MODEM_HTTP_SEND_CMD_POST,
+                WalterModemHttpPostParam httpPostParam = WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM,
                 char *contentTypeBuf = NULL,
                 uint16_t contentTypeBufSize = 0,
                 WalterModemRsp *rsp = NULL,

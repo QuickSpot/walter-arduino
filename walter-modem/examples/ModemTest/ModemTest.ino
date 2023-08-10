@@ -356,7 +356,7 @@ void loop() {
   static char ctbuf[32];
 
   if(!httpReceiveAttemptsLeft) {
-    if(modem.httpQuery(HTTP_PROFILE, WALTER_MODEM_HTTP_QUERY_CMD_GET, "/", ctbuf, sizeof(ctbuf))) {
+    if(modem.httpQuery(HTTP_PROFILE, "/", WALTER_MODEM_HTTP_QUERY_CMD_GET, ctbuf, sizeof(ctbuf))) {
       Serial.print("http query performed\r\n");
       httpReceiveAttemptsLeft = 3;
     } else {
