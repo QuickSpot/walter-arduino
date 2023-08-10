@@ -121,13 +121,13 @@
 #define _strLitLen(str) (sizeof(str) - 1)
 
 /**
- * @brief Check if a WalterModemParserBuffer starts with a given string literal.
+ * @brief Check if a WalterModemBuffer starts with a given string literal.
  */
 #define _buffStartsWith(buff, str) ((buff->size >= _strLitLen(str)) && \
     memcmp(str, buff->data, _strLitLen(str)) == 0)
 
 /**
- * @brief 0-terminate a WalterModemParserBuffer.
+ * @brief 0-terminate a WalterModemBuffer.
  * This macro is meant to be used as an assignment
  * in the form of x = _buffStr(buff);
  */
@@ -189,7 +189,7 @@
 /**
  * @brief Return an error.
  */
-#define _returnState(state, rsp, cb, args) \
+#define _returnState(state) \
 if(cb == NULL) { \
     if(rsp != NULL) { \
         rsp->result = state; \
@@ -222,7 +222,7 @@ const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = atCmd; \
 WalterModemCmd *cmd = \
     _addQueueCmd(_cmdArr, atRsp, rsp, cb, args, ##__VA_ARGS__); \
 if(cmd == NULL) { \
-    _returnState(WALTER_MODEM_STATE_NO_MEMORY, (rsp), cb, args); \
+    _returnState(WALTER_MODEM_STATE_NO_MEMORY); \
 } \
 std::unique_lock<std::mutex> lock{cmd->cmdLock.mutex};
 
@@ -259,7 +259,7 @@ return rspResult == WALTER_MODEM_STATE_OK;
         _dbgPrintf("%s", atCmd[i]); \
     } \
     _uart->write(type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT ? "\n" : "\r\n"); \
-    _dbgPrintf("\n"); \
+    _dbgPrintf("\r\n"); \
 }
 
 /**
@@ -330,7 +330,7 @@ static const char* _intToStrDigit(int num, int pos)
     int tmp = num;
     int digitCount = 1;
 
-    while(tmp > 10) {
+    while(tmp >= 10) {
         pow *= 10;
         tmp /= 10;
         digitCount += 1;
@@ -586,6 +586,23 @@ void WalterModem::_socketRelease(WalterModemSocket *sock)
     sock->state = WALTER_MODEM_SOCKET_STATE_FREE;
 }
 
+WalterModemBuffer* WalterModem::_getFreeBuffer(void)
+{
+    WalterModemBuffer* chosenBuf = NULL;
+
+    for(int i = 0; i < WALTER_MODEM_BUFFER_POOL_SIZE; ++i) {
+        if(_bufferPool[i].free) {
+            chosenBuf = _bufferPool + i;
+            chosenBuf->free = false;
+            chosenBuf->size = 0;
+
+            break;
+        }
+    }
+
+    return chosenBuf;
+}
+
 void WalterModem::_addATByteToBuffer(char data, bool raw)
 {
     //TODO: in the future we must be aware of length, or at least check if the
@@ -597,14 +614,7 @@ void WalterModem::_addATByteToBuffer(char data, bool raw)
 
     /* Try to get a free response buffer from the pool */
     if(_parserData.buf == NULL) {
-        for(int i = 0; i < WALTER_MODEM_AT_RSP_POOL_SIZE; ++i) {
-            if(_parserData.pool[i].free) {
-                _parserData.buf = _parserData.pool + i;
-                _parserData.buf->free = false;
-                _parserData.buf->size = 0;
-                break;
-            }
-        }
+        _parserData.buf = _getFreeBuffer();
     }
     
     /* 
@@ -657,7 +667,8 @@ uint16_t WalterModem::_extractRawBufferChunkSize()
                 chunkSize += (_parserData.buf->data[i] - '0');
             }
 
-            return chunkSize + _strLitLen("\r\nOK\r\n");
+            return chunkSize + _strLitLen("\r\nOK\r\n")
+                + (chunkSize ? _strLitLen("\r\n") : 0);
         } else {
             return _strLitLen("\r\nOK\r\n");
         }
@@ -903,6 +914,7 @@ WalterModemCmd* WalterModem::_addQueueCmd(
     WalterModemCmdType type,
     uint8_t *data,
     uint16_t dataSize,
+    WalterModemBuffer* stringsBuffer,
     uint8_t maxAttempts)
 {
     WalterModemCmd *cmd = _cmdPoolGet();
@@ -932,6 +944,7 @@ WalterModemCmd* WalterModem::_addQueueCmd(
     cmd->state = WALTER_MODEM_CMD_STATE_NEW;
     cmd->attempt = 0;
     cmd->attemptStart = 0;
+    cmd->stringsBuffer = stringsBuffer;
 
     memset(cmd->rsp, 0, sizeof(WalterModemRsp));
 
@@ -940,6 +953,10 @@ WalterModemCmd* WalterModem::_addQueueCmd(
 
     if(xQueueSend(_taskQueue.handle, &qItem, 0) != pdTRUE) {
         cmd->state = WALTER_MODEM_CMD_STATE_FREE;
+        if(stringsBuffer) {
+            stringsBuffer->free = true;
+        }
+
         return NULL;
     }
 
@@ -949,6 +966,10 @@ WalterModemCmd* WalterModem::_addQueueCmd(
 void WalterModem::_finishQueueCmd(WalterModemCmd *cmd, WalterModemState result)
 {
     cmd->rsp->result = result;
+
+    if(cmd->stringsBuffer) {
+        cmd->stringsBuffer->free = true;
+    }
 
     if(cmd->completeHandler != NULL) {
         cmd->completeHandler(cmd, result);
@@ -1056,9 +1077,9 @@ static void coap_received(const WalterModemRsp *rsp, void *args)
 
 void WalterModem::_processQueueRsp(
     WalterModemCmd *cmd,
-    WalterModemParserBuffer *buff)
+    WalterModemBuffer *buff)
 {
-    _dbgPrintf("RX: %.*s\n", buff->size, buff->data);
+    _dbgPrintf("RX: %.*s\r\n", buff->size, buff->data);
 
     WalterModemState result = WALTER_MODEM_STATE_OK;
 
@@ -1834,21 +1855,20 @@ void WalterModem::_processQueueRsp(
              * to the incoming data and must copy to its own buffer.
              * so this is a large library-bound buffer until we have user event handlers.
              */
+
             if(profileId == 0) {
-                /* FIXME: for the AT command params, we are passing pointers to
-                 * a buffer that will have been freed by the time the response
-                 * arrives.
-                 * Also, we now still pass an internal buffer but
-                 * we should really pass NULL as data buf, knowing it is
-                 * a callback-style call which offers direct access to the raw
-                 * incoming buffer.
-                 */
+                WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+                stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                        "AT+SQNCOAPRCV=%s,%s,%s",
+                        profileIdStr, messageIdStr, lengthStr);
                 const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] =
-                    arr("AT+SQNCOAPRCV=", profileIdStr, ",", messageIdStr, ",", lengthStr);
+                    arr((const char *) stringsBuffer->data);
+
                 _addQueueCmd(_cmdArr, "+SQNCOAPRCV: ", NULL,
                         coap_received, &mqttBridge,
                         NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
-                        mqttBridge.messageIn, sizeof(mqttBridge.messageIn));
+                        mqttBridge.messageIn, sizeof(mqttBridge.messageIn),
+                        stringsBuffer);
 
                 if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_SENDING
                         && messageId == mqttBridge.curMessageId
@@ -1867,6 +1887,14 @@ void WalterModem::_processQueueRsp(
                 if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
                     break;
                 }
+                if(_coapContextSet[profileId].rings[ringIdx].messageId
+                        == messageId
+                        && _coapContextSet[profileId].rings[ringIdx].sendType
+                        == sendType
+                        && _coapContextSet[profileId].rings[ringIdx].methodRsp
+                        == reqRspCodeRaw) {
+                    break;
+                }
             }
 
             if(ringIdx == sizeof(_coapContextSet[profileId].rings)
@@ -1878,12 +1906,13 @@ void WalterModem::_processQueueRsp(
                 return;
             }
 
-            _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
-            _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
-            _coapContextSet[profileId].rings[ringIdx].methodRsp =
-                (WalterModemCoapSendMethodRsp ) reqRspCodeRaw;
-            _coapContextSet[profileId].rings[ringIdx].length = length;
-
+            if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
+                _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
+                _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
+                _coapContextSet[profileId].rings[ringIdx].methodRsp =
+                    (WalterModemCoapSendMethodRsp ) reqRspCodeRaw;
+                _coapContextSet[profileId].rings[ringIdx].length = length;
+            }
         }
     }
     else if(_buffStartsWith(buff, "+SQNCOAPCONNECTED: "))
@@ -2139,7 +2168,7 @@ bool WalterModem::httpConfigProfile(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     /* FIXME: just like coapCreateContext _atStr is unsafe here
@@ -2164,7 +2193,7 @@ bool WalterModem::httpConnect(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     _runCmd(arr("AT+SQNHTTPCONNECT=", _atNum(profileId)),
@@ -2179,7 +2208,7 @@ bool WalterModem::httpClose(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     _runCmd(arr("AT+SQNHTTPDISCONNECT=", _atNum(profileId)),
@@ -2218,12 +2247,12 @@ bool WalterModem::httpQuery(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     if(_httpContextSet[profileId].state !=
             WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
-        _returnState(WALTER_MODEM_STATE_BUSY, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_BUSY);
     }
 
     _httpContextSet[profileId].contentType = contentTypeBuf;
@@ -2267,12 +2296,12 @@ bool WalterModem::httpSend(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     if(_httpContextSet[profileId].state !=
             WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
-        _returnState(WALTER_MODEM_STATE_BUSY, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_BUSY);
     }
 
     _httpContextSet[profileId].contentType = contentTypeBuf;
@@ -2318,7 +2347,7 @@ bool WalterModem::coapDidRing(
     void *args = NULL;
 
     if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     uint8_t ringIdx;
@@ -2333,7 +2362,7 @@ bool WalterModem::coapDidRing(
 
     if(ringIdx == sizeof(_coapContextSet[profileId].rings)
             / sizeof(WalterModemCoapRing)) {
-        _returnState(WALTER_MODEM_STATE_NO_DATA, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_DATA);
     }
 
     /* FIXME: static buffers */
@@ -2365,26 +2394,26 @@ bool WalterModem::httpDidRing(
 
     /* XXX normally impossible ... assert? */
     if(_httpCurrentProfile != 0xff) {
-        _returnState(WALTER_MODEM_STATE_ERROR, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_ERROR);
     }
 
     if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     if(_httpContextSet[profileId].state ==
             WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
-        _returnState(WALTER_MODEM_STATE_NOT_EXPECTING_RING, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NOT_EXPECTING_RING);
     }
 
     if(_httpContextSet[profileId].state ==
             WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING) {
-        _returnState(WALTER_MODEM_STATE_AWAITING_RING, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_AWAITING_RING);
     }
 
     if(_httpContextSet[profileId].state !=
             WALTER_MODEM_HTTP_CONTEXT_STATE_GOT_RING) {
-        _returnState(WALTER_MODEM_STATE_ERROR, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_ERROR);
     }
 
     /* ok, got ring. http context fields have been filled.
@@ -2392,7 +2421,7 @@ bool WalterModem::httpDidRing(
     if(_httpContextSet[profileId].httpStatus == 0) {
         _httpContextSet[profileId].state =
             WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE;
-        _returnState(WALTER_MODEM_STATE_ERROR, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_ERROR);
     }
 
     _httpCurrentProfile = profileId;
@@ -2534,12 +2563,13 @@ bool WalterModem::coapCreateContext(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     /* FIXME serverName points to stack! some other _atStr calls are broken as well */
     _runCmd(arr("AT+SQNCOAPCREATE=", _atNum(profileId), ",", _atStr(serverName),
-        ",", _atNum(port), ",", _atNum(localPort), ",", _atBool(dtlsEnabled)), 
+        ",", _atNum(port), ",", _atNum(localPort), ",", _atBool(dtlsEnabled), 
+        ",10"), 
         "OK", rsp, cb, args);
     _returnAfterReply();
 }
@@ -2551,7 +2581,7 @@ bool WalterModem::coapClose(
     void *args)
 {
     if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
     _runCmd(arr("AT+SQNCOAPCLOSE=", _atNum(profileId)),
@@ -2739,7 +2769,7 @@ bool WalterModem::createPDPContext(
 {
     WalterModemPDPContext *ctx = _pdpContextReserve();
     if(ctx == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_FREE_PDP_CONTEXT, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_FREE_PDP_CONTEXT);
     }
 
     ctx->type = type;
@@ -2760,17 +2790,13 @@ bool WalterModem::createPDPContext(
     _strncpy_s(ctx->authUser, authUser, WALTER_MODEM_PDP_AUTH_USER_MAX_SIZE);
     _strncpy_s(ctx->authPass, authPass, WALTER_MODEM_PDP_AUTH_PASS_MAX_SIZE);
 
-    // TODO: check if the response type is not overwritten when the Async
-    // callback system is used.
-    if(rsp != NULL) {
-        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID;
-        rsp->data.pdpCtxId = ctx->id;
-    }
-
     auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result)
     {
         WalterModemPDPContext *ctx =
             (WalterModemPDPContext*) cmd->completeHandlerArg;
+
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID;
+        cmd->rsp->data.pdpCtxId = ctx->id;
 
         if(result == WALTER_MODEM_STATE_OK) {
             ctx->state = WALTER_MODEM_PDP_CONTEXT_STATE_INACTIVE;
@@ -2806,11 +2832,11 @@ bool WalterModem::authenticatePDPContext(
 {
     WalterModemPDPContext *ctx = _pdpContextGet(pdpCtxId);
     if(ctx == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT);
     }
 
     if(ctx->authProto == WALTER_MODEM_PDP_AUTH_PROTO_NONE) {
-        _returnState(WALTER_MODEM_STATE_OK, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_OK);
     }
 
     _runCmd(arr(
@@ -2832,7 +2858,7 @@ bool WalterModem::setPDPContextActive(
 {
     WalterModemPDPContext *ctx = _pdpContextGet(pdpCtxId);
     if(ctx == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT);
     }
 
     auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result) 
@@ -2880,7 +2906,7 @@ bool WalterModem::getPDPAddress(
 {
     WalterModemPDPContext *ctx = _pdpContextGet(pdpCtxId);
     if(ctx == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT);
     }
 
     _runCmd(arr("AT+CGPADDR=", _digitStr(ctx->id)), "OK", rsp, cb, args);
@@ -2899,12 +2925,12 @@ bool WalterModem::createSocket(
 {
     WalterModemPDPContext *ctx = _pdpContextGet(pdpCtxId);
     if(ctx == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PDP_CONTEXT);
     }
 
     WalterModemSocket *sock = _socketReserve();
     if(sock == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_FREE_SOCKET, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_FREE_SOCKET);
     }
 
     sock->pdpContextId = ctx->id;
@@ -2913,17 +2939,13 @@ bool WalterModem::createSocket(
     sock->connTimeout = connTimeout;
     sock->sendDelayMs = sendDelayMs;
 
-    //TODO: check if the response type is not overwritten when the Async
-    // callback system is used.
-    if(rsp != NULL) {
-        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID;
-        rsp->data.socketId = sock->id;
-    }
-
     auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result) 
     { 
         WalterModemSocket *sock = (WalterModemSocket*) cmd->completeHandlerArg;
         
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID;
+        cmd->rsp->data.socketId = sock->id;
+
         if(result == WALTER_MODEM_STATE_OK) {
             sock->state = WALTER_MODEM_SOCKET_STATE_CREATED;
         }
@@ -2949,7 +2971,7 @@ bool WalterModem::configSocket(
 {
     WalterModemSocket *sock = _socketGet(socketId);
     if(sock == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
 
     auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result) 
@@ -2981,7 +3003,7 @@ bool WalterModem::connectSocket(
 {
     WalterModemSocket *sock = _socketGet(socketId);
     if(sock == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
 
     sock->protocol = protocol;
@@ -3019,7 +3041,7 @@ bool WalterModem::closeSocket(
 {
     WalterModemSocket *sock = _socketGet(socketId);
     if(sock == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
 
     auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result) 
@@ -3049,7 +3071,7 @@ bool WalterModem::socketSend(
 {
     WalterModemSocket *sock = _socketGet(socketId);
     if(sock == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET, rsp, cb, args);
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
 
     _runCmd(arr(

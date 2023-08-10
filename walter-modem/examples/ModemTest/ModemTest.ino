@@ -164,7 +164,7 @@ void setup() {
     
     for(int i = 0; i < rsp.data.bandSelCfgSet.count; ++i) {
       WalterModemBandSelection *bSel = rsp.data.bandSelCfgSet.config + i;
-      Serial.printf("  - Operator '%s' on %s: 0x%05X\n",
+      Serial.printf("  - Operator '%s' on %s: 0x%05X\r\n",
         bSel->netOperator.name,
         bSel->rat == WALTER_MODEM_RAT_NBIOT ? "NB-IoT" : "LTE-M",
         bSel->bands);
@@ -372,7 +372,7 @@ void loop() {
 
       Serial.printf("http status code: %d\r\n", rsp.data.httpResponse.httpStatus);
       Serial.printf("content type: %s\r\n", ctbuf);
-      Serial.printf("%s", incomingBuf);
+      Serial.printf("[%s]\r\n", incomingBuf);
     } else {
       Serial.print("HTTP response not yet received\r\n");
     }

@@ -85,14 +85,14 @@
 #define WALTER_MODEM_RSP_BUF_SIZE 1536
 
 /**
- * @brief The maximum number of AT response buffers in the parser's pool.
+ * @brief The number of buffers in the buffer pool.
  */
-#define WALTER_MODEM_AT_RSP_POOL_SIZE 8
+#define WALTER_MODEM_BUFFER_POOL_SIZE 8
 
 /**
  * @brief The size of the stack of the command and response processing task.
  */
-#define WALTER_MODEM_TASK_STACK_SIZE 2048
+#define WALTER_MODEM_TASK_STACK_SIZE 4096
 
 /**
  * @brief The default number of attempts to execute a command.
@@ -203,7 +203,7 @@
  * @brief The maximum size of the message for the MQTT/COAP data to send to the
  * server.
  */
-#define WALTER_MODEM_MQTT_MAX_MESSAGE_LEN 1024
+#define WALTER_MODEM_MQTT_MAX_MESSAGE_LEN 1200
 
 /**
  * @brief This enum groups status codes of functions and operational components
@@ -384,8 +384,7 @@ typedef enum {
     WALTER_MODEM_CMD_TYPE_TX,
     WALTER_MODEM_CMD_TYPE_TX_WAIT,
     WALTER_MODEM_CMD_TYPE_WAIT,
-    WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT,
-    WALTER_MODEM_CMD_TYPE_TX_WAIT_NOLF
+    WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT
 } WalterModemCmdType;
 
 /**
@@ -1263,6 +1262,27 @@ typedef struct {
 } WalterModemCmdLock;
 
 /**
+ * @brief This structure represents a buffer from the pool.
+ */
+typedef struct {
+    /**
+     * @brief Pointer to the data in the buffer.
+     */
+    uint8_t data[WALTER_MODEM_RSP_BUF_SIZE] = { 0 };
+
+    /**
+     * @brief The number of actual data bytes in the buffer.
+     */
+    uint16_t size = 0;
+
+    /**
+     * @brief This volatile flag is set to true when the buffer is currently
+     * not in use and can be used to store the next response in.
+     */
+    volatile bool free = true;
+} WalterModemBuffer;
+
+/**
  * @brief This structure represents an AT command to be added to the command
  * queue.
  */
@@ -1335,6 +1355,12 @@ typedef struct sWalterModemCmd {
     void *userCbArgs = NULL;
 
     /**
+     * @brief Optional temporary buffer (from the pool) used for non-static
+     * string parameters
+     */
+    WalterModemBuffer* stringsBuffer = NULL;
+
+    /**
      * @brief Memory used to save response data in. When the user doesn't pass
      * a response object (in case the blocking API is used). The rsp pointer
      * will point to this memory.
@@ -1395,27 +1421,6 @@ typedef struct {
 } WalterModemCmdFsm;
 
 /**
- * @brief This structure represents a buffer from the parser's pool.
- */
-typedef struct {
-    /**
-     * @brief Pointer to the data in the buffer.
-     */
-    uint8_t data[WALTER_MODEM_RSP_BUF_SIZE] = { 0 };
-
-    /**
-     * @brief The number of actual data bytes in the buffer.
-     */
-    uint16_t size = 0;
-
-    /**
-     * @brief This volatile flag is set to true when the buffer is currently
-     * not in use and can be used to store the next response in.
-     */
-    volatile bool free = true;
-} WalterModemParserBuffer;
-
-/**
  * @brief This structure groups the AT parser's working data.
  */
 typedef struct {
@@ -1427,12 +1432,7 @@ typedef struct {
     /**
      * @brief The buffer currently used by the parser.
      */
-    WalterModemParserBuffer *buf = NULL;
-
-    /**
-     * @brief The pool of buffers used by the parser and AT response handlers.
-     */
-    WalterModemParserBuffer pool[WALTER_MODEM_AT_RSP_POOL_SIZE] = {};
+    WalterModemBuffer *buf = NULL;
 
     /**
      * @brief In raw data chunk parser state, we remember nr expected bytes
@@ -1447,7 +1447,7 @@ typedef struct {
     /**
      * @brief Pointer to an AT response or NULL when this is an AT command.
      */
-    WalterModemParserBuffer *rsp = NULL;
+    WalterModemBuffer *rsp = NULL;
 
     /**
      * @brief The AT command pointer in case rsp is NULL.
@@ -1869,6 +1869,13 @@ class WalterModem
         static inline HardwareSerial *_uart = NULL;
 
         /**
+         * @brief The pool of buffers used by the parser, command strings
+         * and responses
+         */
+        static inline WalterModemBuffer
+            _bufferPool[WALTER_MODEM_BUFFER_POOL_SIZE] = {};
+
+        /**
          * @brief The queue used by the processing task.
          */
         static inline WalterModemTaskQueue _taskQueue = {};
@@ -2137,6 +2144,13 @@ class WalterModem
         static uint16_t _extractRawBufferChunkSize();
 
         /**
+         * @brief Get a free buffer from the buffer pool.
+         * 
+         * @return None.
+         */
+        static WalterModemBuffer* _getFreeBuffer(void);
+
+        /**
          * @brief Handle an AT data byte.
          * 
          * This function is used by the AT data parser to add a databyte to 
@@ -2207,6 +2221,8 @@ class WalterModem
          * @param type The type of queue AT command.
          * @param data Pointer to the data buffer to transmit.
          * @param dataSize The number of bytes in the data buffer.
+         * @param stringsBuffer Optional buffer (from the pool) for remembering
+         * non-static string parameters.
          * @param maxAttempts The maximum number of retries for this command.
          * 
          * @return Pointer to the command on success, NULL when no memory for
@@ -2224,6 +2240,7 @@ class WalterModem
             WalterModemCmdType type = WALTER_MODEM_CMD_TYPE_TX_WAIT,
             uint8_t *data = NULL,
             uint16_t dataSize = 0,
+            WalterModemBuffer* stringsBuffer = NULL,
             uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMTS);
 
         /**
@@ -2269,7 +2286,7 @@ class WalterModem
          * response was received from the modem. The function will process the
          * response and notify blocked functions or call the correct callbacks.
          * This function will also release the response buffer back to the
-         * parser's response buffer pool.
+         * buffer pool.
          * 
          * @param cmd The pending command or NULL when no command is pending.
          * @param rsp The AT response.
@@ -2278,7 +2295,7 @@ class WalterModem
          */
         static void _processQueueRsp(
             WalterModemCmd *cmd,
-            WalterModemParserBuffer *rsp);
+            WalterModemBuffer *rsp);
     
     public:
         /**

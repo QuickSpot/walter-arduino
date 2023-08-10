@@ -114,19 +114,19 @@ bool lteInit(const char *apn, const char *user, const char *pass)
         user,
         pass))
     {
-      Serial.println("Could not create PDP context");
+      Serial.print("Could not create PDP context\r\n");
       return false;
     }
   } else {
     if(!modem.createPDPContext(apn)) {
-      Serial.println("Could not create PDP context");
+      Serial.print("Could not create PDP context\r\n");
       return false;
     }
   }
 
   /* Authenticate the PDP context */
   if(!modem.authenticatePDPContext()) {
-    Serial.println("Could not authenticate the PDP context");
+    Serial.print("Could not authenticate the PDP context\r\n");
     return false;
   }
 
@@ -145,13 +145,13 @@ bool lteConnect()
 {
   /* Set the operational state to full */
   if(!modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
-    Serial.println("Could not set operational state to FULL");
+    Serial.print("Could not set operational state to FULL\r\n");
     return false;
   }
 
   /* Set the network operator selection to automatic */
   if(!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println("Could not set the network selection mode to automatic");
+    Serial.print("Could not set the network selection mode to automatic\r\n");
     return false;
   }
 
@@ -165,7 +165,7 @@ bool lteConnect()
   }
 
   /* Stabilization time */
-  Serial.println("Connected to the network");
+  Serial.print("Connected to the network\r\n");
   return true;
 }
 
@@ -182,7 +182,7 @@ bool lteDisconnect()
 {
   /* Set the operational state to minimum */
   if(!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.println("Could not set operational state to MINIMUM");
+    Serial.print("Could not set operational state to MINIMUM\r\n");
     return false;
   }
 
@@ -194,7 +194,7 @@ bool lteDisconnect()
     regState = modem.getNetworkRegState();
   }
 
-  Serial.println("Disconnected from the network");
+  Serial.print("Disconnected from the network\r\n");
   return true;
 }
 
@@ -228,13 +228,13 @@ void checkAssistanceData(
 
   Serial.print("Almanac data is ");
   if(rsp->data.gnssAssistance.almanac.available) {
-    Serial.printf("available and should be updated within %ds\n",
+    Serial.printf("available and should be updated within %ds\r\n",
       rsp->data.gnssAssistance.almanac.timeToUpdate);
     if(updateAlmanac != NULL) {
       *updateAlmanac = rsp->data.gnssAssistance.almanac.timeToUpdate <= 0;
     }
   } else {
-    Serial.println("not available.");
+    Serial.print("not available.\r\n");
     if(updateAlmanac != NULL) {
       *updateAlmanac = true;
     }
@@ -242,13 +242,13 @@ void checkAssistanceData(
 
   Serial.print("Real-time ephemeris data is ");
   if(rsp->data.gnssAssistance.ephemeris.available) {
-    Serial.printf("available and should be updated within %ds\n",
+    Serial.printf("available and should be updated within %ds\r\n",
       rsp->data.gnssAssistance.ephemeris.timeToUpdate);
     if(updateEphemeris != NULL) {
       *updateEphemeris = rsp->data.gnssAssistance.ephemeris.timeToUpdate <= 0;
     }
   } else {
-    Serial.println("not available.");
+    Serial.print("not available.\r\n");
     if(updateEphemeris != NULL) {
       *updateEphemeris = true;
     }
@@ -273,14 +273,14 @@ bool updateGNSSAssistance()
 
   /* Even with valid assistance data the system clock could be invalid */
   if(!modem.getClock(&rsp)) {
-    Serial.println("Could not check the modem time");
+    Serial.print("Could not check the modem time\r\n");
     return false;
   }
 
   if(rsp.data.clock <= 0) {
     /* The system clock is invalid, connect to LTE network to sync time */
     if(!lteConnect()) {
-      Serial.println("Could not connect to LTE network");
+      Serial.print("Could not connect to LTE network\r\n");
       return false;
     }
 
@@ -292,16 +292,16 @@ bool updateGNSSAssistance()
      */
     for(int i = 0; i < 5; ++i) {
       if(!modem.getClock(&rsp)) {
-        Serial.println("Could not check the modem time");
+        Serial.print("Could not check the modem time\r\n");
         return false;
       }
 
       if(rsp.data.clock > 0) {
-        Serial.printf("Synchronized clock with network: %"PRIi64"\n",
+        Serial.printf("Synchronized clock with network: %"PRIi64"\r\n",
           rsp.data.clock);
         break;
       } else if(i == 4) {
-        Serial.println("Could not sync time with network");
+        Serial.print("Could not sync time with network\r\n");
         return false;
       }
 
@@ -313,7 +313,7 @@ bool updateGNSSAssistance()
   if(!modem.getGNSSAssistanceStatus(&rsp) ||
      rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
   {
-    Serial.println("Could not request GNSS assistance status");
+    Serial.print("Could not request GNSS assistance status\r\n");
     return false;
   }
 
@@ -324,7 +324,7 @@ bool updateGNSSAssistance()
   if(!(updateAlmanac || updateEphemeris)) {
     if(lteConnected) {
       if(!lteDisconnect()) {
-        Serial.println("Could not disconnect from the LTE network");
+        Serial.print("Could not disconnect from the LTE network\r\n");
         return false;
       }
     }
@@ -334,14 +334,14 @@ bool updateGNSSAssistance()
 
   if(!lteConnected) {
     if(!lteConnect()) {
-      Serial.println("Could not connect to LTE network");
+      Serial.print("Could not connect to LTE network\r\n");
       return false;
     }
   }
 
   if(updateAlmanac) {
     if(!modem.updateGNSSAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
-      Serial.println("Could not update almanac data");
+      Serial.print("Could not update almanac data\r\n");
       return false;
     }
   }
@@ -350,7 +350,7 @@ bool updateGNSSAssistance()
     if(!modem.updateGNSSAssistance(
       WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS))
     {
-      Serial.println("Could not update real-time ephemeris data");
+      Serial.print("Could not update real-time ephemeris data\r\n");
       return false;
     }
   }
@@ -358,14 +358,14 @@ bool updateGNSSAssistance()
   if(!modem.getGNSSAssistanceStatus(&rsp) ||
     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
   {
-    Serial.println("Could not request GNSS assistance status");
+    Serial.print("Could not request GNSS assistance status\r\n");
     return false;
   }
 
   checkAssistanceData(&rsp);
   
   if(!lteDisconnect()) {
-    Serial.println("Could not disconnect from the LTE network");
+    Serial.print("Could not disconnect from the LTE network\r\n");
     return false;
   }
 
@@ -389,33 +389,33 @@ bool socketConnect(const char *ip, uint16_t port)
 
   /* Activate the PDP context */
   if(!modem.setPDPContextActive(true)) {
-    Serial.println("Could not activate the PDP context");
+    Serial.print("Could not activate the PDP context\r\n");
     return false;
   }
 
   /* Attach the PDP context */
   if(!modem.attachPDPContext(true)) {
-    Serial.println("Could not attach to the PDP context");
+    Serial.print("Could not attach to the PDP context\r\n");
     return false;
   }
 
   /* Construct a socket */
   if(!modem.createSocket(&rsp)) {
-    Serial.println("Could not create a new socket");
+    Serial.print("Could not create a new socket\r\n");
     return false;
   }
 
   /* Configure the socket */
   if(!modem.configSocket()) {
-    Serial.println("Could not configure the socket");
+    Serial.print("Could not configure the socket\r\n");
     return false;
   }
 
   /* Connect to the UDP test server */
   if(modem.connectSocket(ip, port, port)) {
-    Serial.printf("Connected to UDP server %s:%d\n", ip, port);
+    Serial.printf("Connected to UDP server %s:%d\r\n", ip, port);
   } else {
-    Serial.println("Could not connect UDP socket");
+    Serial.print("Could not connect UDP socket\r\n");
     return false;
   }
 
@@ -452,11 +452,11 @@ void setup()
   Serial.begin(115200);
   delay(5000);
 
-  Serial.println("Walter Positioning v0.0.1");
+  Serial.print("Walter Positioning v0.0.1\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\n",
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
     dataBuf[0],
     dataBuf[1],
     dataBuf[2],
@@ -466,25 +466,25 @@ void setup()
 
   /* Modem initialization */
   if(modem.begin(&Serial2)) {
-    Serial.println("Modem initialization OK");
+    Serial.print("Modem initialization OK\r\n");
   } else {
-    Serial.println("Modem initialization ERROR");
+    Serial.print("Modem initialization ERROR\r\n");
     delay(1000);
     ESP.restart();
     return;
   }
 
   if(lteInit("soracom.io", "sora", "sora")) {
-    Serial.println("Initialized LTE parameters");
+    Serial.print("Initialized LTE parameters\r\n");
   } else {
-    Serial.println("Could not initialize LTE network parameters");
+    Serial.print("Could not initialize LTE network parameters\r\n");
     delay(1000);
     ESP.restart();
     return;
   }
 
   if(!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.println("Could not set operational state to MINIMUM");
+    Serial.print("Could not set operational state to MINIMUM\r\n");
     delay(1000);
     ESP.restart();
     return;
@@ -493,7 +493,7 @@ void setup()
   delay(500);
 
   if(!modem.configGNSS()) {
-    Serial.println("Could not configure the GNSS subsystem");
+    Serial.print("Could not configure the GNSS subsystem\r\n");
     delay(1000);
     ESP.restart();
     return;
@@ -506,7 +506,7 @@ void loop()
 {
   /* Check clock and assistance data, update if required */
   if(!updateGNSSAssistance()) {
-    Serial.println("Could not update GNSS assistance data");
+    Serial.print("Could not update GNSS assistance data\r\n");
     delay(1000);
     ESP.restart();
     return;
@@ -516,12 +516,12 @@ void loop()
   for(int i = 0; i < 5; ++i) {
     fixRcvd = false;
     if(!modem.performGNSSAction()) {
-      Serial.println("Could not request GNSS fix");
+      Serial.print("Could not request GNSS fix\r\n");
       delay(1000);
       ESP.restart();
       return;
     }
-    Serial.println("Started GNSS fix\n");
+    Serial.print("Started GNSS fix\r\n");
 
     while(!fixRcvd) {
       delay(500);
@@ -539,12 +539,12 @@ void loop()
     }
   }
 
-  Serial.printf("GNSS fix attempt finished:\n"
-    "  Confidence: %.02f\n"
-    "  Latitude: %.06f\n"
-    "  Longitude: %.06f\n"
-    "  Satcount: %d\n"
-    "  Good sats: %d\n",
+  Serial.printf("GNSS fix attempt finished:\r\n"
+    "  Confidence: %.02f\r\n"
+    "  Latitude: %.06f\r\n"
+    "  Longitude: %.06f\r\n"
+    "  Satcount: %d\r\n"
+    "  Good sats: %d\r\n",
     posFix.estimatedConfidence,
     posFix.latitude,
     posFix.longitude,
@@ -553,7 +553,7 @@ void loop()
 
   /* Read the temperature of Walter */
   float temp = temperatureRead();
-  Serial.printf("The temperature of Walter is %.02f degrees Celsius\n", temp);
+  Serial.printf("The temperature of Walter is %.02f degrees Celsius\r\n", temp);
 
   float lat = posFix.latitude;
   float lon = posFix.longitude;
@@ -562,7 +562,7 @@ void loop()
     posFix.satCount = 0xFF;
     lat = 0.0;
     lon = 0.0;
-    Serial.println("Could not get a valid fix\n");
+    Serial.print("Could not get a valid fix\r\n");
   }
 
   /* Construct the minimal sensor + GNSS */
@@ -576,21 +576,21 @@ void loop()
 
   /* Transmit the packet */
   if(!lteConnect()) {
-    Serial.println("Could not connect to the LTE network");
+    Serial.print("Could not connect to the LTE network\r\n");
     delay(1000);
     ESP.restart();
     return;
   }
 
   if(!socketConnect(SERV_ADDR, SERV_PORT)) {
-    Serial.println("Could not connect to UDP server socket");
+    Serial.print("Could not connect to UDP server socket\r\n");
     delay(1000);
     ESP.restart();
     return;
   }
 
   if(!modem.socketSend(dataBuf, PACKET_SIZE)) {
-    Serial.println("Could not transmit data");
+    Serial.print("Could not transmit data\r\n");
     delay(1000);
     ESP.restart();
     return;
@@ -599,7 +599,7 @@ void loop()
   delay(5000);
 
   if(!modem.closeSocket()) {
-    Serial.println("Could not close the socket");
+    Serial.print("Could not close the socket\r\n");
     delay(1000);
     ESP.restart();
     return;
