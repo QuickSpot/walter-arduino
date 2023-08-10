@@ -192,7 +192,7 @@ void setup() {
   }
 
   /* Create PDP context */
-  if(modem.createPDPContext())
+  if(modem.createPDPContext("", WALTER_MODEM_PDP_AUTH_PROTO_PAP, "sora", "sora"))
   {
     Serial.print("Created PDP context\r\n");
   } else {

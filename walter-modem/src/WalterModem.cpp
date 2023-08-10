@@ -2259,7 +2259,7 @@ bool WalterModem::httpSend(
     uint8_t *data,
     uint16_t dataSize,
     WalterModemHttpSendCmd httpSendCmd,
-    WalterModemHttpPostParam httpPostParam = WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM,
+    WalterModemHttpPostParam httpPostParam,
     char *contentTypeBuf,
     uint16_t contentTypeBufSize,
     WalterModemRsp *rsp,
