@@ -107,6 +107,11 @@
 #define WALTER_MODEM_MIN_VALID_TIMESTAMP 1672531200
 
 /**
+ * @brief Timeout for ACK of outgoing COAP (MQTT bridge) messages, in seconds
+ */
+#define WALTER_MODEM_MQTT_COAP_TIMEOUT 15
+
+/**
  * @brief Library debug statements macro, this wraps printf on the serial port.
  */
 #if WALTER_MODEM_DEBUG_ENABLED == 1
@@ -1050,7 +1055,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
     return WALTER_MODEM_CMD_TIMEOUT_TICKS;
 }
 
-static void coap_received(const WalterModemRsp *rsp, void *args)
+static void coap_received_for_mqtt_bridge(const WalterModemRsp *rsp, void *args)
 {
     WalterMqttBridge *mqttBridge = (WalterMqttBridge *) args;
 
@@ -1058,20 +1063,25 @@ static void coap_received(const WalterModemRsp *rsp, void *args)
         return;
     }
 
+    /* silently discard unexpected requests or responses,
+     * to keep the basic mqtt coap bridge API with mqttDidRing simple.
+     * users who want full control can manually use coap with profile id 1 or 2.
+     */
+
     /* sanity checks: valid message (response) ? */
     if(mqttBridge->status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE
             && rsp->data.coapResponse.messageId == mqttBridge->curMessageId
             && mqttBridge->lastAckedMessageId < mqttBridge->curMessageId
-            && rsp->data.coapResponse.sendType == WALTER_MODEM_COAP_SEND_TYPE_ACK) {
-
-        if(rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_VALID 
-                || rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE) {
-            mqttBridge->lastAckedMessageId = rsp->data.coapResponse.messageId;
-            mqttBridge->messageInLen = rsp->data.coapResponse.length;
-            mqttBridge->status = WALTER_MODEM_MQTT_STATUS_RESPONSE_READY;
-        } else {
-            mqttBridge->status = WALTER_MODEM_MQTT_STATUS_INVALID_RESPONSE;
-        }
+            && rsp->data.coapResponse.sendType == WALTER_MODEM_COAP_SEND_TYPE_ACK
+            && (rsp->data.coapResponse.methodRsp
+                == WALTER_MODEM_COAP_SEND_RSP_CODE_VALID 
+                || rsp->data.coapResponse.methodRsp
+                == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE)) {
+        mqttBridge->lastAckedMessageId = rsp->data.coapResponse.messageId;
+        mqttBridge->messageInLen = rsp->data.coapResponse.length;
+        mqttBridge->status = WALTER_MODEM_MQTT_STATUS_RESPONSE_READY;
+        mqttBridge->moreDataAvailable =
+            rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE;
     }
 }
 
@@ -1575,11 +1585,6 @@ void WalterModem::_processQueueRsp(
         char *commaPos = strchr(rspStr, ',');
         char *start = (char *) rspStr + _strLitLen("+SQNCOAPRCV: ");
 
-        /* parse header ; payload processing happens in mqttDidRing
-         * or later here if we have set the user callback in
-         * addQueueCmd AT+SQNCOAPRCV
-         */
-
         uint8_t profileId = 0;
         uint16_t messageId = 0;
         uint8_t reqRsp;
@@ -1669,18 +1674,20 @@ void WalterModem::_processQueueRsp(
             cmd->rsp->data.coapResponse.methodRsp =
                 (WalterModemCoapSendMethodRsp) reqRspCodeRaw;
 
-            /* FIXME (also in http):
-             * if data and dataSize are null, we cannot store the result.
-             * we can only hope the user is using a callback which has
-             * access to the raw buffer.
-             */
             if(length > cmd->dataSize) {
                 cmd->rsp->data.coapResponse.length = cmd->dataSize;
             }
             else {
                 cmd->rsp->data.coapResponse.length = length;
             }
-            memcpy(cmd->data, payload, cmd->rsp->data.coapResponse.length);
+
+            /* if data and dataSize are null, we cannot store the result.
+             * we can only hope the user is using a callback which has
+             * access to the raw buffer.
+             */
+            if(cmd->data) {
+                memcpy(cmd->data, payload, cmd->rsp->data.coapResponse.length);
+            }
         }
     }
     else if(_buffStartsWith(buff, "<<<"))   /* <<< is start of SQNHTTPRCV answer */
@@ -1703,9 +1710,16 @@ void WalterModem::_processQueueRsp(
             cmd->rsp->data.httpResponse.contentLength =
                 _httpContextSet[_httpCurrentProfile].contentLength;
         }
-        memcpy(cmd->data, buff->data + 3,        /* skip <<< */
-                cmd->rsp->data.httpResponse.contentLength);
-        cmd->data[cmd->rsp->data.httpResponse.contentLength] = '\0';
+
+        /* if data and dataSize are null, we cannot store the result.
+         * we can only hope the user is using a callback which has
+         * access to the raw buffer.
+         */
+        if(cmd->data) {
+            memcpy(cmd->data, buff->data + 3,        /* skip <<< */
+                    cmd->rsp->data.httpResponse.contentLength);
+            cmd->data[cmd->rsp->data.httpResponse.contentLength] = '\0';
+        }
 
         /* the complete handler will reset the state,
          * even if we never received <<< but got an error instead
@@ -1843,20 +1857,14 @@ void WalterModem::_processQueueRsp(
             /* convert parameters to int */
             uint8_t profileId = atoi(profileIdStr);
             uint16_t messageId = atoi(messageIdStr);
-            uint8_t reqRsp = atoi(reqRspStr);
+            uint8_t reqRsp = atoi(reqRspStr);   /* redundant with sendType */
             WalterModemCoapSendType sendType =
                 (WalterModemCoapSendType) atoi(sendTypeStr);
             uint8_t reqRspCodeRaw = atoi(reqRspCodeRawStr);
             uint16_t length = atoi(lengthStr);
 
-            /* proof-of-concept internal event system for our own mqtt coap rings:
-             * this could be a call to a user-set event handler.
-             * schedule the receive command and the callback will have access
-             * to the incoming data and must copy to its own buffer.
-             * so this is a large library-bound buffer until we have user event handlers.
-             */
-
             if(profileId == 0) {
+                /* profile id 0 is the internal mqtt bridge coap profile */
                 WalterModemBuffer *stringsBuffer = _getFreeBuffer();
                 stringsBuffer->size += sprintf((char *) stringsBuffer->data,
                         "AT+SQNCOAPRCV=%s,%s,%s",
@@ -1865,53 +1873,46 @@ void WalterModem::_processQueueRsp(
                     arr((const char *) stringsBuffer->data);
 
                 _addQueueCmd(_cmdArr, "+SQNCOAPRCV: ", NULL,
-                        coap_received, &mqttBridge,
+                        coap_received_for_mqtt_bridge, &mqttBridge,
                         NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
                         mqttBridge.messageIn, sizeof(mqttBridge.messageIn),
                         stringsBuffer);
-
-                if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_SENDING
-                        && messageId == mqttBridge.curMessageId
-                        && reqRsp == 1
-                        && sendType == WALTER_MODEM_COAP_SEND_TYPE_ACK) {
-                    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE;
+            } else {
+                /* store ring in ring list for this coap context */
+                uint8_t ringIdx;
+                for(ringIdx = 0;
+                        ringIdx < sizeof(_coapContextSet[profileId].rings)
+                        / sizeof(WalterModemCoapRing);
+                        ringIdx++) {
+                    if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
+                        break;
+                    }
+                    if(_coapContextSet[profileId].rings[ringIdx].messageId
+                            == messageId
+                            && _coapContextSet[profileId].rings[ringIdx].sendType
+                            == sendType
+                            && _coapContextSet[profileId].rings[ringIdx].methodRsp
+                            == reqRspCodeRaw) {
+                        break;
+                    }
                 }
-            }
 
-            /* store ring in ring list for this coap context */
-            uint8_t ringIdx;
-            for(ringIdx = 0;
-                    ringIdx < sizeof(_coapContextSet[profileId].rings)
-                    / sizeof(WalterModemCoapRing);
-                    ringIdx++) {
+                if(ringIdx == sizeof(_coapContextSet[profileId].rings)
+                        / sizeof(WalterModemCoapRing)) {
+                    /* ring buffer full unfortunately, dropping ring.
+                     * TODO: error reporting mechanism for this failed URC
+                     */
+                    buff->free = true;
+                    return;
+                }
+
                 if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
-                    break;
+                    _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
+                    _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
+                    _coapContextSet[profileId].rings[ringIdx].methodRsp =
+                        (WalterModemCoapSendMethodRsp ) reqRspCodeRaw;
+                    _coapContextSet[profileId].rings[ringIdx].length = length;
                 }
-                if(_coapContextSet[profileId].rings[ringIdx].messageId
-                        == messageId
-                        && _coapContextSet[profileId].rings[ringIdx].sendType
-                        == sendType
-                        && _coapContextSet[profileId].rings[ringIdx].methodRsp
-                        == reqRspCodeRaw) {
-                    break;
-                }
-            }
-
-            if(ringIdx == sizeof(_coapContextSet[profileId].rings)
-                    / sizeof(WalterModemCoapRing)) {
-                /* ring buffer full unfortunately, dropping ring.
-                 * TODO: error reporting mechanism for this failed URC
-                 */
-                buff->free = true;
-                return;
-            }
-
-            if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
-                _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
-                _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
-                _coapContextSet[profileId].rings[ringIdx].methodRsp =
-                    (WalterModemCoapSendMethodRsp ) reqRspCodeRaw;
-                _coapContextSet[profileId].rings[ringIdx].length = length;
             }
         }
     }
@@ -1945,9 +1946,8 @@ void WalterModem::_processQueueRsp(
             if(profileId == 0) {
                 /* our own coap profile for the mqtt bridge was just closed */
 
-                if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_SENDING
-                        || mqttBridge.status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE) {
-                    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_INVALID_RESPONSE;
+                if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE) {
+                    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_TIMED_OUT;
                 }
             }
         }
@@ -2171,18 +2171,15 @@ bool WalterModem::httpConfigProfile(
         _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
-    /* FIXME: just like coapCreateContext _atStr is unsafe here
-     * (use blocking call for now - check other _atStr's + coapSetOptions'
-     * careless use of the passed values string).
-     * We also use default values "" instead of NULL because _atStr
-     * does not protect us as opposed to _strncpy_s used elsewhere
-     */
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"",
+            profileId, serverName, port, useBasicAuth, authUser, authPass);
 
-    _runCmd(arr("AT+SQNHTTPCFG=", _atNum(profileId), ",",
-                _atStr(serverName), ",", _atNum(port), ",",
-                _atBool(useBasicAuth), ",", _atStrRaw(authUser), ",",
-                _atStrRaw(authPass)),
-            "OK", rsp, cb, args);
+    _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            stringsBuffer);
+
     _returnAfterReply();
 }
 
@@ -2196,8 +2193,12 @@ bool WalterModem::httpConnect(
         _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
+    if(_httpContextSet[profileId].connected) {
+        _returnState(WALTER_MODEM_STATE_OK);
+    }
+
     _runCmd(arr("AT+SQNHTTPCONNECT=", _atNum(profileId)),
-        "OK", rsp, cb, args);
+        "+SQNHTTPCONNECT: ", rsp, cb, args);
     _returnAfterReply();
 }
 
@@ -2268,17 +2269,16 @@ bool WalterModem::httpQuery(
         }
     };
 
-    /* FIXME: just like coapCreateContext _atStr is unsafe here
-     * (use blocking call for now - check other _atStr's + coapSetOptions'
-     * careless use of the passed values string).
-     * We also use default values "" instead of NULL because _atStr
-     * does not protect us as opposed to _strncpy_s used elsewhere
-     */
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNHTTPQRY=%d,%d,\"%s\"",
+            profileId, httpQueryCmd, uri);
 
-    _runCmd(arr("AT+SQNHTTPQRY=", _atNum(profileId), ",",
-                _atNum(httpQueryCmd), ",", _atStr(uri)),
-            "OK", rsp, cb, args, completeHandler,
-            (void *) (_httpContextSet + profileId));
+    _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
+            completeHandler, (void *) (_httpContextSet + profileId),
+            WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            stringsBuffer);
+
     _returnAfterReply();
 }
 
@@ -2317,18 +2317,16 @@ bool WalterModem::httpSend(
         }
     };
 
-    /* FIXME: just like coapCreateContext _atStr is unsafe here
-     * (use blocking call for now - check other _atStr's + coapSetOptions'
-     * careless use of the passed values string).
-     * We also use default values "" instead of NULL because _atStr
-     * does not protect us as opposed to _strncpy_s used elsewhere
-     */
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNHTTPSND=%d,%d,\"%s\",%d,%d",
+            profileId, httpSendCmd, uri, dataSize, httpPostParam);
 
-    _runCmd(arr("AT+SQNHTTPSND=", _atNum(profileId), ",",
-                _atNum(httpSendCmd), ",", _atStr(uri), ",",
-                _atNum(dataSize), ",", _atNum(httpPostParam)),
-            "OK", rsp, cb, args, completeHandler,
-            (void *) (_httpContextSet + profileId));
+    _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
+            completeHandler, (void *) (_httpContextSet + profileId),
+            WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            stringsBuffer);
+
     _returnAfterReply();
 }
 
@@ -2345,6 +2343,10 @@ bool WalterModem::coapDidRing(
      */
     walterModemCb cb = NULL;
     void *args = NULL;
+
+    if(profileId == 0) {
+        _returnState(WALTER_MODEM_STATE_ERROR);
+    }
 
     if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -2365,17 +2367,18 @@ bool WalterModem::coapDidRing(
         _returnState(WALTER_MODEM_STATE_NO_DATA);
     }
 
-    /* FIXME: static buffers */
-    static char msgIdStr[8];
-    static char lenStr[8];
-    sprintf(msgIdStr, "%u", _coapContextSet[profileId].rings[ringIdx].messageId);
-    sprintf(lenStr, "%u", _coapContextSet[profileId].rings[ringIdx].length);
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNCOAPRCV=%d,%u,%u", profileId,
+            _coapContextSet[profileId].rings[ringIdx].messageId,
+            _coapContextSet[profileId].rings[ringIdx].length);
 
-    _runCmd(arr("AT+SQNCOAPRCV=", _atNum(profileId), ",",
-                msgIdStr, ",", lenStr),
-            "+SQNCOAPRCV: ", rsp, cb, args,
-            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
-            targetBuf, targetBufSize);
+    _runCmd(arr((const char *) stringsBuffer->data), "+SQNCOAPRCV: ",
+            rsp, cb, args,
+            NULL, NULL,
+            WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf, targetBufSize,
+            stringsBuffer);
+
     _returnAfterReply();
 }
 
@@ -2454,6 +2457,7 @@ bool WalterModem::initMqttBridge(const char *serverName, uint16_t port,
     mqttBridge.curMessageId = 1;
     mqttBridge.lastAckedMessageId = 0;
     mqttBridge.status = WALTER_MODEM_MQTT_STATUS_IDLE;
+    mqttBridge.moreDataAvailable = false;
 
     return true;
 }
@@ -2483,73 +2487,93 @@ bool WalterModem::mqttCommunicate(void)
         return false;
     }
 
-    WalterModemRsp rsp = {};
-
-    if(!_coapContextSet[0].connected) {
-        if(!coapCreateContext(0, mqttBridge.serverName, mqttBridge.port)) {
-            return false;
-        }
+    if(!coapCreateContext(0, mqttBridge.serverName, mqttBridge.port)) {
+        return false;
     }
 
     if(!coapSetHeader(0, mqttBridge.curMessageId)) {
         return false;
     }
 
+    /* determine nr of messages to recup if we missed any */
+    uint8_t nrMissed = mqttBridge.curMessageId
+        - mqttBridge.lastAckedMessageId
+        - 1;
+
     if(!coapSendData(0, WALTER_MODEM_COAP_SEND_TYPE_CON,
-        WALTER_MODEM_COAP_SEND_METHOD_NONE,
+        (WalterModemCoapSendMethodRsp) nrMissed, /* WALTER_MODEM_COAP_SEND_METHOD_NONE */
         mqttBridge.messageOutLen, mqttBridge.messageOut)) {
         return false;
     }
 
-    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_SENDING;
+    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE;
+    mqttBridge.lastTransmissionTime = time(NULL);
 
     return true;
 }
 
 bool WalterModem::mqttDidRing(WalterModemRsp *rsp)
 {
+    walterModemCb cb = NULL;        /* dummies so we can use _returnState */
+    void *args = NULL;
     uint16_t curOffset = 0;
 
-    if(rsp == NULL) {
-        return false;
+    if(rsp) {
+        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
+        rsp->data.mqttData.nak = false;
+        rsp->data.mqttData.moreDataAvailable = false;
     }
 
-    rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
-    rsp->data.mqttData.status = mqttBridge.status;
-
-    if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_INVALID_RESPONSE) {
-        goto returnFromPoll;
+    if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_IDLE) {
+        _returnState(WALTER_MODEM_STATE_NOT_EXPECTING_RING);
     }
 
-    if(mqttBridge.status != WALTER_MODEM_MQTT_STATUS_RESPONSE_READY) {
-        return true;
+    if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE) {
+        if(time(NULL) - mqttBridge.lastTransmissionTime
+                > WALTER_MODEM_MQTT_COAP_TIMEOUT) {
+            mqttBridge.status = WALTER_MODEM_MQTT_STATUS_TIMED_OUT;
+        } else {
+            _returnState(WALTER_MODEM_STATE_AWAITING_RESPONSE);
+        }
     }
 
-    rsp->data.mqttData.messageCount = 0;
+    /* so status must be WALTER_MODEM_MQTT_STATUS_RESPONSE_READY
+     * or WALTER_MODEM_MQTT_STATUS_TIMED_OUT
+     */
+    if(rsp) {
+        rsp->data.mqttData.messageCount = 0;
 
-    while(curOffset < mqttBridge.messageInLen) {
-        uint8_t topic = mqttBridge.messageIn[curOffset];
-        curOffset++;
-        uint8_t dataLen = mqttBridge.messageIn[curOffset];
-        curOffset++;
+        /* timeout response (which is also a response) or valid response? */
+        if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_TIMED_OUT) {
+            rsp->data.mqttData.nak = true;
+        } else {
+            rsp->data.mqttData.moreDataAvailable = mqttBridge.moreDataAvailable;
 
-        rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].topic = topic;
-        rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].dataSize = dataLen;
-        rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].data = mqttBridge.messageIn + curOffset;
+            while(curOffset < mqttBridge.messageInLen) {
+                uint8_t topic = mqttBridge.messageIn[curOffset];
+                curOffset++;
+                uint8_t dataLen = mqttBridge.messageIn[curOffset];
+                curOffset++;
 
-        curOffset += dataLen;
+                rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].topic = topic;
+                rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].dataSize = dataLen;
+                rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].data =
+                    mqttBridge.messageIn + curOffset;
 
-        rsp->data.mqttData.messageCount++;
+                curOffset += dataLen;
+
+                rsp->data.mqttData.messageCount++;
+            }
+        }
     }
 
-returnFromPoll:
     mqttBridge.status = WALTER_MODEM_MQTT_STATUS_IDLE;
     mqttBridge.curMessageId++;
     mqttBridge.messageOutLen = 1;
     /* FIXME: client id will become obsolete */
     mqttBridge.messageOut[0] = mqttBridge.clientId;
 
-    return true;
+    _returnState(WALTER_MODEM_STATE_OK);
 }
 
 bool WalterModem::coapCreateContext(
@@ -2566,11 +2590,20 @@ bool WalterModem::coapCreateContext(
         _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
-    /* FIXME serverName points to stack! some other _atStr calls are broken as well */
-    _runCmd(arr("AT+SQNCOAPCREATE=", _atNum(profileId), ",", _atStr(serverName),
-        ",", _atNum(port), ",", _atNum(localPort), ",", _atBool(dtlsEnabled), 
-        ",10"), 
-        "OK", rsp, cb, args);
+    if(_coapContextSet[profileId].connected) {
+        _returnState(WALTER_MODEM_STATE_OK);
+    }
+
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNCOAPCREATE=%d,\"%s\",%d,%d,%d,10",
+            profileId, serverName, port, localPort, dtlsEnabled);
+
+    _runCmd(arr((const char *) stringsBuffer->data),
+            "+SQNCOAPCONNECTED: ", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            stringsBuffer);
+
     _returnAfterReply();
 }
 
@@ -2580,6 +2613,10 @@ bool WalterModem::coapClose(
     walterModemCb cb,
     void *args)
 {
+    if(profileId == 0) {
+        _returnState(WALTER_MODEM_STATE_ERROR);
+    }
+
     if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
@@ -2620,34 +2657,41 @@ bool WalterModem::coapSetOptions(
     walterModemCb cb,
     void *args)
 {
-    /* FIXME: we need a pool of static data for queued commands or
-     * perhaps use the parser pool - see some _atStr calls and the
-     * use of the passed char *values below
-     */
+    if(profileId == 0) {
+        _returnState(WALTER_MODEM_STATE_ERROR);
+    }
+
+    if(action == WALTER_MODEM_COAP_OPT_READ) {
+         /* not yet supported - add together with incoming socket con/coap response */
+        _returnState(WALTER_MODEM_STATE_ERROR);
+    }
+
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
 
      if(action == WALTER_MODEM_COAP_OPT_SET ||
         action == WALTER_MODEM_COAP_OPT_EXTEND) {
          if(values && *values) {
-             _runCmd(arr("AT+SQNCOAPOPT=", _atNum(profileId), ",",
-                         _atNum(action), ",", _atNum(code), ",",
-                         values),
-                     "OK", rsp, cb, args);
-             _returnAfterReply();
+            stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                    "AT+SQNCOAPOPT=%d,%d,%d,%s",
+                    profileId, action, code, values);
          } else {
-             _runCmd(arr("AT+SQNCOAPOPT=", _atNum(profileId), ",",
-                         _atNum(action), ",", _atNum(code)),
-                     "OK", rsp, cb, args);
-             _returnAfterReply();
+            stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                    "AT+SQNCOAPOPT=%d,%d,%d",
+                    profileId, action, code);
          }
-     } else if(action == WALTER_MODEM_COAP_OPT_READ) {
-         /* not yet supported - add together with incoming socket con/coap response */
-        return false;
      } else if(action == WALTER_MODEM_COAP_OPT_DELETE) {
-         _runCmd(arr("AT+SQNCOAPOPT=", _atNum(profileId), ",",
-                     _atNum(action), ",", _atNum(code)),
-                 "OK", rsp, cb, args);
-         _returnAfterReply();
+        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                "AT+SQNCOAPOPT=%d,%d,%d",
+                profileId, action, code);
+     } else {
+         /* make sure something sane is in the buffer if wrong action */
+         stringsBuffer->size += sprintf((char *) stringsBuffer->data, "AT");
      }
+
+    _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            stringsBuffer);
+     _returnAfterReply();
 }
 
 bool WalterModem::coapSendData(

@@ -10,9 +10,18 @@ The included examples are:
    you are able to talk directly to the Sequans Monarch 2 chipset using AT
    commands.
 
- - [ModemTest](ModemTest/): this sketch makes Walter connect to a network and
-   send out ping messages to our testserver. This sketch is perfect to test a
+ - [ModemSocketTest](ModemSocketTest/): this sketch makes Walter connect to a network and
+   send out UDP messages to our testserver. This sketch is perfect to test a
    connection without having Walter connected to any shield.
+
+ - [ModemCoapTest](ModemCoapTest/): this sketch makes Walter connect to a network and
+   send out COAP messages to a public COAP test server.
+
+ - [ModemHttpTest](ModemHttpTest/): this sketch makes Walter connect to a network and
+   perform a HTTP GET to a test server.
+
+ - [ModemMqttTest](ModemMqttTest/): this sketch makes Walter connect to a network and
+   send and receive MQTT messages using the DPTechnics COAP to MQTT bridge.
 
  - [SensorShield](SensorShield/): this sketch requires Walter to be placed onto
    a board which contains various sensors. It will read out the sensors and

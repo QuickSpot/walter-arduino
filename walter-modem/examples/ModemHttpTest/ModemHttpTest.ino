@@ -1,7 +1,7 @@
 /**
- * @file ModemTest.ino
- * @author Daan Pape <daan@dptechnics.com>
- * @date 15 Feb 2023
+ * @file ModemHttpTest.ino
+ * @author Jonas Maes <jonas@dptechnics.com>
+ * @date Jun 2023
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -44,7 +44,7 @@
  * @section DESCRIPTION
  * 
  * This file contains a sketch which uses the modem in Walter to make a
- * connection to a network and upload counter values to the Walter demo server.
+ * http request and show the result.
  */
 
 #include <esp_system.h>
@@ -52,29 +52,9 @@
 #include <HardwareSerial.h>
 
 /**
- * @brief The address of the server to upload the data to. 
- */
-#define SERV_ADDR "64.225.64.140"
-
-/**
- * @brief The UDP port on which the server is listening.
- */
-#define SERV_PORT 1999
-
-/**
- * @brief COAP profile used for COAP tests
- */
-#define COAP_PROFILE 1
-
-/**
  * @brief HTTP profile
  */
 #define HTTP_PROFILE 1
-
-/**
- * @brief COAP connect timeout in milliseconds
- */
-#define COAP_CONNECT_TIMEOUT_MS 30000
 
 /**
  * @brief The modem instance.
@@ -82,60 +62,15 @@
 WalterModem modem;
 
 /**
- * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
- * the MAC address of the Walter this code is running on.
- */
-uint8_t dataBuf[8] = { 0 };
-
-/**
- * @brief Buffer for incoming COAP response
+ * @brief Buffer for incoming HTTP response
  */
 uint8_t incomingBuf[256] = { 0 };
-
-/**
- * @brief The counter used in the ping packets. 
- */
-uint16_t counter = 0;
-
-/**
- * @brief Last COAP connect attempt
- */
-unsigned long lastCoapConnectAttempt = 0;
-
-bool refreshCoapContext() {
-  unsigned long curMillis = millis();
-
-  if(!modem.coapGetContextStatus(COAP_PROFILE)) {
-    if(lastCoapConnectAttempt == 0 || curMillis - lastCoapConnectAttempt > COAP_CONNECT_TIMEOUT_MS) {
-      Serial.print("Creating COAP connection profile context\r\n");
-
-      modem.coapCreateContext(COAP_PROFILE, "coap.me", 5683);
-      lastCoapConnectAttempt = millis();
-    } else {
-      Serial.print("(COAP context invalid; context create attempt will soon follow\r\n");
-    }
-
-    return false;
-  }
-
-  return true;
-}
 
 void setup() {
   Serial.begin(115200);
   delay(5000);
 
   Serial.print("Walter modem test v0.0.1\r\n");
-
-  /* Get the MAC address for board validation */
-  esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
-    dataBuf[0],
-    dataBuf[1],
-    dataBuf[2],
-    dataBuf[3],
-    dataBuf[4],
-    dataBuf[5]);
 
   if(WalterModem::begin(&Serial2)) {
     Serial.print("Modem initialization OK\r\n");
@@ -261,27 +196,6 @@ void setup() {
     return;
   }
 
-  /* Construct a socket */
-  if(modem.createSocket(&rsp)) {
-    Serial.print("Created a new socket\r\n");
-  } else {
-    Serial.print("Could not create a new socket\r\n");
-  }
-
-  /* Configure the socket */
-  if(modem.configSocket()) {
-    Serial.print("Successfully configured the socket\r\n");
-  } else {
-    Serial.print("Could not configure the socket\r\n");
-  }
-
-  /* Connect to the UDP test server */
-  if(modem.connectSocket(SERV_ADDR, SERV_PORT, SERV_PORT)) {
-    Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
-  } else {
-    Serial.print("Could not connect UDP socket\r\n");
-  }
-
   /* Configure http profile for a simple test */
   if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io")) {
     Serial.print("Successfully configured the http profile\r\n");
@@ -291,65 +205,7 @@ void setup() {
 }
 
 void loop() {
-  dataBuf[6] = counter >> 8;
-  dataBuf[7] = counter & 0xFF;
-
   WalterModemRsp rsp = {};
-
-  if(modem.socketSend(dataBuf, 8)) {
-    Serial.printf("Transmitted counter value %d\r\n", counter);
-    counter += 1;
-  } else {
-    Serial.print("Could not transmit data\r\n");
-    delay(1000);
-    ESP.restart();
-  }
-
-  if(refreshCoapContext()) {
-    static short receiveAttemptsLeft = 0;
-
-    if(!receiveAttemptsLeft) {
-      if(modem.coapSetHeader(COAP_PROFILE, counter)) {
-        Serial.printf("Set COAP header with message id %d\r\n", counter);
-      } else {
-        Serial.print("Could not set COAP header\r\n");
-        delay(1000);
-        ESP.restart();
-      }
-
-      if(modem.coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
-        WALTER_MODEM_COAP_SEND_METHOD_GET, 8, dataBuf)) {
-        Serial.print("Sent COAP datagram\r\n");
-        receiveAttemptsLeft = 3;
-      } else {
-        Serial.print("Could not send COAP datagram\r\n");
-        delay(1000);
-        ESP.restart();
-      }
-    } else {
-      receiveAttemptsLeft--;
-      Serial.print("Checking for incoming COAP message or response\r\n");
-
-      while(modem.coapDidRing(COAP_PROFILE, incomingBuf, sizeof(incomingBuf), &rsp)) {
-        receiveAttemptsLeft = 0;
-
-        Serial.print("COAP incoming:\r\n");
-        Serial.printf("profileId: %d (profile ID used by us: %d)\r\n",
-          rsp.data.coapResponse.profileId, COAP_PROFILE);
-        Serial.printf("Message id: %d\r\n", rsp.data.coapResponse.messageId);
-        Serial.printf("Send type (CON, NON, ACK, RST): %d\r\n",
-          rsp.data.coapResponse.sendType);
-        Serial.printf("Method or response code: %d\r\n",
-          rsp.data.coapResponse.methodRsp);
-        Serial.printf("Data (%d bytes):\r\n", rsp.data.coapResponse.length);
-
-        for(size_t i = 0; i < rsp.data.coapResponse.length; i++) {
-          Serial.printf("[%02x  %c] ", incomingBuf[i], incomingBuf[i]);
-        }
-        Serial.print("\r\n");
-      }
-    }
-  }
 
   /* HTTP test */
   static short httpReceiveAttemptsLeft = 0;
@@ -365,16 +221,18 @@ void loop() {
       ESP.restart();
     }
   } else {
-    httpReceiveAttemptsLeft--;
-
-    if(modem.httpDidRing(HTTP_PROFILE, incomingBuf, sizeof(incomingBuf), &rsp)) {
+    /* while loop so we can fetch old responses as well as the expected response */
+    while(modem.httpDidRing(HTTP_PROFILE, incomingBuf, sizeof(incomingBuf), &rsp)) {
       httpReceiveAttemptsLeft = 0;
 
       Serial.printf("http status code: %d\r\n", rsp.data.httpResponse.httpStatus);
       Serial.printf("content type: %s\r\n", ctbuf);
       Serial.printf("[%s]\r\n", incomingBuf);
-    } else {
+    }
+
+    if(httpReceiveAttemptsLeft) {
       Serial.print("HTTP response not yet received\r\n");
+      httpReceiveAttemptsLeft--;
     }
   }
 

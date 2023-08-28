@@ -60,7 +60,7 @@
  * printed onto the serial console.
  */
 #ifndef WALTER_MODEM_DEBUG_ENABLED
-    #define WALTER_MODEM_DEBUG_ENABLED 1
+    #define WALTER_MODEM_DEBUG_ENABLED 0
 #endif 
 
 /**
@@ -221,6 +221,7 @@ typedef enum {
     WALTER_MODEM_STATE_NO_SUCH_PROFILE,
     WALTER_MODEM_STATE_NOT_EXPECTING_RING,
     WALTER_MODEM_STATE_AWAITING_RING,
+    WALTER_MODEM_STATE_AWAITING_RESPONSE,
     WALTER_MODEM_STATE_BUSY,
     WALTER_MODEM_STATE_NO_DATA
 } WalterModemState;
@@ -658,14 +659,13 @@ typedef enum {
 } WalterModemGNSSAssistanceType;
 
 /**
- * @brief The possible statuses of a MQTT flush
+ * @brief The possible statuses of a MQTT communication cycle.
  */
 typedef enum {
     WALTER_MODEM_MQTT_STATUS_IDLE,
-    WALTER_MODEM_MQTT_STATUS_SENDING,
     WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE,
     WALTER_MODEM_MQTT_STATUS_RESPONSE_READY,
-    WALTER_MODEM_MQTT_STATUS_INVALID_RESPONSE
+    WALTER_MODEM_MQTT_STATUS_TIMED_OUT
 } WalterModemMqttStatus;
 
 /**
@@ -1055,11 +1055,16 @@ typedef struct {
  * @brief This structure represents the MQTT data. 
  */
 typedef struct {
+    /**
+     * @brief Flag to indicate failed communication attempt.
+     */
+    bool nak;
 
     /**
-     * @brief MQTT status code
+     * @brief Flag to indicate more data is available
+     * (meaning you need to do one more mqttCommunicate call)
      */
-    WalterModemMqttStatus status;
+    bool moreDataAvailable;
 
     /**
      * @brief The amount of the messages.
@@ -1841,9 +1846,20 @@ typedef struct {
     uint16_t lastAckedMessageId = 0;  /* * 0 means nothing received yet */
 
     /**
+     * @brief Flag that indicates whether more data is ready on bridge,
+     * meaning an extra mqttCommunicate call makes sense
+     */
+    bool moreDataAvailable = false;
+
+    /**
      * @brief Status indicator for last mqtt flush command
      */
     WalterModemMqttStatus status = WALTER_MODEM_MQTT_STATUS_IDLE;
+
+    /**
+     * @brief Time when the last message was sent.
+     */
+    time_t lastTransmissionTime = 0;
 } WalterMqttBridge;
 
 /**
@@ -2635,7 +2651,10 @@ class WalterModem
         /**
          * @brief Initialize the COAP to MQTT bridge.
          * 
-         * This fuction will set the serverName and port.
+         * This fuction will set the serverName and port, initialize the
+         * accumulated outgoing datagram, initialize the current message
+         * id to 1, the last acknowledged id to 0 and set the state machine
+         * to IDLE.
          * 
          * @param serverName The name of the server to connect to.
          * @param port The port of the server.
@@ -2647,9 +2666,11 @@ class WalterModem
             uint16_t port = 0, uint8_t clientId = 1);
 
         /**
-         * @brief Add a publish message to the queue.
+         * @brief Enqueue a MQTT publish message.
          * 
-         * This function will add the message to send the data to the server.
+         * This function will add the message to the accumulated outgoing
+         * datagram, which will -after mqttCommunicate- be sent to the
+         * COAP to MQTT bridge server and published through MQTT.
          * 
          * @param topic The topic of the message.
          * @param len The length of the data.
@@ -2660,30 +2681,78 @@ class WalterModem
         static bool mqttPublish(uint8_t topic, uint8_t len, uint8_t *data);
 
         /**
-         * @brief Send of the messages in the message buffer.
+         * @brief Send accumulated MQTT messages and request incoming data.
          * 
-         * This function will send all the messages in the message buffer in the
-         * MQTT bridge (if there are any), and ask the server for new incoming
-         * messages since the last mqttCommunicate call.
+         * This function will send all accumulated MQTT publish messages to
+         * the MQTT bridge, and ask the server for an acknowledgement and for
+         * the new incoming MQTT messages since the last mqttCommunicate call.
+         *
+         * The arduino developer will now need to poll for the ACKnowledgement
+         * and the incoming messages using mqttDidRing, before more messages can
+         * be published.
          * 
-         * @return True on success, false on error. 
+         * Even if nothing was enqueued for publish, this call must frequently
+         * be executed if Walter is subscribed to one or more MQTT topics.
+         *
+         * @return True if we have sent the message and are awaiting response,
+         * false in the following cases:
+         * - if we are still awaiting a response from a previous mqttCommunicate
+         *   call (which the arduino program should know already)
+         * - if we could not connect to the COAP to MQTT bridge server
+         * - if setting the COAP header or sending the COAP data failed
          */
         static bool mqttCommunicate(void);
 
         /**
-         * @brief Poll the API for a received MQTT response
+         * @brief Poll the API for a received MQTT response.
+         *
+         * The call is named DidRing for consistancy with the HTTP, COAP
+         * and other polling network calls. It can only be used after a
+         * mqttCommunicate call, and will return the response from the
+         * server (an ACK for any published messages, and a list of
+         * incoming messages for MQTT topics Walter is subscribed to, if any).
+         *
+         * Only after the (possibly empty) response has been received, or a
+         * timeout has been reported, it will be possible to publish more data or
+         * do a new mqttCommunicate call.
+         *
+         * Timeout is reported using the nak flag in the response object.
+         *
+         * There is also a flag moreDataAvailable through which the server
+         * indicates more incoming MQTT data is available for Walter, but it did
+         * not fit in the single-datagram response, and will be sent with the
+         * next mqttCommunicate call.
+         *
+         * If mqttCommunicate has been called, one may consider this form if
+         * there is no other work to be done in the mean time:
+         *
+         * while(!modem.mqttDidRing(&rsp)) {
+         *   delay(100);
+         * }
+         *
+         * @param rsp The (optional) response object.
+         *
+         * @return True if the response/ack was received and is now available
+         * in the rsp object, and also if there was a timeout (nak flag will
+         * be true in that case). False if we were not expecting data because
+         * mqttCommunicate has not been called, or if we are still waiting for
+         * the data.
+         *
+         * In practice: true means you can now publish
+         * (optionally) new messages or call mqttCommunicate, and false means
+         * we are still waiting for data and need to call mqttDidRing again later.
          */
         static bool mqttDidRing(WalterModemRsp *rsp);
 
         /**
          * @brief Create a COAP context.
          * 
-         * This function will create a COAP context, will the context is open in
-         * the walter can send commands to a remote server and can receive
-         * responses and requests from the server. This needs to be called 
-         * send, set the options and the receive the data.
+         * This function will create a COAP context if it was not open yet.
+         * This needs to be done before you can set headers or options or
+         * send or receive data.
          * 
-         * @param profileId COAP profile id (0 is used by the mqtt bridge)
+         * @param profileId COAP profile id (0 is used by the mqtt bridge,
+         * and should not be used for regular COAP)
          * @param serverName The server name to connect to.
          * @param port The port of the server to connect to.
          * @param localPort The local port to use.
@@ -2714,7 +2783,8 @@ class WalterModem
          * you must first close the context using this call. Eventually
          * the context will be automatically closed after the timeout.
          * 
-         * @param profileId COAP profile id (0 is used by the mqtt bridge)
+         * @param profileId COAP profile id (0 is not permitted since it is
+         * used by the mqtt bridge)
          * @param rsp Pointer to a modem response structure to save the result 
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -2746,7 +2816,8 @@ class WalterModem
          * This is not necessary, when you do not set the header the message id 
          * and the token will be set to random values.
          *  
-         * @param profileId COAP profile id (1 or 2)
+         * @param profileId COAP profile id (1 or 2 - 0 only intended for internal
+         * use by the mqtt bridge)
          * @param messageId The message id of the next message to send.
          * @param token The token of the next message to send as a string of
          * 16 hex digits for a max token length of 8 bytes, with default
@@ -2799,7 +2870,8 @@ class WalterModem
          * 
          * This function will send a COAP message.
          * 
-         * @param profileId COAP profile id (1 or 2)
+         * @param profileId COAP profile id (1 or 2; 0 should not be used and
+         * is used by the mqtt bridge)
          * @param type The type of message (NON, CON, ACK, RST) which implies
          * whether it is a request or response (reqtype).
          * @param methodRsp The method or response code.
@@ -2827,6 +2899,7 @@ class WalterModem
          * @brief Fetch incoming COAP messages, if any
          *
          * @param profileId Profile for which to get incoming data
+         * (0 not allowed because it is used internally for mqtt bridge)
          * @param targetBuf User buffer to store response in.
          * @param targetBufSize Size of the user buffer, including space for a
          * terminating null byte.
