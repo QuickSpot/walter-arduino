@@ -3179,8 +3179,7 @@ bool WalterModem::updateGNSSAssistance(
     void *args)
 {
     _runCmd(arr("AT+LPGNSSASSISTANCE=", _digitStr(type)),
-        type == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC ?
-            "+LPGNSSASSISTANCE:0" : "+LPGNSSASSISTANCE:1", rsp, cb, args);
+            "+LPGNSSASSISTANCE:", rsp, cb, args);
     _returnAfterReply();
 }
 

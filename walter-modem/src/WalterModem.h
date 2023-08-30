@@ -60,7 +60,7 @@
  * printed onto the serial console.
  */
 #ifndef WALTER_MODEM_DEBUG_ENABLED
-    #define WALTER_MODEM_DEBUG_ENABLED 0
+    #define WALTER_MODEM_DEBUG_ENABLED 1
 #endif 
 
 /**
