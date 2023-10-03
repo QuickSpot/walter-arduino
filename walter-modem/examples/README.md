@@ -20,6 +20,9 @@ The included examples are:
  - [ModemHttpTest](ModemHttpTest/): this sketch makes Walter connect to a network and
    perform a HTTP GET to a test server.
 
+ - [ModemHttpSendTest](ModemHttpSendTest/): this sketch makes Walter connect to a network and
+   perform a HTTP POST to a test server.
+
  - [ModemMqttTest](ModemMqttTest/): this sketch makes Walter connect to a network and
    send and receive MQTT messages using the DPTechnics COAP to MQTT bridge.
 

@@ -67,9 +67,14 @@
 #define PACKET_SIZE 18
 
 /**
- * @brief Al fixes with a confidence below this number are considered ok.
+ * @brief All fixes with a confidence below this number are considered ok.
  */
-#define MAX_GNSS_CONFIDENCE 500.0
+#define MAX_GNSS_CONFIDENCE 100.0
+
+/**
+ * @brief The radio access technology to use - LTEM or NBIOT.
+ */
+#define RADIO_TECHNOLOGY WALTER_MODEM_RAT_LTEM
 
 /**
  * @brief The modem instance.
@@ -104,7 +109,7 @@ uint8_t dataBuf[PACKET_SIZE] = { 0 };
  * 
  * @return True on success, false on error.
  */
-bool lteInit(const char *apn, const char *user, const char *pass)
+bool lteInit(const char *apn, const char *user = NULL, const char *pass = NULL)
 {
   /* Create PDP context */
   if(user != NULL) {
@@ -160,7 +165,10 @@ bool lteConnect()
   while(!(regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_HOME ||
           regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_ROAMING))
   {
-    delay(100);
+    delay(1000);
+    WalterModemRsp rsp;
+    modem.getRSSI(&rsp);
+    Serial.printf("rssi: %d\r\n", rsp.data.rssi);
     regState = modem.getNetworkRegState();
   }
 
@@ -241,11 +249,11 @@ void checkAssistanceData(
   }
 
   Serial.print("Real-time ephemeris data is ");
-  if(rsp->data.gnssAssistance.ephemeris.available) {
+  if(rsp->data.gnssAssistance.realtimeEphemeris.available) {
     Serial.printf("available and should be updated within %ds\r\n",
-      rsp->data.gnssAssistance.ephemeris.timeToUpdate);
+      rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate);
     if(updateEphemeris != NULL) {
-      *updateEphemeris = rsp->data.gnssAssistance.ephemeris.timeToUpdate <= 0;
+      *updateEphemeris = rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate <= 0;
     }
   } else {
     Serial.print("not available.\r\n");
@@ -474,6 +482,16 @@ void setup()
     return;
   }
 
+   WalterModemRsp rsp = {};
+   if(modem.getRAT(&rsp)) {
+     if(rsp.data.rat != RADIO_TECHNOLOGY) {
+       modem.setRAT(RADIO_TECHNOLOGY);
+       Serial.println("Switched modem radio technology");
+     }
+   } else {
+     Serial.println("Could not retrieve radio access technology");
+   }
+
   if(lteInit("soracom.io", "sora", "sora")) {
     Serial.print("Initialized LTE parameters\r\n");
   } else {
@@ -523,9 +541,21 @@ void loop()
     }
     Serial.print("Started GNSS fix\r\n");
 
+    int j = 0;
     while(!fixRcvd) {
-      delay(500);
+        Serial.print(".");
+        if (j >= 300) {
+            Serial.println("");
+            Serial.println("Timed out while waiting for GNSS fix");
+            delay(1000);
+            ESP.restart();
+            break;
+        }
+        j++;
+        delay(500);
     }
+    
+    Serial.println("");
 
     if(posFix.estimatedConfidence <= MAX_GNSS_CONFIDENCE) {
       break;

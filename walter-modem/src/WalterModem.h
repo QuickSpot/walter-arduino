@@ -491,6 +491,9 @@ typedef enum {
 typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_NO_DATA,
     WALTER_MODEM_RSP_DATA_TYPE_OPSTATE,
+    WALTER_MODEM_RSP_DATA_TYPE_RAT,
+    WALTER_MODEM_RSP_DATA_TYPE_RSSI,
+    WALTER_MODEM_RSP_DATA_TYPE_SIGNAL_QUALITY,
     WALTER_MODEM_RSP_DATA_TYPE_SIM_STATE,
     WALTER_MODEM_RSP_DATA_TYPE_CME_ERROR,
     WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID,
@@ -508,14 +511,14 @@ typedef enum {
  * @brief The supported network selection modes.
  */
 typedef enum {
-    WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC,
-    WALTER_MODEM_NETWORK_SEL_MODE_MANUAL,
-    WALTER_MODEM_NETWORK_SEL_MODE_UNREGISTER,
-    WALTER_MODEM_NETWORK_SEL_MODE_MANUAL_AUTO_FALLBACK
+    WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC = 0,
+    WALTER_MODEM_NETWORK_SEL_MODE_MANUAL = 1,
+    WALTER_MODEM_NETWORK_SEL_MODE_UNREGISTER = 2,
+    WALTER_MODEM_NETWORK_SEL_MODE_MANUAL_AUTO_FALLBACK = 4
 } WalterModemNetworkSelMode;
 
 /**
- * @brief The supported netowrk operator formats. 
+ * @brief The supported network operator formats. 
  */
 typedef enum {
     WALTER_MODEM_OPERATOR_FORMAT_LONG_ALPHANUMERIC = 0,
@@ -656,6 +659,7 @@ typedef enum {
 typedef enum {
     WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC = 0,
     WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS = 1,
+    WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS = 2,
 } WalterModemGNSSAssistanceType;
 
 /**
@@ -814,7 +818,8 @@ typedef enum {
     WALTER_MODEM_HTTP_POST_PARAM_TEXT_PLAIN = 1,
     WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM = 2,
     WALTER_MODEM_HTTP_POST_PARAM_FORM_DATA = 3,
-    WALTER_MODEM_HTTP_POST_PARAM_JSON = 4
+    WALTER_MODEM_HTTP_POST_PARAM_JSON = 4,
+    WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED = 99
 } WalterModemHttpPostParam;
 
 /**
@@ -935,7 +940,7 @@ typedef struct {
      * expires and cannot be used by the GNSS system.
      */
     int32_t timeToExpire; 
-} WalterMOdemGNSSAssistanceTypeDetails;
+} WalterModemGNSSAssistanceTypeDetails;
 
 /**
  * @brief This structure contains GNSS assistance metadata.
@@ -945,13 +950,18 @@ typedef struct {
      * @brief Almanac data details, this is not needed when real-time ephemeris
      * data is available.
      */
-    WalterMOdemGNSSAssistanceTypeDetails almanac;
+    WalterModemGNSSAssistanceTypeDetails almanac;
 
     /**
      * @brief Real-time ephemeris data details. Use this kind of assistance 
      * data for the fastest and most power efficient GNSS fix.
      */
-    WalterMOdemGNSSAssistanceTypeDetails ephemeris;
+    WalterModemGNSSAssistanceTypeDetails realtimeEphemeris;
+
+    /**
+     * @brief Predicted ephemeris data details.
+     */
+    WalterModemGNSSAssistanceTypeDetails predictedEphemeris;
 } WalterModemGNSSAssistance;
 
 /**
@@ -1161,6 +1171,21 @@ typedef struct {
 } WalterModemHttpResponse;
 
 /**
+ * @brief This structure groups the RSRQ and RSRP signal quality parameters.
+ */
+typedef struct {
+    /**
+     * @brief The RSRQ in 10ths of dB.
+     */
+    int rsrq;
+
+    /**
+     * @brief The RSRP in dBm.
+     */
+    int rsrp;
+} WalterModemSignalQuality;
+
+/**
  * @brief This union groups the response data of all different commands.
  */
 union uWalterModemRspData {
@@ -1183,6 +1208,22 @@ union uWalterModemRspData {
      * @brief The ID of a PDP context.
      */
     int pdpCtxId;
+
+    /**
+     * @brief The radio access technology.
+     */
+    WalterModemRAT rat;
+
+    /**
+     * @brief The RSSI of the signal in dBm.
+     */
+    int rssi;
+
+    /**
+     * @brief 
+     * 
+     */
+    WalterModemSignalQuality signalQuality;
 
     /**
      * @brief The band selection configuration set.
@@ -2474,6 +2515,43 @@ class WalterModem
             void *args = NULL);
 
         /**
+         * @brief Get the current signal quality.
+         * 
+         * This function returns the current signal quality in dBm. The signal
+         * quality is in the range [-113dBm, -51dBm]. 
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool getRSSI(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Get extended RSRQ and RSRP signal quality.
+         * 
+         * This function returns the RSRQ and RSRP signal quality indicators.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool getSignalQuality(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
          * @brief Configure a HTTP profile.
          * 
          * This function will configure a HTTP profile with parameters
@@ -2622,7 +2700,7 @@ class WalterModem
                 uint8_t *data,
                 uint16_t dataSize,
                 WalterModemHttpSendCmd httpSendCmd = WALTER_MODEM_HTTP_SEND_CMD_POST,
-                WalterModemHttpPostParam httpPostParam = WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM,
+                WalterModemHttpPostParam httpPostParam = WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED,
                 char *contentTypeBuf = NULL,
                 uint16_t contentTypeBufSize = 0,
                 WalterModemRsp *rsp = NULL,
@@ -2660,9 +2738,9 @@ class WalterModem
          * @param port The port of the server.
          * @param clientId Our client ID
          * 
-         * @return True on success, false on error.
+         * @return None.
          */
-        static bool initMqttBridge(const char *serverName = "",
+        static void initMqttBridge(const char *serverName = "",
             uint16_t port = 0, uint8_t clientId = 1);
 
         /**
@@ -2960,6 +3038,46 @@ class WalterModem
          */
         static bool setOpState(
             WalterModemOpState opState,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Get the selected RAT (Radio Access Technology).
+         * 
+         * This function will request the Radio Access Technology which the
+         * modem should apply.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *  
+         * @return True on success, false otherwise.
+         */
+        static bool getRAT(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Set the RAT (Radio Access Technology).
+         * 
+         * This function will set the Radio Access Technology which the modem
+         * should apply.
+         * 
+         * @param rat The new RAT.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *  
+         * @return True on success, false otherwise.
+         */
+        static bool setRAT(
+            WalterModemRAT rat,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);

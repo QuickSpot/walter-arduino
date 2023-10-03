@@ -1246,6 +1246,66 @@ void WalterModem::_processQueueRsp(
             }
         }
     }
+    else if(_buffStartsWith(buff, "+CSQ: "))
+    {
+        for(size_t i = _strLitLen("+CSQ: "); i < buff->size; ++i) {
+            if(buff->data[i] == ',') {
+                buff->data[i] = '\0';
+                break;
+            }
+        }
+
+        const char *rspStr = _buffStr(buff);
+        int rawRSSI = atoi(rspStr + _strLitLen("+CSQ: "));
+
+        if(cmd == NULL) {
+            buff->free = true;
+            return;
+        }
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_RSSI;
+        cmd->rsp->data.rssi = -113 + (rawRSSI * 2);
+    }
+    else if(_buffStartsWith(buff, "+CESQ: "))
+    {
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SIGNAL_QUALITY;
+
+        uint16_t dataSize = buff->size - _strLitLen("+CESQ: ");
+        uint8_t *data = buff->data + _strLitLen("+CESQ: ");
+
+        uint16_t offset = 0;
+        uint8_t param = 0;
+        for(uint16_t i = 0; i < dataSize; ++i) {
+            if(data[i] != ',') {
+                continue;
+            }
+
+            if(param > 3) {
+                data[i] == 0;
+                int quality = atoi((const char *) data + offset);
+                
+                if(param == 4) {
+                    cmd->rsp->data.signalQuality.rsrq = -195 + (quality * 5);
+                } else if(param == 5) {
+                    cmd->rsp->data.signalQuality.rsrp = -140 + quality;
+                }
+            }
+
+            param += 1;
+            offset = i + 1;
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNMODEACTIVE: "))
+    {
+        const char *rspStr = _buffStr(buff);
+        int rat = atoi(rspStr + _strLitLen("+SQNMODEACTIVE: "));
+
+        if(cmd == NULL) {
+            buff->free = true;
+            return;
+        }
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_RAT;
+        cmd->rsp->data.rat = (WalterModemRAT) (rat - 1);
+    }
     else if(_buffStartsWith(buff, "+SQNBANDSEL: "))
     {
         if(buff->size <= _strLitLen("+SQNBANDSEL: 1,,\"\"")) {
@@ -1497,7 +1557,7 @@ void WalterModem::_processQueueRsp(
         char *start = (char*) data;
         uint8_t partNo = 0;
 
-        WalterMOdemGNSSAssistanceTypeDetails *details = NULL;
+        WalterModemGNSSAssistanceTypeDetails *details = NULL;
 
         for(uint16_t i = 0; i < dataSize; ++i) {
             bool partComplete = false;
@@ -1521,7 +1581,12 @@ void WalterModem::_processQueueRsp(
 
                             case '1':
                                 details =
-                                    &(cmd->rsp->data.gnssAssistance.ephemeris);
+                                    &(cmd->rsp->data.gnssAssistance.realtimeEphemeris);
+                                break;
+
+                            case '2':
+                                details =
+                                    &(cmd->rsp->data.gnssAssistance.predictedEphemeris);
                                 break;
                         }
                         break;
@@ -1551,8 +1616,8 @@ void WalterModem::_processQueueRsp(
                         break;
                 }
                 
-                /* +2 for the comma and trailing space */
-                start = (char*) data + i + 2;
+                /* +1 for the comma */
+                start = (char*) data + i + 1;
                 partNo += 1;
             }
         }
@@ -2065,19 +2130,18 @@ bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
         "queueProcessingTask", WALTER_MODEM_TASK_STACK_SIZE, NULL,
         tskIDLE_PRIORITY, _queueTaskStack, &_queueTaskBuf, 0);
 
+    initMqttBridge();
+
     if(!reset()) {
         return false;
     }
 
+    /* Configure reports as we expect them in the library */
     if(!configCMEErrorReports()) {
         return false;
     }
 
     if(!configCEREGReports()) {
-        return false;
-    }
-
-    if(!initMqttBridge()) {
         return false;
     }
 
@@ -2124,8 +2188,18 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     delay(10);
     digitalWrite(WALTER_MODEM_PIN_RESET, HIGH);
 
-    /* Reset internal library state */
+    /* Also (re)initialize internal modem related library state */
     _regState = WALTER_MODEM_NETWORK_REG_NOT_SEARCHING;
+    _httpCurrentProfile = 0xff;
+    _opState = WALTER_MODEM_OPSTATE_MINIMUM;
+    _networkSelMode = WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC;
+    _socket = NULL;
+    _pdpCtx = NULL;
+    memset(_pdpCtxSet, sizeof(_pdpCtxSet), 0);
+    memset(_socketSet, sizeof(_socketSet), 0);
+    memset(_coapContextSet, sizeof(_coapContextSet), 0);
+    memset(_httpContextSet, sizeof(_httpContextSet), 0);
+    memset(&_operator, sizeof(_operator), 0);
 
     _returnAfterReply();
 }
@@ -2153,6 +2227,21 @@ bool WalterModem::configCEREGReports(
     void *args)
 {
     _runCmd(arr("AT+CEREG=", _digitStr(type)), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getRSSI(WalterModemRsp *rsp, walterModemCb cb, void *args)
+{
+    _runCmd(arr("AT+CSQ"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getSignalQuality(
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    _runCmd(arr("AT+CESQ"), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
@@ -2318,13 +2407,19 @@ bool WalterModem::httpSend(
     };
 
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
-    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-            "AT+SQNHTTPSND=%d,%d,\"%s\",%d,%d",
-            profileId, httpSendCmd, uri, dataSize, httpPostParam);
+    if(httpPostParam == WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED) {
+        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                "AT+SQNHTTPSND=%d,%d,\"%s\",%d",
+                profileId, httpSendCmd, uri, dataSize);
+    } else {
+        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                "AT+SQNHTTPSND=%d,%d,\"%s\",%d,\"%d\"",
+                profileId, httpSendCmd, uri, dataSize, httpPostParam);
+    }
 
     _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
             completeHandler, (void *) (_httpContextSet + profileId),
-            WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, data, dataSize,
             stringsBuffer);
 
     _returnAfterReply();
@@ -2443,12 +2538,12 @@ bool WalterModem::httpDidRing(
     _returnAfterReply();
 }
 
-bool WalterModem::initMqttBridge(const char *serverName, uint16_t port,
+void WalterModem::initMqttBridge(const char *serverName, uint16_t port,
         uint8_t clientId)
 {
     mqttBridge.clientId = clientId;
     mqttBridge.port = port;
-    strncpy(mqttBridge.serverName, serverName == NULL? "" : serverName,
+    strncpy(mqttBridge.serverName, serverName == NULL ? "" : serverName,
         WALTER_MODEM_HOSTNAME_MAX_SIZE);
 
     /* FIXME: later client id will be removed (also in the bridge server) */
@@ -2458,8 +2553,6 @@ bool WalterModem::initMqttBridge(const char *serverName, uint16_t port,
     mqttBridge.lastAckedMessageId = 0;
     mqttBridge.status = WALTER_MODEM_MQTT_STATUS_IDLE;
     mqttBridge.moreDataAvailable = false;
-
-    return true;
 }
 
 bool WalterModem::mqttPublish(uint8_t topic, uint8_t len, uint8_t *data)
@@ -2729,6 +2822,22 @@ bool WalterModem::setOpState(
     void *args)
 {
     _runCmd(arr("AT+CFUN=", _digitStr(opState)), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getRAT(WalterModemRsp *rsp, walterModemCb cb, void *args)
+{
+    _runCmd(arr("AT+SQNMODEACTIVE?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::setRAT(
+    WalterModemRAT rat,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    _runCmd(arr("AT+SQNMODEACTIVE=", _digitStr(rat + 1)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
