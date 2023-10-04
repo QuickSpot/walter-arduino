@@ -634,4 +634,6 @@ void loop()
     ESP.restart();
     return;
   }
+
+  lteDisconnect();
 }

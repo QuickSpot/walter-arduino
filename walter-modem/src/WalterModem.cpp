@@ -1248,15 +1248,17 @@ void WalterModem::_processQueueRsp(
     }
     else if(_buffStartsWith(buff, "+CSQ: "))
     {
-        for(size_t i = _strLitLen("+CSQ: "); i < buff->size; ++i) {
-            if(buff->data[i] == ',') {
-                buff->data[i] = '\0';
+        const char *rspStr = _buffStr(buff);
+        char *data = (char *) rspStr + _strLitLen("+CSQ: ");
+
+        for(size_t i = 0; i < buff->size - _strLitLen("+CSQ: "); ++i) {
+            if(data[i] == ',') {
+                data[i] = '\0';
                 break;
             }
         }
 
-        const char *rspStr = _buffStr(buff);
-        int rawRSSI = atoi(rspStr + _strLitLen("+CSQ: "));
+        int rawRSSI = atoi(data);
 
         if(cmd == NULL) {
             buff->free = true;
@@ -1270,17 +1272,20 @@ void WalterModem::_processQueueRsp(
         cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SIGNAL_QUALITY;
 
         uint16_t dataSize = buff->size - _strLitLen("+CESQ: ");
-        uint8_t *data = buff->data + _strLitLen("+CESQ: ");
+        const char *rspStr = _buffStr(buff);
+        char *data = (char *) rspStr + _strLitLen("+CESQ: ");
 
         uint16_t offset = 0;
         uint8_t param = 0;
-        for(uint16_t i = 0; i < dataSize; ++i) {
-            if(data[i] != ',') {
+
+        for(uint16_t i = 0; i <= dataSize; ++i) {
+            if(data[i] != ',' && data[i] != '\0') {
                 continue;
             }
 
             if(param > 3) {
-                data[i] == 0;
+                data[i] = 0;
+
                 int quality = atoi((const char *) data + offset);
                 
                 if(param == 4) {
@@ -1445,6 +1450,7 @@ void WalterModem::_processQueueRsp(
         uint8_t *data = buff->data + _strLitLen("+LPGNSSFIXREADY: ");
 
         char *start = (char*) data;
+        char *lastCharacter = NULL;
         uint8_t partNo = 0;
         bool parenthesisOpen = false;
 
@@ -1453,6 +1459,11 @@ void WalterModem::_processQueueRsp(
 
             if(data[i] == ',' && !parenthesisOpen) {
                 data[i] = '\0';
+                lastCharacter = (char *) data + i - 1;
+                partComplete = true;
+            } else if(i + 1 == dataSize) {
+                data[i + 1] = '\0';
+                lastCharacter = (char *) data + i;
                 partComplete = true;
             } else if(data[i] == '(') {
                 parenthesisOpen = true;
@@ -1460,19 +1471,16 @@ void WalterModem::_processQueueRsp(
                 parenthesisOpen = false;
             }
             
-            if(i + 1 == dataSize) {
-                data[i + 1] = '\0';
-                partComplete = true;
-            }
-
             if(partComplete) {
+                /* sometimes we need to skip surrounding " " */
                 switch(partNo) {
                     case 0:
                         _GNSSfix.fixId = atoi(start);
                         break;
                     
                     case 1:
-                        _GNSSfix.timestamp = strTotime(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.timestamp = strTotime(start + 1);
                         break;
 
                     case 2:
@@ -1480,31 +1488,38 @@ void WalterModem::_processQueueRsp(
                         break;
 
                     case 3:
-                        _GNSSfix.estimatedConfidence = strtod(start, NULL);
+                        *lastCharacter = '\0';
+                        _GNSSfix.estimatedConfidence = strtod(start + 1, NULL);
                         break;
 
                     case 4:
-                        _GNSSfix.latitude = atof(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.latitude = atof(start + 1);
                         break;
 
                     case 5:
-                        _GNSSfix.longitude = atof(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.longitude = atof(start + 1);
                         break;
 
                     case 6:
-                        _GNSSfix.height = atof(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.height = atof(start + 1);
                         break;
 
                     case 7:
-                        _GNSSfix.northSpeed = atof(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.northSpeed = atof(start + 1);
                         break;
 
                     case 8:
-                        _GNSSfix.eastSpeed = atof(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.eastSpeed = atof(start + 1);
                         break;
 
                     case 9:
-                        _GNSSfix.downSpeed = atof(start);
+                        *lastCharacter = '\0';
+                        _GNSSfix.downSpeed = atof(start + 1);
                         break;
 
                     case 10:
@@ -1520,7 +1535,7 @@ void WalterModem::_processQueueRsp(
                             continue;
                         }
 
-                        const char *satNoStr = start;
+                        const char *satNoStr = start + 1;   /* skip '(' */
                         const char *satSigStr = start;
                         for(int i = 0; start[i] != '\0'; ++i) {
                             if(start[i] == ',') {
@@ -1537,8 +1552,8 @@ void WalterModem::_processQueueRsp(
                         break;
                 }
 
-                /* +2 for the comma and trailing space */
-                start = (char*) data + i + 2;
+                /* +1 for the comma */
+                start = (char*) data + i + 1;
                 partNo += 1;
             }
         }
@@ -1593,7 +1608,7 @@ void WalterModem::_processQueueRsp(
 
                     case 1:
                         if(details != NULL) {
-                            details->available = start[0] == '1';
+                            details->available = atoi(start) == 1;
                         }
                         break;
 
