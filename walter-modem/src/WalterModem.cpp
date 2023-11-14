@@ -1645,7 +1645,7 @@ void WalterModem::_processQueueRsp(
         char *data = (char*) buff->data + _strLitLen("+CCLK: \"");
         cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_CLOCK;
         int64_t utcTime = strTotime(data, "%y/%m/%d,%H:%M:%S");
-        uint8_t tzOffset;
+        uint16_t tzOffset;
         if(data[17] == '+') {
             tzOffset = atoi(data + 18) * 15 * 60;
         } else {
