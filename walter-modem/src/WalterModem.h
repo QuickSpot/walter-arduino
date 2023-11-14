@@ -60,7 +60,11 @@
  * printed onto the serial console.
  */
 #ifndef WALTER_MODEM_DEBUG_ENABLED
-    #define WALTER_MODEM_DEBUG_ENABLED 1
+    #if defined(CORE_DEBUG_LEVEL) and CORE_DEBUG_LEVEL >= 1
+        #define WALTER_MODEM_DEBUG_ENABLED 1
+    #else
+        #define WALTER_MODEM_DEBUG_ENABLED 0
+    #endif
 #endif 
 
 /**
@@ -203,7 +207,23 @@
  * @brief The maximum size of the message for the MQTT/COAP data to send to the
  * server.
  */
-#define WALTER_MODEM_MQTT_MAX_MESSAGE_LEN 1200
+#define WALTER_MODEM_COAP_MAX_INCOMING_MESSAGE_LEN 1220
+#define WALTER_MODEM_COAP_MAX_OUTGOING_MESSAGE_LEN 1024
+
+/**
+ * @brief Encrypted block size within flash
+ */
+#define ENCRYPTED_BLOCK_SIZE 16
+
+/**
+ * @brief SPI flash sectors per erase block
+ */
+#define SPI_SECTORS_PER_BLOCK   16      // usually large erase block is 32k/64k
+
+/**
+ * @brief SPI flash erase block size - sec size defined through esp_partition.h?
+ */
+#define SPI_FLASH_BLOCK_SIZE    (SPI_SECTORS_PER_BLOCK*SPI_FLASH_SEC_SIZE)
 
 /**
  * @brief This enum groups status codes of functions and operational components
@@ -502,7 +522,7 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID,
     WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA,
     WALTER_MODEM_RSP_DATA_TYPE_CLOCK,
-    WALTER_MODEM_RSP_DATA_TYPE_MQTT,
+    WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
     WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
     WALTER_MODEM_RSP_DATA_TYPE_COAP
 } WalterModemRspDataType;
@@ -663,14 +683,14 @@ typedef enum {
 } WalterModemGNSSAssistanceType;
 
 /**
- * @brief The possible statuses of a MQTT communication cycle.
+ * @brief The possible statuses of a BLUECHERRY communication cycle.
  */
 typedef enum {
-    WALTER_MODEM_MQTT_STATUS_IDLE,
-    WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE,
-    WALTER_MODEM_MQTT_STATUS_RESPONSE_READY,
-    WALTER_MODEM_MQTT_STATUS_TIMED_OUT
-} WalterModemMqttStatus;
+    WALTER_MODEM_BLUECHERRY_STATUS_IDLE,
+    WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE,
+    WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY,
+    WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT
+} WalterModemBlueCherryStatus;
 
 /**
  * @brief The possible option codes for the COAP message.
@@ -821,6 +841,16 @@ typedef enum {
     WALTER_MODEM_HTTP_POST_PARAM_JSON = 4,
     WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED = 99
 } WalterModemHttpPostParam;
+
+/**
+ * @brief The possible types of BlueCherry events
+ */
+typedef enum {
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE = 1, /* payload: 32 bit size */
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_CHUNK = 2, /* payload: chunk data */
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_FINISH = 3,
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR = 4
+} WalterModemBlueCherryEventType;
 
 /**
  * @brief This structure represents the 
@@ -1042,7 +1072,8 @@ typedef struct {
 } WalterModemPDPAddressList;
 
 /**
- * @brief This structure contains the CoAP-MQTT message. 
+ * @brief This structure contains one of possibly multiple BlueCherry messages
+ * delivered in a CoAP datagram. 
  */
 typedef struct {
     /**
@@ -1059,10 +1090,10 @@ typedef struct {
      * @brief The data of the message.
      */
     uint8_t *data;
-} WalterModemMqttMessage;
+} WalterModemBlueCherryMessage;
 
 /**
- * @brief This structure represents the MQTT data. 
+ * @brief This structure represents the BlueCherry data with the individual messages. 
  */
 typedef struct {
     /**
@@ -1071,21 +1102,15 @@ typedef struct {
     bool nak;
 
     /**
-     * @brief Flag to indicate more data is available
-     * (meaning you need to do one more mqttCommunicate call)
-     */
-    bool moreDataAvailable;
-
-    /**
      * @brief The amount of the messages.
      */
     int messageCount;
 
     /**
-     * @brief The array containing the MQTT messages.
+     * @brief The array containing the BlueCherry messages.
      */
-    WalterModemMqttMessage messages[16];
-} WalterModemMqttData;
+    WalterModemBlueCherryMessage messages[16];
+} WalterModemBlueCherryData;
 
 /**
  * @brief This strucure represents the data in a walter coap message received.
@@ -1251,9 +1276,9 @@ union uWalterModemRspData {
     int64_t clock;
 
     /**
-     * @brief The MQTT data 
+     * @brief The BlueCherry data 
      */
-    WalterModemMqttData mqttData;
+    WalterModemBlueCherryData blueCherry;
 
     /**
      * @brief HTTP response
@@ -1815,29 +1840,7 @@ typedef struct {
 } WalterModemHttpContext;
 
 /**
- * @brief This structure represents one MQTT bridge command within a COAP
- * message.
- */
-typedef struct {
-    /**
-     * @brief The topic of the command.
-     */
-    uint8_t topic;
-
-    /**
-     * @brief The number of bytes in the in the data array.
-     */
-    uint8_t data_len;
-
-    /**
-     * @brief The data bytes for the commend.
-     * 
-     */
-    uint8_t data[257];  /* max len: topic+len byte+255 bytes */
-} WalterMqttCommand;
-
-/**
- * @brief This structure represents the state of the DPTechnics MQTT bridge.
+ * @brief This structure represents the state of the BlueCherry association.
  */
 typedef struct {
     /**
@@ -1858,17 +1861,18 @@ typedef struct {
     /**
      * @brief COAP message being composed 
      */
-    uint8_t messageOut[WALTER_MODEM_MQTT_MAX_MESSAGE_LEN];
+    uint8_t messageOut[WALTER_MODEM_COAP_MAX_OUTGOING_MESSAGE_LEN];
 
     /**
      * @brief Length of the COAP message being composed so far
+     * (containing a client id initially - FIXME)
      */
-    uint16_t messageOutLen = 0;
+    uint16_t messageOutLen = 1;
     
     /**
      * @brief COAP message received
      */
-    uint8_t messageIn[WALTER_MODEM_MQTT_MAX_MESSAGE_LEN];
+    uint8_t messageIn[WALTER_MODEM_COAP_MAX_INCOMING_MESSAGE_LEN];
 
     /**
      * @brief Length of the COAP message received
@@ -1878,30 +1882,41 @@ typedef struct {
     /**
      * @brief COAP message id of the message being composed or sent
      */
-    uint16_t curMessageId = 1;         /* start at 1; 0 is invalid value */
+    uint16_t curMessageId = 0x1;         /* start at 1; 0 is invalid value */
 
     /**
      * @brief Last acked message id so we know how much to catch up
      *
      */
-    uint16_t lastAckedMessageId = 0;  /* * 0 means nothing received yet */
+    uint16_t lastAckedMessageId = 0x0;  /* 0 means nothing received yet */
 
     /**
      * @brief Flag that indicates whether more data is ready on bridge,
-     * meaning an extra mqttCommunicate call makes sense
+     * meaning an extra blueCherrySynchronize call makes sense
      */
     bool moreDataAvailable = false;
 
     /**
-     * @brief Status indicator for last mqtt flush command
+     * @brief Status indicator for last BlueCherry synchronization cycle
      */
-    WalterModemMqttStatus status = WALTER_MODEM_MQTT_STATUS_IDLE;
+    WalterModemBlueCherryStatus status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
 
     /**
      * @brief Time when the last message was sent.
      */
     time_t lastTransmissionTime = 0;
-} WalterMqttBridge;
+
+    /**
+     * @brief OTA update status
+     */
+    uint8_t *otaBuffer = NULL;
+    uint32_t otaBufferPos = 0;
+    uint8_t otaSkipBuffer[ENCRYPTED_BLOCK_SIZE];  /* first bytes are stashed aside till the end */
+    bool emitErrorEvent = false;
+    uint32_t otaSize = 0;       /* non-zero means transfer in progress */
+    uint32_t otaProgress = 0;
+    const esp_partition_t *otaPartition = NULL;
+} WalterModemBlueCherryState;
 
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem
@@ -2084,9 +2099,9 @@ class WalterModem
         static inline void* _usrGNSSfixHandlerArgs = NULL;
 
         /*
-         * @brief COAP/MQTT state
+         * @brief BlueCherry state
          */
-        static inline WalterMqttBridge mqttBridge;
+        static inline WalterModemBlueCherryState blueCherry;
 
         /**
          * @brief Get a command from the command pool.
@@ -2354,6 +2369,73 @@ class WalterModem
             WalterModemCmd *cmd,
             WalterModemBuffer *rsp);
     
+        /**
+         * @brief Process incoming BlueCherry event
+         *
+         * This function is called when blueCherryDidRing encounters a
+         * BlueCherry management packet, eg for OTA updates.
+         *
+         * @param data The event data.
+         * @param len The length of the data block.
+         *
+         * @return Whether we should emit an error BC event on next sync.
+         */
+        static bool _processBlueCherryEvent(uint8_t *data, uint8_t len);
+
+        /**
+         * @brief Process OTA init event
+         *
+         * This function prepares a OTA update and checks the announced
+         * update image size against the update partition size.
+         *
+         * @param data The event data, being the announced size of the image
+         * @param len The length of the update data.
+         *
+         * @return Whether we should emit an error BC event on next sync,
+         * in case announced size is too large for partition
+         */
+        static bool _processOtaInitializeEvent(uint8_t *data, uint16_t len);
+
+        /**
+         * @brief Process OTA chunk event
+         *
+         * This function accepts a chunk of the OTA update binary image.
+         * If the chunk is empty, the BlueCherry cloud server signals a
+         * cancel of the upload in progress.
+         *
+         * @param data The chunk data
+         * @param len The length of the chunk data
+         *
+         * @return Whether we should emit an error BC event on next sync,
+         * in case size so far exceeds announced size, or if it is an
+         * empty chunk.
+         */
+        static bool _processOtaChunkEvent(uint8_t *data, uint16_t len);
+
+        /**
+         * @brief Write a flash sector to flash, erasing the block
+         * first if on an as of yet uninitialized block
+         *
+         * @param None.
+         *
+         * @return True if succeeded, false if not.
+         */
+        static bool _otaBufferToFlash(void);
+
+        /**
+         * @brief Process OTA finish event
+         *
+         * This function verifies the exact announced size has been
+         * flashed, could verify the optional included SHA256,
+         *
+         * @param None.
+         *
+         * @return Whether we should emit an error BC event on next sync,
+         * in case the size mismatches the announced size, or the optional
+         * included SHA256 digest mismatches the corresponding image.
+         */
+        static bool _processOtaFinishEvent(void);
+
     public:
         /**
          * @brief Initialize the modem.
@@ -2727,28 +2809,31 @@ class WalterModem
                 WalterModemRsp *rsp = NULL);
 
         /**
-         * @brief Initialize the COAP to MQTT bridge.
+         * @brief Initialize BlueCherry COAP bridge.
          * 
-         * This fuction will set the serverName and port, initialize the
-         * accumulated outgoing datagram, initialize the current message
-         * id to 1, the last acknowledged id to 0 and set the state machine
-         * to IDLE.
+         * This fuction will set the serverName and port of the BlueCherry
+         * COAP server, initialize the accumulated outgoing datagram,
+         * initialize the current message id to 1, the last acknowledged id to 0
+         * and set the state machine to IDLE.
          * 
          * @param serverName The name of the server to connect to.
          * @param port The port of the server.
-         * @param clientId Our client ID
+         * @param clientId Our client ID.
+         * @param otaBuffer A user-supplied buffer for OTA updates to flash;
+         * must be 4K = the flash sector size.
          * 
          * @return None.
          */
-        static void initMqttBridge(const char *serverName = "",
-            uint16_t port = 0, uint8_t clientId = 1);
+        static void initBlueCherry(const char *serverName = "",
+            uint16_t port = 0, uint8_t clientId = 1,
+            uint8_t *otaBuffer = NULL);
 
         /**
          * @brief Enqueue a MQTT publish message.
          * 
          * This function will add the message to the accumulated outgoing
-         * datagram, which will -after mqttCommunicate- be sent to the
-         * COAP to MQTT bridge server and published through MQTT.
+         * datagram, which will -after blueCherrySynchronize- be sent to the
+         * BlueCherry cloud server and published through MQTT.
          * 
          * @param topic The topic of the message.
          * @param len The length of the data.
@@ -2756,71 +2841,76 @@ class WalterModem
          * 
          * @return True on success, false on error.
          */
-        static bool mqttPublish(uint8_t topic, uint8_t len, uint8_t *data);
+        static bool blueCherryPublish(uint8_t topic, uint8_t len, uint8_t *data);
 
         /**
          * @brief Send accumulated MQTT messages and request incoming data.
          * 
          * This function will send all accumulated MQTT publish messages to
-         * the MQTT bridge, and ask the server for an acknowledgement and for
-         * the new incoming MQTT messages since the last mqttCommunicate call.
+         * the BlueCherry cloud server, and ask the server for an acknowledgement
+         * and for the new incoming MQTT messages since the last
+         * BlueCherrySynchronize call.
          *
          * The arduino developer will now need to poll for the ACKnowledgement
-         * and the incoming messages using mqttDidRing, before more messages can
+         * and the incoming messages using blueCherryDidRing, before more messages can
          * be published.
          * 
          * Even if nothing was enqueued for publish, this call must frequently
          * be executed if Walter is subscribed to one or more MQTT topics.
          *
+         * The call is also needed to support OTA updates, which come in
+         * as a response to the sync call.
+         *
          * @return True if we have sent the message and are awaiting response,
          * false in the following cases:
-         * - if we are still awaiting a response from a previous mqttCommunicate
+         * - if we are still awaiting a response from a previous blueCherrySynchronize
          *   call (which the arduino program should know already)
          * - if we could not connect to the COAP to MQTT bridge server
          * - if setting the COAP header or sending the COAP data failed
          */
-        static bool mqttCommunicate(void);
+        static bool blueCherrySynchronize(void);
 
         /**
-         * @brief Poll the API for a received MQTT response.
+         * @brief Poll the API for a received BlueCherry response.
          *
          * The call is named DidRing for consistancy with the HTTP, COAP
          * and other polling network calls. It can only be used after a
-         * mqttCommunicate call, and will return the response from the
+         * blueCherrySynchronize call, and will return the response from the
          * server (an ACK for any published messages, and a list of
          * incoming messages for MQTT topics Walter is subscribed to, if any).
          *
          * Only after the (possibly empty) response has been received, or a
          * timeout has been reported, it will be possible to publish more data or
-         * do a new mqttCommunicate call.
+         * do a new blueCherrySynchronize call.
          *
          * Timeout is reported using the nak flag in the response object.
          *
-         * There is also a flag moreDataAvailable through which the server
-         * indicates more incoming MQTT data is available for Walter, but it did
-         * not fit in the single-datagram response, and will be sent with the
-         * next mqttCommunicate call.
-         *
-         * If mqttCommunicate has been called, one may consider this form if
+         * If blueCherrySynchronize has been called, one may consider this form if
          * there is no other work to be done in the mean time:
          *
-         * while(!modem.mqttDidRing(&rsp)) {
+         * bool moreDataAvailable;
+         * while(!modem.blueCherryDidRing(&moreDataAvailable, &rsp)) {
          *   delay(100);
          * }
          *
+         * @param moreDataAvailable This flag will be set true through the
+         * pointer if more incoming MQTT data is available for Walter; it did
+         * not fit in the single-datagram response, and will be sent with the
+         * next blueCherrySynchronize call. False if no more data for now.
          * @param rsp The (optional) response object.
          *
          * @return True if the response/ack was received and is now available
          * in the rsp object, and also if there was a timeout (nak flag will
          * be true in that case). False if we were not expecting data because
-         * mqttCommunicate has not been called, or if we are still waiting for
+         * blueCherrySynchronize has not been called, or if we are still waiting for
          * the data.
          *
          * In practice: true means you can now publish
-         * (optionally) new messages or call mqttCommunicate, and false means
-         * we are still waiting for data and need to call mqttDidRing again later.
+         * (optionally) new messages or call blueCherrySynchronize, and false means
+         * we are still waiting for data and need to call blueCherryDidRing again later
+         * before we can perform a new blueCherrySynchronize cycle.
          */
-        static bool mqttDidRing(WalterModemRsp *rsp);
+        static bool blueCherryDidRing(bool *moreDataAvailable, WalterModemRsp *rsp = NULL);
 
         /**
          * @brief Create a COAP context.
@@ -2829,7 +2919,7 @@ class WalterModem
          * This needs to be done before you can set headers or options or
          * send or receive data.
          * 
-         * @param profileId COAP profile id (0 is used by the mqtt bridge,
+         * @param profileId COAP profile id (0 is used by BlueCherry
          * and should not be used for regular COAP)
          * @param serverName The server name to connect to.
          * @param port The port of the server to connect to.
@@ -2862,7 +2952,7 @@ class WalterModem
          * the context will be automatically closed after the timeout.
          * 
          * @param profileId COAP profile id (0 is not permitted since it is
-         * used by the mqtt bridge)
+         * used by BlueCherry)
          * @param rsp Pointer to a modem response structure to save the result 
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -2895,7 +2985,7 @@ class WalterModem
          * and the token will be set to random values.
          *  
          * @param profileId COAP profile id (1 or 2 - 0 only intended for internal
-         * use by the mqtt bridge)
+         * use by BlueCherry)
          * @param messageId The message id of the next message to send.
          * @param token The token of the next message to send as a string of
          * 16 hex digits for a max token length of 8 bytes, with default
@@ -2949,7 +3039,7 @@ class WalterModem
          * This function will send a COAP message.
          * 
          * @param profileId COAP profile id (1 or 2; 0 should not be used and
-         * is used by the mqtt bridge)
+         * is used by BlueCherry)
          * @param type The type of message (NON, CON, ACK, RST) which implies
          * whether it is a request or response (reqtype).
          * @param methodRsp The method or response code.
@@ -2977,7 +3067,7 @@ class WalterModem
          * @brief Fetch incoming COAP messages, if any
          *
          * @param profileId Profile for which to get incoming data
-         * (0 not allowed because it is used internally for mqtt bridge)
+         * (0 not allowed because it is used internally for BlueCherry)
          * @param targetBuf User buffer to store response in.
          * @param targetBufSize Size of the user buffer, including space for a
          * terminating null byte.

@@ -58,6 +58,10 @@
 #include <Arduino.h>
 #include <condition_variable>
 #include <esp_task_wdt.h>
+#include <esp_ota_ops.h>
+#include <esp_partition.h>
+#include <esp_image_format.h>
+#include <esp_system.h>
 
 /**
  * @brief The RX pin on which modem data is received.
@@ -107,9 +111,9 @@
 #define WALTER_MODEM_MIN_VALID_TIMESTAMP 1672531200
 
 /**
- * @brief Timeout for ACK of outgoing COAP (MQTT bridge) messages, in seconds
+ * @brief Timeout for ACK of outgoing BlueCherry COAP messages, in seconds
  */
-#define WALTER_MODEM_MQTT_COAP_TIMEOUT 15
+#define WALTER_MODEM_BLUECHERRY_COAP_TIMEOUT 15
 
 /**
  * @brief Library debug statements macro, this wraps printf on the serial port.
@@ -628,7 +632,6 @@ void WalterModem::_addATByteToBuffer(char data, bool raw)
      */
     if(_parserData.buf != NULL) {
         _parserData.buf->data[_parserData.buf->size++] = data;
-
     }
 }
 
@@ -1055,32 +1058,31 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
     return WALTER_MODEM_CMD_TIMEOUT_TICKS;
 }
 
-static void coap_received_for_mqtt_bridge(const WalterModemRsp *rsp, void *args)
+static void coap_received_from_bluecherry(const WalterModemRsp *rsp, void *args)
 {
-    WalterMqttBridge *mqttBridge = (WalterMqttBridge *) args;
+    WalterModemBlueCherryState *blueCherry = (WalterModemBlueCherryState *) args;
 
     if(rsp->type != WALTER_MODEM_RSP_DATA_TYPE_COAP) {
         return;
     }
 
     /* silently discard unexpected requests or responses,
-     * to keep the basic mqtt coap bridge API with mqttDidRing simple.
+     * to keep the basic BlueCherry cloud API with blueCherryDidRing simple.
      * users who want full control can manually use coap with profile id 1 or 2.
      */
 
     /* sanity checks: valid message (response) ? */
-    if(mqttBridge->status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE
-            && rsp->data.coapResponse.messageId == mqttBridge->curMessageId
-            && mqttBridge->lastAckedMessageId < mqttBridge->curMessageId
+    if(blueCherry->status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE
+            && rsp->data.coapResponse.messageId == blueCherry->curMessageId
             && rsp->data.coapResponse.sendType == WALTER_MODEM_COAP_SEND_TYPE_ACK
             && (rsp->data.coapResponse.methodRsp
                 == WALTER_MODEM_COAP_SEND_RSP_CODE_VALID 
                 || rsp->data.coapResponse.methodRsp
                 == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE)) {
-        mqttBridge->lastAckedMessageId = rsp->data.coapResponse.messageId;
-        mqttBridge->messageInLen = rsp->data.coapResponse.length;
-        mqttBridge->status = WALTER_MODEM_MQTT_STATUS_RESPONSE_READY;
-        mqttBridge->moreDataAvailable =
+        blueCherry->lastAckedMessageId = rsp->data.coapResponse.messageId;
+        blueCherry->messageInLen = rsp->data.coapResponse.length;
+        blueCherry->status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
+        blueCherry->moreDataAvailable =
             rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE;
     }
 }
@@ -1944,7 +1946,7 @@ void WalterModem::_processQueueRsp(
             uint16_t length = atoi(lengthStr);
 
             if(profileId == 0) {
-                /* profile id 0 is the internal mqtt bridge coap profile */
+                /* profile id 0 is the internal BlueCherry cloud coap profile */
                 WalterModemBuffer *stringsBuffer = _getFreeBuffer();
                 stringsBuffer->size += sprintf((char *) stringsBuffer->data,
                         "AT+SQNCOAPRCV=%s,%s,%s",
@@ -1953,9 +1955,9 @@ void WalterModem::_processQueueRsp(
                     arr((const char *) stringsBuffer->data);
 
                 _addQueueCmd(_cmdArr, "+SQNCOAPRCV: ", NULL,
-                        coap_received_for_mqtt_bridge, &mqttBridge,
+                        coap_received_from_bluecherry, &blueCherry,
                         NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
-                        mqttBridge.messageIn, sizeof(mqttBridge.messageIn),
+                        blueCherry.messageIn, sizeof(blueCherry.messageIn),
                         stringsBuffer);
             } else {
                 /* store ring in ring list for this coap context */
@@ -2024,10 +2026,10 @@ void WalterModem::_processQueueRsp(
             _coapContextSet[profileId].connected = false;
 
             if(profileId == 0) {
-                /* our own coap profile for the mqtt bridge was just closed */
+                /* our own coap profile for BlueCherry was just closed */
 
-                if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE) {
-                    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_TIMED_OUT;
+                if(blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
+                    blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
                 }
             }
         }
@@ -2106,6 +2108,204 @@ after_processing_logic:
     buff->free = true;
 }
 
+bool WalterModem::_processOtaInitializeEvent(uint8_t *data, uint16_t len)
+{
+    if(!blueCherry.otaBuffer || len != sizeof(uint32_t)) {
+        return true;
+    }
+
+    blueCherry.otaSize = *((uint32_t *) data);
+    
+    /* check if there is enough space on the update partition */
+    blueCherry.otaPartition = esp_ota_get_next_update_partition(NULL);
+    if(!blueCherry.otaPartition
+            || blueCherry.otaSize > blueCherry.otaPartition->size
+            || blueCherry.otaSize == 0) {
+        return true;
+    }
+
+    /* initialize buffer and state */
+    blueCherry.otaBufferPos = 0;
+    blueCherry.otaProgress = 0;
+
+    _dbgPrintf("OTA init: size %d <= partition size %d\r\n",
+            blueCherry.otaSize, blueCherry.otaPartition->size);
+
+    return false;
+}
+
+bool WalterModem::_otaBufferToFlash(void)
+{
+    /* first bytes of new firmware must be postponed so
+     * partially written firmware is not bootable just yet
+     */
+    uint8_t skip = 0;
+
+    if(!blueCherry.otaProgress) {
+        /* meanwhile check for the magic byte */
+        if(blueCherry.otaBuffer[0] != ESP_IMAGE_HEADER_MAGIC){
+            _dbgPrintf("OTA chunk: magic header not found\r\n");
+            return false;
+        }
+
+        skip = ENCRYPTED_BLOCK_SIZE;
+        memcpy(blueCherry.otaSkipBuffer, blueCherry.otaBuffer, skip);
+    }
+
+    size_t flashOffset = blueCherry.otaPartition->address + blueCherry.otaProgress;
+
+    // if it's the block boundary, than erase the whole block from here
+    bool blockErase =
+        (blueCherry.otaSize - blueCherry.otaProgress >= SPI_FLASH_BLOCK_SIZE)
+        && (flashOffset % SPI_FLASH_BLOCK_SIZE == 0);
+
+    // sector belong to unaligned partition heading block
+    bool partitionHeadSectors =
+        blueCherry.otaPartition->address % SPI_FLASH_BLOCK_SIZE
+        && flashOffset <
+        (blueCherry.otaPartition->address / SPI_FLASH_BLOCK_SIZE + 1)
+        * SPI_FLASH_BLOCK_SIZE;
+
+    // sector belong to unaligned partition tailing block
+    bool partitionTailSectors =
+        flashOffset >=
+        (blueCherry.otaPartition->address + blueCherry.otaSize)
+        / SPI_FLASH_BLOCK_SIZE
+        * SPI_FLASH_BLOCK_SIZE;
+
+    if (blockErase || partitionHeadSectors || partitionTailSectors) {
+        if(esp_partition_erase_range(blueCherry.otaPartition,
+                    blueCherry.otaProgress,
+                    blockErase ? SPI_FLASH_BLOCK_SIZE : SPI_FLASH_SEC_SIZE)
+                != ESP_OK) {
+            _dbgPrintf("OTA chunk: could not erase partition\r\n");
+            return false;
+        }
+    }
+
+    if(esp_partition_write(blueCherry.otaPartition,
+                blueCherry.otaProgress + skip,
+                (uint32_t *) blueCherry.otaBuffer
+                + skip / sizeof(uint32_t),
+                blueCherry.otaBufferPos - skip) != ESP_OK) {
+        _dbgPrintf("OTA chunk: could not write data to partition\r\n");
+        return false;
+    }
+
+    blueCherry.otaProgress += blueCherry.otaBufferPos;
+    blueCherry.otaBufferPos = 0;
+
+    return true;
+}
+
+bool WalterModem::_processOtaChunkEvent(uint8_t *data, uint16_t len)
+{
+    if(!blueCherry.otaSize
+            || len == 0
+            || blueCherry.otaProgress + len > blueCherry.otaSize) {
+        _dbgPrintf("OTA chunk: cancelled because empty chunk or chunk beyond update size\r\n");
+        return true;
+    }
+
+    size_t left = len;
+
+    while((blueCherry.otaBufferPos + left) > SPI_FLASH_SEC_SIZE) {
+        size_t toBuff = SPI_FLASH_SEC_SIZE - blueCherry.otaBufferPos;
+
+        memcpy(blueCherry.otaBuffer + blueCherry.otaBufferPos,
+                data + (len - left),
+                toBuff);
+        blueCherry.otaBufferPos += toBuff;
+
+        if(!_otaBufferToFlash()) {
+            _dbgPrintf("OTA chunk: failed to write to flash (within loop)\r\n");
+            return true;
+        } else {
+            _dbgPrintf("OTA chunk written to flash; progress = %d / %d\r\n",
+                    blueCherry.otaProgress, blueCherry.otaSize);
+        }
+
+        left -= toBuff;
+    }
+
+    memcpy(blueCherry.otaBuffer + blueCherry.otaBufferPos,
+            data + (len - left),
+            left);
+    blueCherry.otaBufferPos += left;
+
+    if(blueCherry.otaProgress + blueCherry.otaBufferPos == blueCherry.otaSize) {
+        if(!_otaBufferToFlash()){
+            _dbgPrintf("OTA chunk: failed to write to flash (remainder)\r\n");
+            return true;
+        } else {
+            _dbgPrintf("OTA remainder written to flash; progress = %d / %d\r\n",
+                    blueCherry.otaProgress, blueCherry.otaSize);
+        }
+    }
+
+    return false;
+}
+
+bool WalterModem::_processOtaFinishEvent(void)
+{
+    if(!blueCherry.otaSize
+            || blueCherry.otaProgress != blueCherry.otaSize) {
+        return true;
+    }
+
+    /* enable partition: write the stashed first bytes */
+    if(esp_partition_write(blueCherry.otaPartition,
+                0,
+                (uint32_t *) blueCherry.otaSkipBuffer,
+                ENCRYPTED_BLOCK_SIZE) != ESP_OK) {
+        _dbgPrintf("OTA Finish: Could not write start of boot sector to partition\r\n");
+        return true;
+    }
+
+    /* check if partition is bootable */
+    if(esp_partition_read(blueCherry.otaPartition,
+                0,
+                (uint32_t *) blueCherry.otaSkipBuffer,
+                ENCRYPTED_BLOCK_SIZE) != ESP_OK) {
+        _dbgPrintf("OTA Finish: Could not read boot partition\r\n");
+        return true;
+    }
+    if(blueCherry.otaSkipBuffer[0] != ESP_IMAGE_HEADER_MAGIC) {
+        _dbgPrintf("OTA Finish: Magic header is missing on partition\r\n");
+        return true;
+    }
+
+    if(esp_ota_set_boot_partition(blueCherry.otaPartition)) {
+        _dbgPrintf("OTA Finish: Could not set boot partition\r\n");
+        return true;
+    }
+
+    _dbgPrintf("OTA Finish: set boot partition. Booting in new firmware.\r\n");
+    esp_restart();
+
+    return false;
+}
+
+bool WalterModem::_processBlueCherryEvent(uint8_t *data, uint8_t len)
+{
+    switch(data[0]) {
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE:
+            return _processOtaInitializeEvent(data + 1, len - 1);
+
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_CHUNK:
+            return _processOtaChunkEvent(data + 1, len - 1);
+
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_FINISH:
+            return _processOtaFinishEvent();
+
+        default:
+            _dbgPrintf("Error: invalid BlueCherry event type 0x%x from cloud server\r\n", data[0]);
+            return true;
+    }
+
+    return true;
+}
+
 bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
 {
     if(_initialized) {
@@ -2143,9 +2343,7 @@ bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
 
     _queueTask = xTaskCreateStaticPinnedToCore(_queueProcessingTask,
         "queueProcessingTask", WALTER_MODEM_TASK_STACK_SIZE, NULL,
-        tskIDLE_PRIORITY, _queueTaskStack, &_queueTaskBuf, 0);
-
-    initMqttBridge();
+        tskIDLE_PRIORITY, _queueTaskStack, &_queueTaskBuf, 1);
 
     if(!reset()) {
         return false;
@@ -2210,11 +2408,12 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     _networkSelMode = WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC;
     _socket = NULL;
     _pdpCtx = NULL;
-    memset(_pdpCtxSet, sizeof(_pdpCtxSet), 0);
-    memset(_socketSet, sizeof(_socketSet), 0);
-    memset(_coapContextSet, sizeof(_coapContextSet), 0);
-    memset(_httpContextSet, sizeof(_httpContextSet), 0);
-    memset(&_operator, sizeof(_operator), 0);
+    _simPIN = NULL;
+    memset(_pdpCtxSet, 0, sizeof(_pdpCtxSet));
+    memset(_socketSet, 0, sizeof(_socketSet));
+    memset(_coapContextSet, 0, sizeof(_coapContextSet));
+    memset(_httpContextSet, 0, sizeof(_httpContextSet));
+    memset(&_operator, 0, sizeof(_operator));
 
     _returnAfterReply();
 }
@@ -2553,133 +2752,180 @@ bool WalterModem::httpDidRing(
     _returnAfterReply();
 }
 
-void WalterModem::initMqttBridge(const char *serverName, uint16_t port,
-        uint8_t clientId)
+void WalterModem::initBlueCherry(const char *serverName, uint16_t port,
+        uint8_t clientId, uint8_t *otaBuffer)
 {
-    mqttBridge.clientId = clientId;
-    mqttBridge.port = port;
-    strncpy(mqttBridge.serverName, serverName == NULL ? "" : serverName,
+    blueCherry.clientId = clientId;
+    blueCherry.port = port;
+    strncpy(blueCherry.serverName, serverName == NULL ? "" : serverName,
         WALTER_MODEM_HOSTNAME_MAX_SIZE);
 
     /* FIXME: later client id will be removed (also in the bridge server) */
-    mqttBridge.messageOutLen = 1;
-    mqttBridge.messageOut[0] = mqttBridge.clientId;
-    mqttBridge.curMessageId = 1;
-    mqttBridge.lastAckedMessageId = 0;
-    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_IDLE;
-    mqttBridge.moreDataAvailable = false;
+    blueCherry.messageOutLen = 1;
+    blueCherry.messageOut[0] = blueCherry.clientId;
+    blueCherry.curMessageId = 0x1;
+    blueCherry.lastAckedMessageId = 0x0;
+    blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+    blueCherry.moreDataAvailable = false;
+
+    blueCherry.emitErrorEvent = false;
+    blueCherry.otaSize = 0;
+    blueCherry.otaBuffer = otaBuffer;
 }
 
-bool WalterModem::mqttPublish(uint8_t topic, uint8_t len, uint8_t *data)
+bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t *data)
 {
-    if(mqttBridge.status != WALTER_MODEM_MQTT_STATUS_IDLE) {
+    if(blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE) {
         return false;
     }
 
-    if(mqttBridge.messageOutLen + len >= WALTER_MODEM_MQTT_MAX_MESSAGE_LEN) {
+    if(blueCherry.messageOutLen + len >= WALTER_MODEM_COAP_MAX_OUTGOING_MESSAGE_LEN) {
         return false;
     }
 
-    mqttBridge.messageOut[mqttBridge.messageOutLen] = topic;
-    mqttBridge.messageOut[mqttBridge.messageOutLen + 1] = len;
-    memcpy(mqttBridge.messageOut + mqttBridge.messageOutLen + 2, data, len);
+    blueCherry.messageOut[blueCherry.messageOutLen] = topic;
+    blueCherry.messageOut[blueCherry.messageOutLen + 1] = len;
+    memcpy(blueCherry.messageOut + blueCherry.messageOutLen + 2, data, len);
 
-    mqttBridge.messageOutLen += len + 2;
+    blueCherry.messageOutLen += len + 2;
 
     return true;
 }
 
-bool WalterModem::mqttCommunicate(void)
+bool WalterModem::blueCherrySynchronize(void)
 {
-    if(mqttBridge.status != WALTER_MODEM_MQTT_STATUS_IDLE) {
+    if(blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE) {
         return false;
     }
 
-    if(!coapCreateContext(0, mqttBridge.serverName, mqttBridge.port)) {
+    if(!coapCreateContext(0, blueCherry.serverName, blueCherry.port)) {
         return false;
     }
 
-    if(!coapSetHeader(0, mqttBridge.curMessageId)) {
+    /* we do not really want to use a token, but the GoLang library at
+     * the cloud endpoint does not support messages without token
+     * unfortunately
+     */
+    if(!coapSetHeader(0, blueCherry.curMessageId, "00")) {
         return false;
     }
 
     /* determine nr of messages to recup if we missed any */
-    uint8_t nrMissed = mqttBridge.curMessageId
-        - mqttBridge.lastAckedMessageId
+    int32_t lastAckedMessageId = blueCherry.lastAckedMessageId;
+    if(lastAckedMessageId > blueCherry.curMessageId) {
+        lastAckedMessageId -= 0xffff;
+    }
+    uint8_t nrMissed = blueCherry.curMessageId
+        - lastAckedMessageId
         - 1;
 
     if(!coapSendData(0, WALTER_MODEM_COAP_SEND_TYPE_CON,
         (WalterModemCoapSendMethodRsp) nrMissed, /* WALTER_MODEM_COAP_SEND_METHOD_NONE */
-        mqttBridge.messageOutLen, mqttBridge.messageOut)) {
+        blueCherry.messageOutLen, blueCherry.messageOut)) {
         return false;
     }
 
-    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE;
-    mqttBridge.lastTransmissionTime = time(NULL);
+    blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
+    blueCherry.lastTransmissionTime = time(NULL);
 
     return true;
 }
 
-bool WalterModem::mqttDidRing(WalterModemRsp *rsp)
+bool WalterModem::blueCherryDidRing(bool *moreDataAvailable, WalterModemRsp *rsp)
 {
     walterModemCb cb = NULL;        /* dummies so we can use _returnState */
     void *args = NULL;
     uint16_t curOffset = 0;
 
+    *moreDataAvailable = false;
+
     if(rsp) {
-        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
-        rsp->data.mqttData.nak = false;
-        rsp->data.mqttData.moreDataAvailable = false;
+        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
+        rsp->data.blueCherry.nak = false;
+        rsp->data.blueCherry.messageCount = 0;
     }
 
-    if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_IDLE) {
+    if(blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_IDLE) {
         _returnState(WALTER_MODEM_STATE_NOT_EXPECTING_RING);
     }
 
-    if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_AWAITING_RESPONSE) {
-        if(time(NULL) - mqttBridge.lastTransmissionTime
-                > WALTER_MODEM_MQTT_COAP_TIMEOUT) {
-            mqttBridge.status = WALTER_MODEM_MQTT_STATUS_TIMED_OUT;
+    if(blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
+        if(time(NULL) - blueCherry.lastTransmissionTime
+                > WALTER_MODEM_BLUECHERRY_COAP_TIMEOUT) {
+            blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
         } else {
             _returnState(WALTER_MODEM_STATE_AWAITING_RESPONSE);
         }
     }
 
-    /* so status must be WALTER_MODEM_MQTT_STATUS_RESPONSE_READY
-     * or WALTER_MODEM_MQTT_STATUS_TIMED_OUT
+    /* so status must be WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY
+     * or WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT
      */
-    if(rsp) {
-        rsp->data.mqttData.messageCount = 0;
 
-        /* timeout response (which is also a response) or valid response? */
-        if(mqttBridge.status == WALTER_MODEM_MQTT_STATUS_TIMED_OUT) {
-            rsp->data.mqttData.nak = true;
-        } else {
-            rsp->data.mqttData.moreDataAvailable = mqttBridge.moreDataAvailable;
+    if(blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+        /* indicate the error condition in the (optional) response object */
 
-            while(curOffset < mqttBridge.messageInLen) {
-                uint8_t topic = mqttBridge.messageIn[curOffset];
-                curOffset++;
-                uint8_t dataLen = mqttBridge.messageIn[curOffset];
-                curOffset++;
+        if(rsp) {
+            rsp->data.blueCherry.nak = true;
+        }
+    } else {
+        /* process response */
 
-                rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].topic = topic;
-                rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].dataSize = dataLen;
-                rsp->data.mqttData.messages[rsp->data.mqttData.messageCount].data =
-                    mqttBridge.messageIn + curOffset;
+        /* copy more available flag */
+        *moreDataAvailable = blueCherry.moreDataAvailable;
 
-                curOffset += dataLen;
+        /* BlueCherry cloud ack means our last error line can be cleared */
+        blueCherry.emitErrorEvent = false;
 
-                rsp->data.mqttData.messageCount++;
+        while(curOffset < blueCherry.messageInLen) {
+            uint8_t topic = blueCherry.messageIn[curOffset];
+            curOffset++;
+            uint8_t dataLen = blueCherry.messageIn[curOffset];
+            curOffset++;
+
+            /* topic 0 is reserved for BlueCherry events, which are also visible
+             * to walter as mqtt messages on topic id 0
+             */
+            if(topic == 0) {
+                /* by definition we want to urge the arduino sketch developer
+                 * to soon again synchronize if there are BC OTA events
+                 */
+                *moreDataAvailable = true;
+
+                if(_processBlueCherryEvent(blueCherry.messageIn + curOffset, dataLen)) {
+                    blueCherry.emitErrorEvent = true;
+                    blueCherry.otaSize = 0;
+                }
             }
+
+            if(rsp) {
+                rsp->data.blueCherry.messages[rsp->data.blueCherry.messageCount].topic = topic;
+                rsp->data.blueCherry.messages[rsp->data.blueCherry.messageCount].dataSize = dataLen;
+                rsp->data.blueCherry.messages[rsp->data.blueCherry.messageCount].data =
+                    blueCherry.messageIn + curOffset;
+                rsp->data.blueCherry.messageCount++;
+            }
+
+            curOffset += dataLen;
         }
     }
 
-    mqttBridge.status = WALTER_MODEM_MQTT_STATUS_IDLE;
-    mqttBridge.curMessageId++;
-    mqttBridge.messageOutLen = 1;
+    blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+    blueCherry.curMessageId++;
+    if(blueCherry.curMessageId == 0) {
+        /* on wrap around, skip msg id 0 which we use as a special/error value */
+        blueCherry.curMessageId++;
+    }
+    blueCherry.messageOutLen = 1;
     /* FIXME: client id will become obsolete */
-    mqttBridge.messageOut[0] = mqttBridge.clientId;
+    blueCherry.messageOut[0] = blueCherry.clientId;
+
+    if(blueCherry.emitErrorEvent) {
+        uint8_t blueCherryErrorEventCode =
+            WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR;
+
+        blueCherryPublish(0, 1, &blueCherryErrorEventCode);
+    }
 
     _returnState(WALTER_MODEM_STATE_OK);
 }
