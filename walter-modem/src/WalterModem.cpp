@@ -48,20 +48,22 @@
 
 #include "WalterModem.h"
 
-#include <mutex>
 #include <ctime>
-#include <bitset>
-#include <cstdint>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef CORE_DEBUG_LEVEL
 #include <Arduino.h>
-#include <condition_variable>
+#endif
 #include <esp_task_wdt.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 #include <esp_image_format.h>
 #include <esp_system.h>
+#include <esp_sleep.h>
+#include <esp_log.h>
+#include <driver/gpio.h>
+#include <driver/uart.h>
 
 /**
  * @brief The RX pin on which modem data is received.
@@ -116,18 +118,14 @@
 #define WALTER_MODEM_BLUECHERRY_COAP_TIMEOUT 15
 
 /**
- * @brief Library debug statements macro, this wraps printf on the serial port.
- */
-#if WALTER_MODEM_DEBUG_ENABLED == 1
-    #define _dbgPrintf(...) Serial.printf(__VA_ARGS__)
-#else
-    #define _dbgPrintf(...)
-#endif
-
-/**
  * @brief The length of a string literal at compile time.
  */
 #define _strLitLen(str) (sizeof(str) - 1)
+
+/**
+ * @brief uart buffer size
+ */
+#define UART_BUF_SIZE 128
 
 /**
  * @brief Check if a WalterModemBuffer starts with a given string literal.
@@ -258,18 +256,163 @@ return rspResult == WALTER_MODEM_STATE_OK;
 /**
  * @brief Transmit all elements of a command.
  */
+static bool endOfLine;
+#ifdef CORE_DEBUG_LEVEL
 #define _transmitCmd(type, atCmd) { \
-    _dbgPrintf("TX: "); \
+    ESP_LOGD((endOfLine = false, "WalterModem"), \
+            "TX: %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", \
+            (!endOfLine && atCmd[0]) ? atCmd[0] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[1]) ? atCmd[1] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[2]) ? atCmd[2] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[3]) ? atCmd[3] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[4]) ? atCmd[4] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[5]) ? atCmd[5] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[6]) ? atCmd[6] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[7]) ? atCmd[7] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[8]) ? atCmd[8] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[9]) ? atCmd[9] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[10]) ? atCmd[10] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[11]) ? atCmd[11] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[12]) ? atCmd[12] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[13]) ? atCmd[13] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[14]) ? atCmd[14] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[15]) ? atCmd[15] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[16]) ? atCmd[16] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[17]) ? atCmd[17] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[18]) ? atCmd[18] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[19]) ? atCmd[19] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[20]) ? atCmd[20] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[21]) ? atCmd[21] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[22]) ? atCmd[22] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[23]) ? atCmd[23] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[24]) ? atCmd[24] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[25]) ? atCmd[25] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[26]) ? atCmd[26] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[27]) ? atCmd[27] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[28]) ? atCmd[28] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[29]) ? atCmd[29] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[30]) ? atCmd[30] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[31]) ? atCmd[31] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[32]) ? atCmd[32] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[33]) ? atCmd[33] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[34]) ? atCmd[34] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[35]) ? atCmd[35] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[36]) ? atCmd[36] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[37]) ? atCmd[37] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[38]) ? atCmd[38] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[39]) ? atCmd[39] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[40]) ? atCmd[40] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[41]) ? atCmd[41] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[42]) ? atCmd[42] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[43]) ? atCmd[43] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[44]) ? atCmd[44] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[45]) ? atCmd[45] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[46]) ? atCmd[46] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[47]) ? atCmd[47] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[48]) ? atCmd[48] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[49]) ? atCmd[49] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[50]) ? atCmd[50] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[51]) ? atCmd[51] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[52]) ? atCmd[52] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[53]) ? atCmd[53] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[54]) ? atCmd[54] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[55]) ? atCmd[55] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[56]) ? atCmd[56] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[57]) ? atCmd[57] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[58]) ? atCmd[58] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[59]) ? atCmd[59] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[60]) ? atCmd[60] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[61]) ? atCmd[61] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[62]) ? atCmd[62] : (endOfLine = true, "")); \
     for(int i = 0; i < WALTER_MODEM_COMMAND_MAX_ELEMS; ++i) { \
         if(atCmd[i] == NULL) { \
             break; \
         } \
         _uart->write(atCmd[i]); \
-        _dbgPrintf("%s", atCmd[i]); \
     } \
     _uart->write(type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT ? "\n" : "\r\n"); \
-    _dbgPrintf("\r\n"); \
 }
+#else
+#define _transmitCmd(type, atCmd) { \
+    ESP_LOGD((endOfLine = false, "WalterModem"), \
+            "TX: %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", \
+            (!endOfLine && atCmd[0]) ? atCmd[0] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[1]) ? atCmd[1] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[2]) ? atCmd[2] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[3]) ? atCmd[3] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[4]) ? atCmd[4] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[5]) ? atCmd[5] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[6]) ? atCmd[6] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[7]) ? atCmd[7] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[8]) ? atCmd[8] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[9]) ? atCmd[9] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[10]) ? atCmd[10] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[11]) ? atCmd[11] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[12]) ? atCmd[12] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[13]) ? atCmd[13] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[14]) ? atCmd[14] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[15]) ? atCmd[15] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[16]) ? atCmd[16] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[17]) ? atCmd[17] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[18]) ? atCmd[18] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[19]) ? atCmd[19] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[20]) ? atCmd[20] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[21]) ? atCmd[21] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[22]) ? atCmd[22] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[23]) ? atCmd[23] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[24]) ? atCmd[24] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[25]) ? atCmd[25] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[26]) ? atCmd[26] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[27]) ? atCmd[27] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[28]) ? atCmd[28] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[29]) ? atCmd[29] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[30]) ? atCmd[30] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[31]) ? atCmd[31] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[32]) ? atCmd[32] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[33]) ? atCmd[33] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[34]) ? atCmd[34] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[35]) ? atCmd[35] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[36]) ? atCmd[36] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[37]) ? atCmd[37] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[38]) ? atCmd[38] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[39]) ? atCmd[39] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[40]) ? atCmd[40] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[41]) ? atCmd[41] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[42]) ? atCmd[42] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[43]) ? atCmd[43] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[44]) ? atCmd[44] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[45]) ? atCmd[45] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[46]) ? atCmd[46] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[47]) ? atCmd[47] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[48]) ? atCmd[48] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[49]) ? atCmd[49] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[50]) ? atCmd[50] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[51]) ? atCmd[51] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[52]) ? atCmd[52] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[53]) ? atCmd[53] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[54]) ? atCmd[54] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[55]) ? atCmd[55] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[56]) ? atCmd[56] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[57]) ? atCmd[57] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[58]) ? atCmd[58] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[59]) ? atCmd[59] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[60]) ? atCmd[60] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[61]) ? atCmd[61] : (endOfLine = true, ""), \
+            (!endOfLine && atCmd[62]) ? atCmd[62] : (endOfLine = true, "")); \
+    for(int i = 0; i < WALTER_MODEM_COMMAND_MAX_ELEMS; ++i) { \
+        if(atCmd[i] == NULL) { \
+            break; \
+        } \
+        uart_write_bytes(_uartNo, atCmd[i], strlen(atCmd[i])); \
+    } \
+    if(type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT) \
+        uart_write_bytes(_uartNo, "\n", 1); \
+    else \
+        uart_write_bytes(_uartNo, "\r\n", 2); \
+}
+#endif
+
+RTC_DATA_ATTR WalterModemPDPContext _pdpCtxSetRTC[WALTER_MODEM_MAX_PDP_CTXTS] = {};
 
 /**
  * @brief Convert a digit to a string literal.
@@ -359,32 +502,6 @@ static const char* _intToStrDigit(int num, int pos)
     }
     
     return _digitStr(digit);
-}
-
-/**
- * @brief Convert a radio access technology to a string.
- * 
- * This function will convert a radio access technology into a string that can
- * be used in AT commands.
- * 
- * @param rat The radio access technology to convert.
- * 
- * @return The resulting string literal.
- */
-static const char* _ratStr(WalterModemRAT rat)
-{
-    switch(rat) {
-        case WALTER_MODEM_RAT_NBIOT:
-            return "NBIOT";
-        
-        case WALTER_MODEM_RAT_LTEM:
-            return "CatM";
-
-        case WALTER_MODEM_RAT_AUTO:
-            return "AUTO"; 
-    }
-
-    return "";
 }
 
 /**
@@ -548,6 +665,26 @@ void WalterModem::_pdpContextRelease(WalterModemPDPContext *ctx)
     ctx->state = WALTER_MODEM_PDP_CONTEXT_STATE_FREE;
 }
 
+void WalterModem::_saveRTCPdpContextSet(WalterModemPDPContext *_pdpCtxSetRTC)
+{
+    for(int i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; ++i) {
+        _pdpCtxSetRTC[i] = _pdpCtxSet[i];
+    }
+}
+
+void WalterModem::_loadRTCPdpContextSet(WalterModemPDPContext *_pdpCtxSetRTC)
+{
+    if(_pdpCtxSetRTC == NULL){
+        return;
+    }
+
+    for(int i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; ++i) {
+        _pdpCtxSet[i] = _pdpCtxSetRTC[i];
+    }
+
+    _pdpCtx = _pdpCtxSet;
+}
+
 WalterModemSocket* WalterModem::_socketReserve()
 {
     WalterModemSocket *sock = NULL;
@@ -637,7 +774,7 @@ void WalterModem::_addATByteToBuffer(char data, bool raw)
 
 uint16_t WalterModem::_extractRawBufferChunkSize()
 {
-    if(!_parserData.buf != NULL || !_parserData.buf->size) {
+    if(_parserData.buf == NULL || !_parserData.buf->size) {
         return 0;
     }
 
@@ -659,10 +796,8 @@ uint16_t WalterModem::_extractRawBufferChunkSize()
             && _parserData.buf->data[11] == ':'
             && _parserData.buf->data[12] == ' ') {
         uint8_t nrCommasSeen = 0;
-        register short i;
-        for(i = _strLitLen("+SQNCOAPRCV: ");
-                i < _parserData.buf->size && nrCommasSeen < 6;
-                i++) {
+        short i = _strLitLen("+SQNCOAPRCV: ");
+        for(; i < _parserData.buf->size && nrCommasSeen < 6; i++) {
             if(_parserData.buf->data[i] == ',') {
                 nrCommasSeen++;
             }
@@ -708,11 +843,23 @@ void WalterModem::_queueRxBuffer()
 }
 
 //TODO: check if the modem response is not longer than the buffer size
-void WalterModem::_handleRxData()
+#ifdef CORE_DEBUG_LEVEL
+void WalterModem::_handleRxData(void)
 {
-    int uartBufSize = _uart->available();
-    for(int i = 0; i < uartBufSize; ++i) {
-        char data = _uart->read();
+    static char incomingBuf[UART_BUF_SIZE];
+
+    int uartBufLen = _uart->available();
+    if(uartBufLen > UART_BUF_SIZE) {
+        uartBufLen = UART_BUF_SIZE;
+    }
+    if(!uartBufLen) {
+        return;
+    }
+
+    uartBufLen = _uart->readBytes(incomingBuf, uartBufLen);
+
+    for(size_t i = 0; i < uartBufLen; ++i) {
+        char data = incomingBuf[i];
         
         switch (_parserData.state) {
         case WALTER_MODEM_RSP_PARSER_START_CR:
@@ -833,6 +980,154 @@ void WalterModem::_handleRxData()
         }
     }
 }
+#else
+void WalterModem::_handleRxData(void *params)
+{
+    size_t uartBufLen;
+    static char incomingBuf[UART_BUF_SIZE];
+
+    /* init watchdog for uart rx task on ESP-IDF */
+    if(_watchdogTimeout) {
+        esp_task_wdt_add(NULL);
+    }
+
+    for(;;) {
+        tickleWatchdog();
+
+        uart_get_buffered_data_len(_uartNo, (size_t *) &uartBufLen);
+        if(uartBufLen > UART_BUF_SIZE) {
+            uartBufLen = UART_BUF_SIZE;
+        }
+        if(!uartBufLen) {
+            /* if nothing available, yield by waiting for 1 new byte */
+            uartBufLen = 1;
+        }
+        uartBufLen = uart_read_bytes(_uartNo, incomingBuf, uartBufLen,
+                WALTER_MODEM_CMD_TIMEOUT_TICKS);
+        for(size_t idxNow = 0; idxNow < uartBufLen; idxNow++) {
+            char data = incomingBuf[idxNow];
+
+            switch (_parserData.state) {
+            case WALTER_MODEM_RSP_PARSER_START_CR:
+                if(data == '\r') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_START_LF;
+                } else if(data == '+') {
+                    /* This is the start of a new line in a multiline response */
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                    _addATByteToBuffer(data, false);
+                }
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_START_LF:
+                if(data == '\n') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                }
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_DATA:
+                if(data == '>') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_PROMPT;
+                } else if(data == '<') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_HTTP_START1;
+                }
+                _addATByteToBuffer(data, false);
+                break;
+       
+            case WALTER_MODEM_RSP_PARSER_DATA_PROMPT:
+                _addATByteToBuffer(data, false);
+                if(data == ' ') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
+                    _queueRxBuffer();
+                } else if(data == '>') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP;
+                } else {
+                    /* state might have changed after detecting end \r */
+                    if(_parserData.state == WALTER_MODEM_RSP_PARSER_DATA_PROMPT) {
+                        _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                    }
+                }
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP:
+                _addATByteToBuffer(data, false);
+                if(data == '>') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
+                    _queueRxBuffer();
+                } else {
+                    /* state might have changed after detecting end \r */
+                    if(_parserData.state == WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP) {
+                        _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                    }
+                }
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_DATA_HTTP_START1:
+                if(data == '<') {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_HTTP_START2;
+                } else {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                }
+                _addATByteToBuffer(data, false);
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_DATA_HTTP_START2:
+                if(data == '<'
+                        && _httpCurrentProfile < WALTER_MODEM_MAX_HTTP_PROFILES) {
+                    /* FIXME:
+                     * - modem might block longer than cmd timeout,
+                     *   will lead to retry, error etc - fix properly
+                     * - no buffer size checking!
+                     */
+                    _parserData.rawChunkSize =
+                        _httpContextSet[_httpCurrentProfile].contentLength
+                        + _strLitLen("\r\nOK\r\n");
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
+                } else {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                }
+                _addATByteToBuffer(data, false);
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_END_LF:
+                if(data == '\n') {
+                    uint16_t chunkSize = _extractRawBufferChunkSize();
+                    if(chunkSize) {
+                        _parserData.rawChunkSize = chunkSize;
+                        _parserData.buf->data[_parserData.buf->size++] = '\r';
+                        _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
+                    } else {
+                        _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
+                        _queueRxBuffer();
+                    }
+                } else {
+                    /* only now we know the \r was thrown away for no good reason */
+                    _parserData.buf->data[_parserData.buf->size++] = '\r';
+
+                    /* next byte gets the same treatment; since we really are
+                     * back in semi DATA state, as we now know
+                     * (but > will not lead to data prompt mode)
+                     */
+                    _addATByteToBuffer(data, false);
+                    if(data != '\r') {
+                        _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
+                    }
+                }
+                break;
+
+            case WALTER_MODEM_RSP_PARSER_RAW:
+                _addATByteToBuffer(data, true);
+                _parserData.rawChunkSize--;
+
+                if(_parserData.rawChunkSize == 0) {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
+                    _queueRxBuffer();
+                }
+                break;
+            }
+        }
+    }
+}
+#endif
 
 void WalterModem::_queueProcessingTask(void *args)
 {
@@ -953,8 +1248,7 @@ WalterModemCmd* WalterModem::_addQueueCmd(
     cmd->attempt = 0;
     cmd->attemptStart = 0;
     cmd->stringsBuffer = stringsBuffer;
-
-    memset(cmd->rsp, 0, sizeof(WalterModemRsp));
+    *(cmd->rsp) = {};
 
     WalterModemTaskQueueItem qItem = {};
     qItem.cmd = cmd;
@@ -1091,7 +1385,7 @@ void WalterModem::_processQueueRsp(
     WalterModemCmd *cmd,
     WalterModemBuffer *buff)
 {
-    _dbgPrintf("RX: %.*s\r\n", buff->size, buff->data);
+    ESP_LOGD("WalterModem", "RX: %.*s", buff->size, buff->data);
 
     WalterModemState result = WALTER_MODEM_STATE_OK;
 
@@ -1107,7 +1401,11 @@ void WalterModem::_processQueueRsp(
            cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT &&
            cmd->data != NULL)
         {
+#ifdef CORE_DEBUG_LEVEL
             _uart->write(cmd->data, cmd->dataSize);
+#else
+            uart_write_bytes(_uartNo, cmd->data, cmd->dataSize);
+#endif
         }
     }
     else if(_buffStartsWith(buff, "ERROR"))
@@ -1305,6 +1603,7 @@ void WalterModem::_processQueueRsp(
     {
         const char *rspStr = _buffStr(buff);
         int rat = atoi(rspStr + _strLitLen("+SQNMODEACTIVE: "));
+        _ratType = (WalterModemRAT) (rat - 1);
 
         if(cmd == NULL) {
             buff->free = true;
@@ -1363,7 +1662,6 @@ void WalterModem::_processQueueRsp(
                 continue;
             }
 
-            data[i] == 0;
             int band = atoi((const char *) data + start);
             start = i + 1;
 
@@ -1661,17 +1959,14 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         char *payload = strchr(rspStr, '\r');
         if(payload) payload++;
-        uint16_t payloadSize = payload
-            ? buff->size - (payload - rspStr)
-            : 0;
         char *commaPos = strchr(rspStr, ',');
         char *start = (char *) rspStr + _strLitLen("+SQNCOAPRCV: ");
 
         uint8_t profileId = 0;
         uint16_t messageId = 0;
-        uint8_t reqRsp;
-        WalterModemCoapSendType sendType;
-        uint8_t reqRspCodeRaw;
+        //uint8_t reqRsp;
+        WalterModemCoapSendType sendType = WALTER_MODEM_COAP_SEND_TYPE_CON;
+        uint8_t reqRspCodeRaw = 0;
 
         if(commaPos) {
             /* got prof_id */
@@ -1699,7 +1994,7 @@ void WalterModem::_processQueueRsp(
         if(commaPos) {
             /* got req_resp */
             *commaPos = '\0';
-            reqRsp = atoi(start);
+            //reqRsp = atoi(start);
             start = ++commaPos;
             commaPos = strchr(commaPos, ',');
         }
@@ -1813,9 +2108,10 @@ void WalterModem::_processQueueRsp(
         char *commaPos = strchr(rspStr, ',');
         char *start = (char *) rspStr + _strLitLen("+SQNHTTPRING: ");
 
-        uint8_t profileId, httpStatus;
-        char *contentType;
-        uint16_t contentLength;
+        uint8_t profileId = 0;
+        uint8_t httpStatus = 0;
+        char *contentType = NULL;
+        uint16_t contentLength = 0;
 
         if(commaPos) {
             /* got prof_id */
@@ -1887,8 +2183,12 @@ void WalterModem::_processQueueRsp(
         char *commaPos = strchr(rspStr, ',');
         char *start = (char *) rspStr + _strLitLen("+SQNCOAPRING: ");
 
-        char *profileIdStr, *messageIdStr, *reqRspStr, *sendTypeStr;
-        char *reqRspCodeRawStr, *lengthStr;
+        //char *profileIdStr, *messageIdStr, *reqRspStr, *sendTypeStr;
+        char *profileIdStr = NULL;
+        char *messageIdStr = NULL;
+        char *sendTypeStr = NULL;
+        char *reqRspCodeRawStr = NULL;
+        char *lengthStr = NULL;
 
         if(commaPos) {
             /* got prof_id */
@@ -1917,7 +2217,7 @@ void WalterModem::_processQueueRsp(
         if(commaPos) {
             /* got req_resp */
             *commaPos = '\0';
-            reqRspStr = start;
+            //reqRspStr = start;
             start = ++commaPos;
             commaPos = strchr(commaPos, ',');
         }
@@ -1939,7 +2239,7 @@ void WalterModem::_processQueueRsp(
             /* convert parameters to int */
             uint8_t profileId = atoi(profileIdStr);
             uint16_t messageId = atoi(messageIdStr);
-            uint8_t reqRsp = atoi(reqRspStr);   /* redundant with sendType */
+            //uint8_t reqRsp = atoi(reqRspStr);   /* redundant with sendType */
             WalterModemCoapSendType sendType =
                 (WalterModemCoapSendType) atoi(sendTypeStr);
             uint8_t reqRspCodeRaw = atoi(reqRspCodeRawStr);
@@ -1947,18 +2247,20 @@ void WalterModem::_processQueueRsp(
 
             if(profileId == 0) {
                 /* profile id 0 is the internal BlueCherry cloud coap profile */
-                WalterModemBuffer *stringsBuffer = _getFreeBuffer();
-                stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-                        "AT+SQNCOAPRCV=%s,%s,%s",
-                        profileIdStr, messageIdStr, lengthStr);
-                const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] =
-                    arr((const char *) stringsBuffer->data);
+                if(blueCherry.lastAckedMessageId != messageId) {
+                    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+                    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                            "AT+SQNCOAPRCV=%s,%s,%s",
+                            profileIdStr, messageIdStr, lengthStr);
+                    const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] =
+                        arr((const char *) stringsBuffer->data);
 
-                _addQueueCmd(_cmdArr, "+SQNCOAPRCV: ", NULL,
-                        coap_received_from_bluecherry, &blueCherry,
-                        NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
-                        blueCherry.messageIn, sizeof(blueCherry.messageIn),
-                        stringsBuffer);
+                    _addQueueCmd(_cmdArr, "+SQNCOAPRCV: ", NULL,
+                            coap_received_from_bluecherry, &blueCherry,
+                            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
+                            blueCherry.messageIn, sizeof(blueCherry.messageIn),
+                            stringsBuffer);
+                }
             } else {
                 /* store ring in ring list for this coap context */
                 uint8_t ringIdx;
@@ -2121,6 +2423,8 @@ bool WalterModem::_processOtaInitializeEvent(uint8_t *data, uint16_t len)
     if(!blueCherry.otaPartition
             || blueCherry.otaSize > blueCherry.otaPartition->size
             || blueCherry.otaSize == 0) {
+        ESP_LOGD("WalterModem", "OTA init: no OTA partition or size 0 or %lu > %lu",
+                blueCherry.otaSize, blueCherry.otaPartition->size);
         return true;
     }
 
@@ -2128,7 +2432,7 @@ bool WalterModem::_processOtaInitializeEvent(uint8_t *data, uint16_t len)
     blueCherry.otaBufferPos = 0;
     blueCherry.otaProgress = 0;
 
-    _dbgPrintf("OTA init: size %d <= partition size %d\r\n",
+    ESP_LOGD("WalterModem", "OTA init: size %lu <= partition size %lu",
             blueCherry.otaSize, blueCherry.otaPartition->size);
 
     return false;
@@ -2144,7 +2448,7 @@ bool WalterModem::_otaBufferToFlash(void)
     if(!blueCherry.otaProgress) {
         /* meanwhile check for the magic byte */
         if(blueCherry.otaBuffer[0] != ESP_IMAGE_HEADER_MAGIC){
-            _dbgPrintf("OTA chunk: magic header not found\r\n");
+            ESP_LOGD("WalterModem", "OTA chunk: magic header not found");
             return false;
         }
 
@@ -2178,7 +2482,7 @@ bool WalterModem::_otaBufferToFlash(void)
                     blueCherry.otaProgress,
                     blockErase ? SPI_FLASH_BLOCK_SIZE : SPI_FLASH_SEC_SIZE)
                 != ESP_OK) {
-            _dbgPrintf("OTA chunk: could not erase partition\r\n");
+            ESP_LOGD("WalterModem", "OTA chunk: could not erase partition");
             return false;
         }
     }
@@ -2188,7 +2492,7 @@ bool WalterModem::_otaBufferToFlash(void)
                 (uint32_t *) blueCherry.otaBuffer
                 + skip / sizeof(uint32_t),
                 blueCherry.otaBufferPos - skip) != ESP_OK) {
-        _dbgPrintf("OTA chunk: could not write data to partition\r\n");
+        ESP_LOGD("WalterModem", "OTA chunk: could not write data to partition");
         return false;
     }
 
@@ -2203,7 +2507,8 @@ bool WalterModem::_processOtaChunkEvent(uint8_t *data, uint16_t len)
     if(!blueCherry.otaSize
             || len == 0
             || blueCherry.otaProgress + len > blueCherry.otaSize) {
-        _dbgPrintf("OTA chunk: cancelled because empty chunk or chunk beyond update size\r\n");
+        ESP_LOGD("WalterModem",
+                "OTA chunk: cancelled because empty chunk or chunk beyond update size");
         return true;
     }
 
@@ -2218,10 +2523,10 @@ bool WalterModem::_processOtaChunkEvent(uint8_t *data, uint16_t len)
         blueCherry.otaBufferPos += toBuff;
 
         if(!_otaBufferToFlash()) {
-            _dbgPrintf("OTA chunk: failed to write to flash (within loop)\r\n");
+            ESP_LOGD("WalterModem", "OTA chunk: failed to write to flash (within loop)");
             return true;
         } else {
-            _dbgPrintf("OTA chunk written to flash; progress = %d / %d\r\n",
+            ESP_LOGD("WalterModem", "OTA chunk written to flash; progress = %lu / %lu",
                     blueCherry.otaProgress, blueCherry.otaSize);
         }
 
@@ -2235,10 +2540,10 @@ bool WalterModem::_processOtaChunkEvent(uint8_t *data, uint16_t len)
 
     if(blueCherry.otaProgress + blueCherry.otaBufferPos == blueCherry.otaSize) {
         if(!_otaBufferToFlash()){
-            _dbgPrintf("OTA chunk: failed to write to flash (remainder)\r\n");
+            ESP_LOGD("WalterModem", "OTA chunk: failed to write to flash (remainder)");
             return true;
         } else {
-            _dbgPrintf("OTA remainder written to flash; progress = %d / %d\r\n",
+            ESP_LOGD("WalterModem", "OTA remainder written to flash; progress = %lu / %lu",
                     blueCherry.otaProgress, blueCherry.otaSize);
         }
     }
@@ -2258,7 +2563,7 @@ bool WalterModem::_processOtaFinishEvent(void)
                 0,
                 (uint32_t *) blueCherry.otaSkipBuffer,
                 ENCRYPTED_BLOCK_SIZE) != ESP_OK) {
-        _dbgPrintf("OTA Finish: Could not write start of boot sector to partition\r\n");
+        ESP_LOGD("WalterModem", "OTA Finish: Could not write start of boot sector to partition");
         return true;
     }
 
@@ -2267,20 +2572,20 @@ bool WalterModem::_processOtaFinishEvent(void)
                 0,
                 (uint32_t *) blueCherry.otaSkipBuffer,
                 ENCRYPTED_BLOCK_SIZE) != ESP_OK) {
-        _dbgPrintf("OTA Finish: Could not read boot partition\r\n");
+        ESP_LOGD("WalterModem", "OTA Finish: Could not read boot partition");
         return true;
     }
     if(blueCherry.otaSkipBuffer[0] != ESP_IMAGE_HEADER_MAGIC) {
-        _dbgPrintf("OTA Finish: Magic header is missing on partition\r\n");
+        ESP_LOGD("WalterModem", "OTA Finish: Magic header is missing on partition");
         return true;
     }
 
     if(esp_ota_set_boot_partition(blueCherry.otaPartition)) {
-        _dbgPrintf("OTA Finish: Could not set boot partition\r\n");
+        ESP_LOGD("WalterModem", "OTA Finish: Could not set boot partition");
         return true;
     }
 
-    _dbgPrintf("OTA Finish: set boot partition. Booting in new firmware.\r\n");
+    ESP_LOGD("WalterModem", "OTA Finish: set boot partition. Booting in new firmware.");
     esp_restart();
 
     return false;
@@ -2299,32 +2604,57 @@ bool WalterModem::_processBlueCherryEvent(uint8_t *data, uint8_t len)
             return _processOtaFinishEvent();
 
         default:
-            _dbgPrintf("Error: invalid BlueCherry event type 0x%x from cloud server\r\n", data[0]);
+            ESP_LOGD("WalterModem",
+                    "Error: invalid BlueCherry event type 0x%x from cloud server", data[0]);
             return true;
     }
 
     return true;
 }
 
+#ifdef CORE_DEBUG_LEVEL
 bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
+#else
+bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
+#endif
 {
     if(_initialized) {
         return true;
     }
 
     _watchdogTimeout = watchdogTimeout;
-    if(watchdogTimeout) {
-        esp_task_wdt_init(watchdogTimeout, true);
+    if(_watchdogTimeout) {
+        /* wdt timeout must be longer than max wait time for a modem response */
+        if(_watchdogTimeout * 1000UL < WALTER_MODEM_CMD_TIMEOUT_MS + 5000UL) {
+            _watchdogTimeout = (WALTER_MODEM_CMD_TIMEOUT_MS / 1000UL) + 5;
+        }
+#ifdef CORE_DEBUG_LEVEL
+        esp_task_wdt_init(_watchdogTimeout, true);
+#else
+        esp_task_wdt_config_t twdt_config = {
+            .timeout_ms = (uint32_t) (_watchdogTimeout * 1000UL),
+            .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,    // Bitmask of all cores
+            .trigger_panic = true
+        };
+#if CONFIG_ESP_TASK_WDT_INIT
+        esp_task_wdt_reconfigure(&twdt_config);
+#else
+        esp_task_wdt_init(&twdt_config);
+#endif
+#endif
+
+        esp_task_wdt_add(NULL);
     }
     
     _taskQueue.handle = xQueueCreateStatic(WALTER_MODEM_TASK_QUEUE_MAX_ITEMS,
         sizeof(WalterModemTaskQueueItem), _taskQueue.mem,
         &(_taskQueue.memHandle));
 
-    _uart = uart;
-    pinMode(WALTER_MODEM_PIN_RESET, OUTPUT);
-    digitalWrite(WALTER_MODEM_PIN_RESET, LOW);
+    gpio_set_direction((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_MODE_OUTPUT);
+    gpio_deep_sleep_hold_en();
 
+#ifdef CORE_DEBUG_LEVEL
+    _uart = uart;
     _uart->begin(
         WALTER_MODEM_BAUD,
         SERIAL_8N1,
@@ -2340,13 +2670,46 @@ bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
     _uart->setHwFlowCtrlMode();
     _uart->setRxTimeout(1);
     _uart->onReceive(_handleRxData);
+#else
+    const uart_config_t uart_config = {
+        .baud_rate = WALTER_MODEM_BAUD,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS,
+        .rx_flow_ctrl_thresh = 122,
+        .source_clk = UART_SCLK_DEFAULT
+    };
+    _uartNo = uartNo;
+    uart_driver_install(uartNo, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_param_config(uartNo, &uart_config);
+    uart_set_pin(uartNo, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_RX,
+            WALTER_MODEM_PIN_RTS, WALTER_MODEM_PIN_CTS);
+    //uart_set_rx_timeout(uartNo, 1);
+    xTaskCreateStaticPinnedToCore(_handleRxData, "uart_rx_task",
+            WALTER_MODEM_TASK_STACK_SIZE, NULL, tskIDLE_PRIORITY,
+            _rxTaskStack, &_rxTaskBuf, 0);
+#endif
 
+#ifdef CORE_DEBUG_LEVEL
     _queueTask = xTaskCreateStaticPinnedToCore(_queueProcessingTask,
         "queueProcessingTask", WALTER_MODEM_TASK_STACK_SIZE, NULL,
         tskIDLE_PRIORITY, _queueTaskStack, &_queueTaskBuf, 1);
+#else
+    _queueTask = xTaskCreateStaticPinnedToCore(_queueProcessingTask,
+        "queueProcessingTask", WALTER_MODEM_TASK_STACK_SIZE, NULL,
+        tskIDLE_PRIORITY, _queueTaskStack, &_queueTaskBuf, 0);
+#endif
 
-    if(!reset()) {
-        return false;
+    esp_sleep_wakeup_cause_t wakeupReason;
+    wakeupReason = esp_sleep_get_wakeup_cause();
+
+    if(wakeupReason == ESP_SLEEP_WAKEUP_UNDEFINED) {
+        if (!reset()) {
+            return false;
+        }
+    } else {
+        _loadRTCPdpContextSet(_pdpCtxSetRTC);
     }
 
     /* Configure reports as we expect them in the library */
@@ -2397,9 +2760,11 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     _runCmd({}, "+SYSSTART", rsp, cb, args, NULL, NULL,
         WALTER_MODEM_CMD_TYPE_WAIT);
 
-    digitalWrite(WALTER_MODEM_PIN_RESET, LOW);
-    delay(10);
-    digitalWrite(WALTER_MODEM_PIN_RESET, HIGH);
+    gpio_hold_dis((gpio_num_t) WALTER_MODEM_PIN_RESET);
+    gpio_set_level((gpio_num_t) WALTER_MODEM_PIN_RESET, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_level((gpio_num_t) WALTER_MODEM_PIN_RESET, 1);
+    gpio_hold_en((gpio_num_t) WALTER_MODEM_PIN_RESET);
 
     /* Also (re)initialize internal modem related library state */
     _regState = WALTER_MODEM_NETWORK_REG_NOT_SEARCHING;
@@ -2409,13 +2774,28 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     _socket = NULL;
     _pdpCtx = NULL;
     _simPIN = NULL;
-    memset(_pdpCtxSet, 0, sizeof(_pdpCtxSet));
-    memset(_socketSet, 0, sizeof(_socketSet));
-    memset(_coapContextSet, 0, sizeof(_coapContextSet));
-    memset(_httpContextSet, 0, sizeof(_httpContextSet));
-    memset(&_operator, 0, sizeof(_operator));
+    for(int i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; ++i) {
+      _pdpCtxSet[i] = {};
+    }
+    for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
+      _socketSet[i] = {};
+    }
+    for(int i = 0; i < WALTER_MODEM_MAX_COAP_PROFILES; ++i) {
+      _coapContextSet[i] = {};
+    }
+    for(int i = 0; i < WALTER_MODEM_MAX_HTTP_PROFILES; ++i) {
+      _httpContextSet[i] = {};
+    }
+    _operator = {};
 
     _returnAfterReply();
+}
+
+void WalterModem::sleep(uint32_t sleepTime)
+{
+    _saveRTCPdpContextSet(_pdpCtxSetRTC);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_deep_sleep(sleepTime * 1000000);
 }
 
 bool WalterModem::checkComm(WalterModemRsp *rsp, walterModemCb cb, void *args)
@@ -2802,11 +3182,7 @@ bool WalterModem::blueCherrySynchronize(void)
         return false;
     }
 
-    /* we do not really want to use a token, but the GoLang library at
-     * the cloud endpoint does not support messages without token
-     * unfortunately
-     */
-    if(!coapSetHeader(0, blueCherry.curMessageId, "00")) {
+    if(!coapSetHeader(0, blueCherry.curMessageId)) {
         return false;
     }
 
@@ -3088,6 +3464,15 @@ bool WalterModem::setOpState(
 
 bool WalterModem::getRAT(WalterModemRsp *rsp, walterModemCb cb, void *args)
 {
+    if(_ratType != WALTER_MODEM_RAT_UNKNOWN) {
+        if(rsp) {
+            rsp->type = WALTER_MODEM_RSP_DATA_TYPE_RAT;
+            rsp->data.rat = _ratType;
+        }
+
+        return true;
+    }
+
     _runCmd(arr("AT+SQNMODEACTIVE?"), "OK", rsp, cb, args);
     _returnAfterReply();
 }
@@ -3155,6 +3540,52 @@ bool WalterModem::setNetworkSelectionMode(
             _digitStr(_operator.format),",",
             _atStr(_operator.name)
         ), "OK", rsp, cb, args);
+        _returnAfterReply();
+    }
+}
+
+bool WalterModem::configPSM(
+    WalterModemPSMMode mode,
+    const char *reqTAU,
+    const char *reqActive,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    if(mode == WALTER_MODEM_PSM_ENABLE) {
+        WalterModemBuffer *stringsbuffer = _getFreeBuffer();
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data,
+                "AT+CPSMS=1,,,\"%s\",\"%s\"", reqTAU, reqActive);
+
+        _runCmd(arr((const char *) stringsbuffer->data), "OK", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsbuffer);
+        _returnAfterReply();
+    } else {
+        _runCmd(arr("AT+CPSMS=", _digitStr(mode)), "OK", rsp, cb, args);
+        _returnAfterReply();
+    }
+}
+
+bool WalterModem::configEDRX(
+    WalterModemEDRXMode mode,
+    const char *reqEDRXVal,
+    const char *reqPtw,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    if(mode == WALTER_MODEM_EDRX_ENABLE || mode == WALTER_MODEM_EDRX_ENABLE_WITH_RESULT) {
+        getRAT(rsp, cb, args);
+
+        WalterModemBuffer *stringsbuffer = _getFreeBuffer();
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data,
+                "AT+SQNEDRX=%d,%d,\"%s\",\"%s\"", mode, _ratType+4, reqEDRXVal, reqPtw);
+
+        _runCmd(arr((const char *) stringsbuffer->data), "OK", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsbuffer);
+        _returnAfterReply();
+    } else {
+        _runCmd(arr("AT+SQNEDRX=", _digitStr(mode)), "OK", rsp, cb, args);
         _returnAfterReply();
     }
 }
@@ -3576,4 +4007,3 @@ bool WalterModem::performGNSSAction(
         gnssActionStr(action),"\""), "OK", rsp, cb, args);
     _returnAfterReply();
 }
-        

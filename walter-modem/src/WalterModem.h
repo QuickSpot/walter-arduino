@@ -52,20 +52,16 @@
 #include <mutex>
 #include <bitset>
 #include <cstdint>
+#ifdef CORE_DEBUG_LEVEL
 #include <Arduino.h>
+#endif
 #include <condition_variable>
 
-/**
- * @brief When this define is set to 1 the raw modem communication will be 
- * printed onto the serial console.
- */
-#ifndef WALTER_MODEM_DEBUG_ENABLED
-    #if defined(CORE_DEBUG_LEVEL) and CORE_DEBUG_LEVEL >= 1
-        #define WALTER_MODEM_DEBUG_ENABLED 1
-    #else
-        #define WALTER_MODEM_DEBUG_ENABLED 0
-    #endif
-#endif 
+#include <esp_partition.h>
+#include <esp_spi_flash.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/event_groups.h>
+#include <freertos/semphr.h>
 
 /**
  * @brief The maximum number of items in the task queue.
@@ -274,7 +270,8 @@ typedef enum {
 typedef enum {
     WALTER_MODEM_RAT_LTEM = 0,
     WALTER_MODEM_RAT_NBIOT = 1,
-    WALTER_MODEM_RAT_AUTO = 2
+    WALTER_MODEM_RAT_AUTO = 2,
+    WALTER_MODEM_RAT_UNKNOWN = 99
 } WalterModemRAT;
 
 /**
@@ -572,6 +569,25 @@ typedef enum {
     WALTER_MODEM_BAND_B71 = 0x20000,
     WALTER_MODEM_BAND_B85 = 0x40000,
 } WalterModemBand;
+
+/**
+ * @brief The supported PSM modes.
+ */
+typedef enum {
+    WALTER_MODEM_PSM_DISABLE = 0,
+    WALTER_MODEM_PSM_ENABLE = 1,
+    WALTER_MODEM_PSM_RESET = 2
+} WalterModemPSMMode;
+
+/**
+ * @brief The supported eDRX modes.
+ */
+typedef enum {
+    WALTER_MODEM_EDRX_DISABLE = 0,
+    WALTER_MODEM_EDRX_ENABLE = 1,
+    WALTER_MODEM_EDRX_ENABLE_WITH_RESULT = 2,
+    WALTER_MODEM_EDRX_RESET = 3
+} WalterModemEDRXMode;
 
 /**
  * @brief The state of a socket.
@@ -1938,7 +1954,13 @@ class WalterModem
         /**
          * @brief The hardware serial peripheral used to talk to the modem.
          */
+#ifdef CORE_DEBUG_LEVEL
         static inline HardwareSerial *_uart = NULL;
+#else
+        static inline uint8_t _uartNo = 1;
+        static inline StackType_t _rxTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
+        static inline StaticTask_t _rxTaskBuf;
+#endif
 
         /**
          * @brief The pool of buffers used by the parser, command strings
@@ -1973,13 +1995,13 @@ class WalterModem
          * @brief The set with COAP contexts
          */
         static inline WalterModemCoapContext
-            _coapContextSet[WALTER_MODEM_MAX_COAP_PROFILES] = { 0 };
+            _coapContextSet[WALTER_MODEM_MAX_COAP_PROFILES] = {};
 
         /**
          * @brief The set with HTTP contexts (array index = profile id)
          */
         static inline WalterModemHttpContext
-            _httpContextSet[WALTER_MODEM_MAX_HTTP_PROFILES] = { 0 };
+            _httpContextSet[WALTER_MODEM_MAX_HTTP_PROFILES] = {};
 
         /**
          * @brief HTTP profile for which we are currently awaiting data
@@ -2023,6 +2045,12 @@ class WalterModem
          */
         static inline WalterModemNetworkRegState
             _regState = WALTER_MODEM_NETWORK_REG_NOT_SEARCHING;
+
+        /**
+         * @brief The current type of Radio Access Technology in use.
+         */
+        static inline WalterModemRAT
+            _ratType = WALTER_MODEM_RAT_UNKNOWN;
 
         /**
          * @brief The PIN code when required for the installed SIM or NULL when
@@ -2173,6 +2201,30 @@ class WalterModem
         static void _pdpContextRelease(WalterModemPDPContext *ctx);
 
         /**
+         * @brief Save the PDP context to RTC memory
+         * 
+         * This function will copy the active PDP context set to 
+         * RTC memory, so it can be preserved during deep sleep.
+         * 
+         * @param _pdpCtxSetRTC The PDP context set saved in RTC memory.
+         * 
+         * @return None.
+         */
+        static void _saveRTCPdpContextSet(WalterModemPDPContext *_pdpCtxSetRTC = NULL);
+
+        /**
+         * @brief Load the PDP context from RTC memory
+         * 
+         * This function will fill in the WalterModem PDP context using the 
+         * copy saved in RTC memory, after waking up from deep sleep.
+         * 
+         * @param _pdpCtxSetRTC The PDP context set saved in RTC memory.
+         * 
+         * @return None.
+         */
+        static void _loadRTCPdpContextSet(WalterModemPDPContext *_pdpCtxSetRTC = NULL);
+
+        /**
          * @brief Get a socket structure which is not in use.
          * 
          * This function will search for a socket structure which can be used
@@ -2255,9 +2307,16 @@ class WalterModem
          * and not an ISR, therefore this function also immediately parses the
          * incoming data into a free pool buffer.
          * 
+         * @param params Incoming params for this freertos task handler
+         * (in the ESP-IDF version)
+         *
          * @return None.
          */
-        static void _handleRxData();
+#ifdef CORE_DEBUG_LEVEL
+        static void _handleRxData(void);
+#else
+        static void _handleRxData(void *params);
+#endif
 
         /**
          * @brief This is the entrypoint of the queue processing task.
@@ -2444,15 +2503,27 @@ class WalterModem
          * that needs to be called before using the modem device. This function
          * can only be called once, all consecutive calls will be no-ops. 
          * 
-         * @param uart The hardware serial used to talk to the modem.
+         * @param uart The hardware serial used to talk to the modem
+         * (HardwareSerial pointer on arduino, uart number on esp-idf)
          * @param watchdogTimeout Timeout in seconds before auto-reboot.
          * If set to nonzero, you must call tickleWatchdog before the
-         * timeout expires. Use a value larger than 30 seconds;
-         * say 40 seconds at least.
+         * timeout expires. This helps you guard against programming errors,
+         * although it is still possible a part of your code never gets
+         * executed while always tickling the watchdog in time.
+         * It also guards against bugs in the walter modem library that
+         * would cause it to block for too long.
+         * Use a value larger than 30 seconds; say 40 seconds at least.
+         * Note that a wdt may be set in the compile options, triggered
+         * by a starting idle task. This is usually sufficient for
+         * simple programs.
          * 
          * @return True on success, false on error.
          */
+#ifdef CORE_DEBUG_LEVEL
         static bool begin(HardwareSerial *uart, uint8_t watchdogTimeout = 0);
+#else
+        static bool begin(uint8_t uartNo, uint8_t watchdogTimeout = 0);
+#endif
 
         /**
          * @brief Tickle watchdog
@@ -2547,6 +2618,25 @@ class WalterModem
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
+
+        /**
+         * @brief Put the ESP32 in deep sleep.
+         * 
+         * This function will start deep sleep on the ESP32 for a given 
+         * duration, resulting in reduced current consumption. 
+         * Before sleeping, the active PDP context is saved in 
+         * RTC memory. The PDP context is therefor preserved during the
+         * sleep, and can be loaded in again when waking up. 
+         *
+         * Be aware that your sketch must expect to start again in
+         * setup after awaking from deep sleep, and hence any initialisation
+         * must be done again.
+         * 
+         * @param sleepTime The duration of deep sleep in seconds.
+         * 
+         * @return None.
+         */
+        static void sleep(uint32_t sleepTime = 0);
 
         /**
          * @brief Configure the CME error reports.
@@ -3258,6 +3348,68 @@ class WalterModem
                 WALTER_MODEM_OPERATOR_FORMAT_LONG_ALPHANUMERIC,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL, 
+            void *args = NULL);
+
+        /**
+         * @brief Configure Power Saving Mode Setting.
+         * 
+         * This function will control whether PSM should be applied, and 
+         * request the Power Saving Mode setting that Walter should use. 
+         * This is only a request, see the unsolicited result codes provided 
+         * by +CEREG for the Active Time value and the extended periodic 
+         * TAU value that are allocated to Walter by the network.
+         * 
+         * @param mode Enable or disable the use of PSM.
+         * @param reqTau The requested extended periodic TAU value (T3412). 
+         * This is coded as one byte (octet 3) of the GPRS Timer 3 information element
+         * coded as bit format (e.g. "00100001" equals 1 hour).
+         * @param reqActive The requested Active Time value (T3324).
+         * This is coded as one byte (octet 3) of the GPRS Timer 2 information element
+         * coded as bit format (e.g. "00000101" equals 10 seconds).
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool configPSM(
+            WalterModemPSMMode mode = WALTER_MODEM_PSM_DISABLE,
+            const char *reqTAU = NULL,
+            const char *reqActive = NULL,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Configure extended DRX Setting.
+         * 
+         * This function will control whether extended DRX should be
+         * applied, and configure the requested eDRX value and 
+         * Paging Time Window.
+         * 
+         * @param mode Enable or disable the use of eDRX.
+         * @param reqEDRXVal The requested eDRX value.
+         * This refers to bits 4 to 1 of octet 3 of the extended DRX 
+         * parameters information element.
+         * @param reqPtw The requested Paging Time Window.
+         * This refers to bits 8 to 5 of octet 3 of the extended DRX 
+         * parameters information element.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool configEDRX(
+            WalterModemEDRXMode mode = WALTER_MODEM_EDRX_DISABLE,
+            const char *reqEDRXVal = NULL,
+            const char *reqPtw = NULL,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
             void *args = NULL);
 
         /**
