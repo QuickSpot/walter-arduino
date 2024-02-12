@@ -3282,6 +3282,28 @@ class WalterModem
             void *args = NULL);
 
         /**
+         * @brief Set the radio bands the modem will use.
+         *
+         * This function configures the radio bands the modem will use.
+         *
+         * @param rat Radio access technology
+         * @param bands Bitset of WalterModemBand bits to specify the bands
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false on error.
+         */
+        static bool setRadioBands(
+            WalterModemRAT rat,
+            uint32_t bands,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
          * @brief Get the SIM state.
          * 
          * This function will get the state of the SIM card.

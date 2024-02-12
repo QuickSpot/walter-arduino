@@ -3496,6 +3496,86 @@ bool WalterModem::getRadioBands(
     _returnAfterReply();
 }
 
+bool WalterModem::setRadioBands(
+    WalterModemRAT rat,
+    uint32_t bands,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    WalterModemBuffer *stringsbuffer = _getFreeBuffer();
+    stringsbuffer->size += sprintf((char *) stringsbuffer->data,
+            "AT+SQNBANDSEL=%d,\"standard\",\"",
+            rat);
+
+    if(bands & WALTER_MODEM_BAND_B1) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "1,");
+    }
+    if(bands & WALTER_MODEM_BAND_B2) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "2,");
+    }
+    if(bands & WALTER_MODEM_BAND_B3) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "3,");
+    }
+    if(bands & WALTER_MODEM_BAND_B4) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "4,");
+    }
+    if(bands & WALTER_MODEM_BAND_B5) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "5,");
+    }
+    if(bands & WALTER_MODEM_BAND_B8) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "8,");
+    }
+    if(bands & WALTER_MODEM_BAND_B12) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "12,");
+    }
+    if(bands & WALTER_MODEM_BAND_B13) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "13,");
+    }
+    if(bands & WALTER_MODEM_BAND_B14) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "14,");
+    }
+    if(bands & WALTER_MODEM_BAND_B17) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "17,");
+    }
+    if(bands & WALTER_MODEM_BAND_B18) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "18,");
+    }
+    if(bands & WALTER_MODEM_BAND_B19) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "19,");
+    }
+    if(bands & WALTER_MODEM_BAND_B20) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "20,");
+    }
+    if(bands & WALTER_MODEM_BAND_B25) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "25,");
+    }
+    if(bands & WALTER_MODEM_BAND_B26) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "26,");
+    }
+    if(bands & WALTER_MODEM_BAND_B28) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "28,");
+    }
+    if(bands & WALTER_MODEM_BAND_B66) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "66,");
+    }
+    if(bands & WALTER_MODEM_BAND_B71) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "71,");
+    }
+    if(bands & WALTER_MODEM_BAND_B85) {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "85,");
+    }
+
+    if(stringsbuffer->data[stringsbuffer->size - 1] == ',') {
+        stringsbuffer->data[stringsbuffer->size - 1] = '"';
+    } else {
+        stringsbuffer->size += sprintf((char *) stringsbuffer->data + stringsbuffer->size, "\"");
+    }
+
+    _runCmd(arr((const char *) stringsbuffer->data), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
 bool WalterModem::getSIMState(WalterModemRsp *rsp, walterModemCb cb, void *args)
 {
     _runCmd({"AT+CPIN?"}, "OK", rsp, cb, args);
