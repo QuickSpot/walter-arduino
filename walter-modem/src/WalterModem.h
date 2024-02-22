@@ -163,6 +163,11 @@
 #define WALTER_MODEM_MAX_HTTP_PROFILES 3
 
 /**
+ * @brief The maximum number of TLS profiles that the library can support.
+ */
+#define WALTER_MODEM_MAX_TLS_PROFILES 6
+
+/**
  * @brief The maximum number of characters of an operator name.
  */
 #define WALTER_MODEM_OPERATOR_MAX_SIZE 16
@@ -610,6 +615,26 @@ typedef enum {
     WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING,
     WALTER_MODEM_HTTP_CONTEXT_STATE_GOT_RING
 } WalterModemHttpContextState;
+
+/**
+ * @brief The TLS version.
+ */
+typedef enum {
+    WALTER_MODEM_TLS_VERSION_10 = 0,
+    WALTER_MODEM_TLS_VERSION_11 = 1,
+    WALTER_MODEM_TLS_VERSION_12 = 2,
+    WALTER_MODEM_TLS_VERSION_13 = 3,
+    WALTER_MODEM_TLS_VERSION_RESET = 255
+} WalterModemTlsVersion;
+
+/**
+ * @brief The TLS validation policy.
+ */
+typedef enum {
+    WALTER_MODEM_TLS_VALIDATION_NONE = 0,
+    WALTER_MODEM_TLS_VALIDATION_CA = 1,
+    WALTER_MODEM_TLS_VALIDATION_URL = 4
+} WalterModemTlsValidation;
 
 /**
  * @brief The protocol that us used by the socket. 
@@ -2724,6 +2749,37 @@ class WalterModem
             void *args = NULL);
 
         /**
+         * @brief Configure TLS profile.
+         *
+         * This function should be called once in an initializer
+         * sketch that prepares the modem for its intended use on this
+         * Walter. Configure a set of TLS profiles within the modem,
+         * with optional client auth certificates, validation level
+         * (none/url/ca/url and ca) and TLS version.
+         * Later http/mqtt/coap/bluecherry/socket sessions can then
+         * use these preconfigured profile ids.
+         *
+         * @param profileId Security profile id (1-6)
+         * @param tlsValid TLS validation level: nothing, URL, CA+period or all
+         * @param tlsVersion TLS version (please stick to the default, which is
+         * the most recent version)
+         * @param rsp Pointer to a modem response structure to save the result
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool tlsConfigProfile(
+            uint8_t profileId,
+            WalterModemTlsValidation tlsValid = WALTER_MODEM_TLS_VALIDATION_NONE,
+            WalterModemTlsVersion tlsVersion = WALTER_MODEM_TLS_VERSION_13,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
          * @brief Configure a HTTP profile.
          * 
          * This function will configure a HTTP profile with parameters
@@ -2738,6 +2794,7 @@ class WalterModem
          * 
          * @param profileId HTTP profile id (0, 1 or 2)
          * @param serverName The server name to connect to.
+         * @param tlsProfileId If not 0, TLS is used with the given profile (1-6).
          * @param port The port of the server to connect to.
          * @param useBasicAuth Set true to use basic auth and send username/pw.
          * @param authUser Username.
@@ -2753,6 +2810,7 @@ class WalterModem
         static bool httpConfigProfile(
             uint8_t profileId,
             const char *serverName,
+            uint8_t tlsProfileId = 0,
             uint16_t port = 80,
             bool useBasicAuth = false,
             const char *authUser = "",

@@ -2839,9 +2839,34 @@ bool WalterModem::getSignalQuality(
     _returnAfterReply();
 }
 
+bool WalterModem::tlsConfigProfile(
+    uint8_t profileId,
+    WalterModemTlsValidation tlsValid,
+    WalterModemTlsVersion tlsVersion,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    if(profileId >= WALTER_MODEM_MAX_TLS_PROFILES) {
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
+    }
+
+    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNSPCFG=%u,%d,\"\",%01x,,,,\"\",\"\",0,0,0",
+            profileId, tlsVersion, tlsValid);
+
+    _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
+            stringsBuffer);
+
+    _returnAfterReply();
+}
+
 bool WalterModem::httpConfigProfile(
     uint8_t profileId,
     const char *serverName,
+    uint8_t tlsProfileId,
     uint16_t port,
     bool useBasicAuth,
     const char *authUser,
@@ -2854,10 +2879,15 @@ bool WalterModem::httpConfigProfile(
         _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
     }
 
+    if(tlsProfileId && port == 80) {
+        port = 443;
+    }
+
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
     stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-            "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"",
-            profileId, serverName, port, useBasicAuth, authUser, authPass);
+            "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\",%d,,,%u",
+            profileId, serverName, port, useBasicAuth, authUser, authPass,
+            tlsProfileId ? 1 : 0, tlsProfileId);
 
     _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
             NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,

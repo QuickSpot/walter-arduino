@@ -57,6 +57,11 @@
 #define HTTP_PROFILE 1
 
 /**
+ * @brief TLS profile
+ */
+#define TLS_PROFILE 1
+
+/**
  * @brief The modem instance.
  */
 WalterModem modem;
@@ -196,8 +201,15 @@ void setup() {
     return;
   }
 
+  /* Configure TLS profile */
+  if(modem.tlsConfigProfile(TLS_PROFILE)) {
+    Serial.print("Successfully configured the TLS profile\r\n");
+  } else {
+    Serial.print("Failed to configure TLS profile\r\n");
+  }
+
   /* Configure http profile for a simple test */
-  if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io")) {
+  if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io", TLS_PROFILE)) {
     Serial.print("Successfully configured the http profile\r\n");
   } else {
     Serial.print("Failed to configure HTTP profile\r\n");
