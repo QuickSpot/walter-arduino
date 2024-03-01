@@ -159,12 +159,6 @@
     strlen(str) > 0 ? "\"" : "", str, strlen(str) > 0 ? "\"" : ""
 
 /**
- * @brief Convert a string literal into an AT command array. An empty string
- * will still be enclosed by double quotes unlike _atStr.
- */
-#define _atStrRaw(str) "\"", str, "\""
-
-/**
  * @brief Convert a boolean flag into a string literal.
  */
 #define _atBool(bool) bool ? "1" : "0"
@@ -1305,6 +1299,13 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
         case WALTER_MODEM_CMD_TYPE_TX_WAIT:
         case WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT:
             if(cmd->state == WALTER_MODEM_CMD_STATE_NEW) {
+                /* hack for handling AT+SQNSMQTTRCVMESSAGE response */
+                if(cmd->type == WALTER_MODEM_CMD_TYPE_TX_WAIT
+                        && !strcmp(cmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=0,")) {
+                    _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
+                    /* add 4 bytes for prepending and trailing \r\n */
+                    _parserData.rawChunkSize = cmd->dataSize + 4;
+                }
                 _transmitCmd(cmd->type, cmd->atCmd);
                 cmd->attempt = 1;
                 cmd->attemptStart = xTaskGetTickCount();
@@ -2183,7 +2184,6 @@ void WalterModem::_processQueueRsp(
         char *commaPos = strchr(rspStr, ',');
         char *start = (char *) rspStr + _strLitLen("+SQNCOAPRING: ");
 
-        //char *profileIdStr, *messageIdStr, *reqRspStr, *sendTypeStr;
         char *profileIdStr = NULL;
         char *messageIdStr = NULL;
         char *sendTypeStr = NULL;
@@ -2300,6 +2300,27 @@ void WalterModem::_processQueueRsp(
             }
         }
     }
+    else if(cmd && cmd->atCmd[0]
+            && !strcmp(cmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=0,")
+            && cmd->rsp->type != WALTER_MODEM_RSP_DATA_TYPE_MQTT)
+    {
+        const char *rspStr = _buffStr(buff);
+
+        uint8_t ringIdx = (uint32_t) cmd->completeHandlerArg;
+
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
+        cmd->rsp->data.mqttResponse.messageId = _mqttRings[ringIdx].messageId;
+        cmd->rsp->data.mqttResponse.qos = _mqttRings[ringIdx].qos;
+        cmd->rsp->data.mqttResponse.length = cmd->dataSize;
+
+        /* free ring entry */
+        _mqttRings[ringIdx].messageId = 0;
+
+        if(cmd->data) {
+            /* skip leading \r\n */
+            memcpy(cmd->data, rspStr + 2, cmd->dataSize);
+        }
+    }
     else if(_buffStartsWith(buff, "+SQNCOAPCONNECTED: "))
     {
         const char *rspStr = _buffStr(buff);
@@ -2390,6 +2411,129 @@ void WalterModem::_processQueueRsp(
 
         if(sock) {
             _socketRelease(sock);
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNSMQTTONCONNECT:0,"))
+    {
+        const char *rspStr = _buffStr(buff);
+        int status = atoi(rspStr + _strLitLen("+SQNSMQTTONCONNECT:0,"));
+
+        if(status) {
+            result = WALTER_MODEM_STATE_ERROR;
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNSMQTTONDISCONNECT:0,"))
+    {
+        const char *rspStr = _buffStr(buff);
+        int status = atoi(rspStr + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
+
+        if(status) {
+            result = WALTER_MODEM_STATE_ERROR;
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNSMQTTONPUBLISH:0,"))
+    {
+        const char *rspStr = _buffStr(buff);
+        const char *pmid = rspStr + _strLitLen("+SQNSMQTTONPUBLISH:0,");
+        const char *statusComma = strchr(pmid, ',');
+
+        if(statusComma == NULL) {
+            result = WALTER_MODEM_STATE_ERROR;
+        } else {
+            if(atoi(statusComma + 1)) {
+                result = WALTER_MODEM_STATE_ERROR;
+            }
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNSMQTTONSUBSCRIBE:0,"))
+    {
+        const char *rspStr = _buffStr(buff);
+        const char *topic = rspStr + _strLitLen("+SQNSMQTTONSUBSCRIBE:0,");
+        const char *statusComma = strchr(topic, ',');
+
+        if(statusComma == NULL) {
+            result = WALTER_MODEM_STATE_ERROR;
+        } else {
+            if(atoi(statusComma + 1)) {
+                result = WALTER_MODEM_STATE_ERROR;
+            }
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNSMQTTONMESSAGE:0,"))
+    {
+        const char *rspStr = _buffStr(buff);
+        char *commaPos = strchr(rspStr, ',');
+        char *start = (char *) rspStr + _strLitLen("+SQNSMQTTONMESSAGE:0");
+
+        char *topic = NULL;
+        char *lenStr = NULL;
+        char *qosStr = NULL;
+        char *midStr = NULL;
+
+        if(commaPos) {
+            /* got mqtt profile (must be 0) */
+            *commaPos = '\0';
+            // atoi(start) should be 0
+            start = ++commaPos;
+            commaPos = strchr(commaPos, ',');
+        }
+
+        if(commaPos) {
+            /* got topic */
+            *commaPos = '\0';
+            commaPos[-1] = '\0';
+            topic = start + 1;
+            start = ++commaPos;
+            commaPos = strchr(commaPos, ',');
+        }
+
+        if(commaPos) {
+            /* got len and qos */
+            *commaPos = '\0';
+            lenStr = start;
+            qosStr = commaPos + 1;
+            start = ++commaPos;
+            commaPos = strchr(commaPos, ',');
+
+            if(commaPos) {
+                /* got optional msg id */
+                *commaPos = '\0';
+                midStr = commaPos + 1;
+            }
+
+            /* convert parameters to int */
+            uint16_t length = atoi(lenStr);
+            uint8_t qos = atoi(qosStr);
+            uint16_t messageId = midStr ? atoi(midStr) : 0xffff;
+
+            /* store ring in ring list for this coap context */
+            uint8_t ringIdx;
+            for(ringIdx = 0;
+                    ringIdx < sizeof(_mqttRings) / sizeof(WalterModemMqttRing);
+                    ringIdx++) {
+                if(!_mqttRings[ringIdx].messageId) {
+                    break;
+                }
+                if(_mqttRings[ringIdx].messageId == messageId) {
+                    break;
+                }
+            }
+
+            if(ringIdx == sizeof(_mqttRings) / sizeof(WalterModemMqttRing)) {
+                /* ring buffer full unfortunately, dropping ring.
+                 * TODO: error reporting mechanism for this failed URC
+                 */
+                buff->free = true;
+                return;
+            }
+
+            if(!_mqttRings[ringIdx].messageId) {
+                _mqttRings[ringIdx].messageId = messageId;
+                _mqttRings[ringIdx].length = length;
+                _mqttRings[ringIdx].qos = qos;
+                _strncpy_s(_mqttRings[ringIdx].topic, topic,
+                    WALTER_MODEM_HOSTNAME_BUF_SIZE);
+            }
         }
     }
 
@@ -2786,6 +2930,9 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     for(int i = 0; i < WALTER_MODEM_MAX_HTTP_PROFILES; ++i) {
       _httpContextSet[i] = {};
     }
+    for(int i = 0; i < sizeof(_mqttRings) / sizeof(WalterModemMqttRing); i++) {
+        _mqttRings[i] = {};
+    }
     _operator = {};
 
     _returnAfterReply();
@@ -2836,6 +2983,89 @@ bool WalterModem::getSignalQuality(
     void *args)
 {
     _runCmd(arr("AT+CESQ"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::_mqttConfig(const char *clientId,
+        const char *userName,
+        const char *password,
+        uint8_t tlsProfileId)
+{
+    WalterModemRsp *rsp = NULL;
+    walterModemCb cb = NULL;
+    void *args = NULL;
+
+    if(tlsProfileId) {
+        _runCmd(arr("AT+SQNSMQTTCFG=0,", _atStr(clientId), ",",
+                    _atStr(userName), ",", _atStr(password), ",", _atNum(tlsProfileId)),
+                "OK", rsp, cb, args);
+        _returnAfterReply();
+    } else {
+        if(userName && *userName) {
+            _runCmd(arr("AT+SQNSMQTTCFG=0,", _atStr(clientId), ",",
+                        _atStr(userName), ",", _atStr(password)),
+                    "OK", rsp, cb, args);
+            _returnAfterReply();
+        } else {
+            _runCmd(arr("AT+SQNSMQTTCFG=0,", _atStr(clientId)),
+                    "OK", rsp, cb, args);
+            _returnAfterReply();
+        }
+    }
+}
+
+bool WalterModem::mqttDisconnect(WalterModemRsp *rsp,
+        walterModemCb cb,
+        void *args)
+{
+    _runCmd(arr("AT+SQNSMQTTDISCONNECT=0"),
+            "+SQNSMQTTONDISCONNECT:0,", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::mqttConnect(const char *serverName,
+        uint16_t port,
+        const char *clientId,
+        const char *userName,
+        const char *password,
+        uint8_t tlsProfileId,
+        WalterModemRsp *rsp,
+        walterModemCb cb,
+        void *args)
+{
+    if(!_mqttConfig(clientId, userName, password, tlsProfileId)) {
+        _returnState(WALTER_MODEM_STATE_ERROR);
+    }
+
+    _runCmd(arr("AT+SQNSMQTTCONNECT=0,", _atStr(serverName), ",", _atNum(port)),
+            "+SQNSMQTTONCONNECT:0,", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::mqttPublish(const char *topicString,
+        uint8_t *data,
+        uint16_t dataSize,
+        uint8_t qos,
+        WalterModemRsp *rsp,
+        walterModemCb cb,
+        void *args)
+{
+    _runCmd(arr("AT+SQNSMQTTPUBLISH=0,", _atStr(topicString), ",", _atNum(qos),
+                ",", _atNum(dataSize)),
+            "+SQNSMQTTONPUBLISH:0,", rsp, cb, args,
+            NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, data, dataSize);
+    _returnAfterReply();
+}
+
+bool WalterModem::mqttSubscribe(const char *topicString,
+        uint8_t qos,
+        WalterModemRsp *rsp,
+        walterModemCb cb,
+        void *args)
+{
+    _runCmd(arr("AT+SQNSMQTTSUBSCRIBE=0,", _atStr(topicString),
+                ",", _atNum(qos)),
+            "+SQNSMQTTONSUBSCRIBE:0,", rsp, cb, args);
     _returnAfterReply();
 }
 
@@ -3160,6 +3390,56 @@ bool WalterModem::httpDidRing(
             completeHandler, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
             targetBuf, targetBufSize);
     _returnAfterReply();
+}
+
+bool WalterModem::mqttDidRing(
+    const char *topic,
+    uint8_t *targetBuf,
+    uint16_t targetBufSize,
+    WalterModemRsp *rsp)
+{
+    /* this is by definition a blocking call without callback.
+     * it is only used when the arduino user is not taking advantage of
+     * the (TBI) ring notification events which give access to the raw
+     * buffer (a targetBuf is not needed).
+     */
+    walterModemCb cb = NULL;
+    void *args = NULL;
+
+    uint8_t ringIdx;
+    for(ringIdx = 0;
+            ringIdx < sizeof(_mqttRings) / sizeof(WalterModemMqttRing);
+            ringIdx++) {
+        if(!strncmp(topic, _mqttRings[ringIdx].topic, strlen(topic))
+                && _mqttRings[ringIdx].messageId) {
+            break;
+        }
+    }
+
+    if(ringIdx == sizeof(_mqttRings) / sizeof(WalterModemMqttRing)) {
+        _returnState(WALTER_MODEM_STATE_NO_DATA);
+    }
+
+    if(targetBufSize < _mqttRings[ringIdx].length) {
+        _returnState(WALTER_MODEM_STATE_NO_MEMORY);
+    }
+    targetBufSize = _mqttRings[ringIdx].length;
+
+    if(_mqttRings[ringIdx].messageId == 0xffff) {
+        /* no msg id means qos 0 message */
+        _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)),
+                "OK", rsp, cb, args, NULL, (void *) ringIdx,
+                WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf, targetBufSize);
+
+        _returnAfterReply();
+    } else {
+        _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic),
+                    ",", _atNum(_mqttRings[ringIdx].messageId)),
+                "OK", rsp, cb, args, NULL, (void *) ringIdx,
+                WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf, targetBufSize);
+
+        _returnAfterReply();
+    }
 }
 
 void WalterModem::initBlueCherry(const char *serverName, uint16_t port,

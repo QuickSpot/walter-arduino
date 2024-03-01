@@ -24,7 +24,10 @@ The included examples are:
    perform a HTTP POST to a test server.
 
  - [ModemMqttTest](ModemMqttTest/): this sketch makes Walter connect to a network and
-   send and receive MQTT messages using the DPTechnics COAP to MQTT bridge.
+   send and receive MQTT messages using the MQTT commands in the modem.
+
+ - [ModemBlueCherryTest](ModemBlueCherryTest/): this sketch makes Walter connect to a network and
+   send and receive MQTT messages and an ota update using the DPTechnics COAP to MQTT bridge.
 
  - [SensorShield](SensorShield/): this sketch requires Walter to be placed onto
    a board which contains various sensors. It will read out the sensors and

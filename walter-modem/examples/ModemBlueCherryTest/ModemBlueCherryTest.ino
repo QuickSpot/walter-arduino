@@ -1,7 +1,7 @@
 /**
- * @file ModemMqttTest.ino
- * @author Jonas Maes <jonas@dptechnics.com>
- * @date Jun 2023
+ * @file ModemBlueCherryTest.ino
+ * @author Dries Vandenbussche <dries@dptechnics.com>
+ * @date 06 Jun 2023
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -43,48 +43,50 @@
  *
  * @section DESCRIPTION
  * 
- * This file contains a sketch which uses the modem in Walter to make a
- * http request and show the result.
+ * This file contains a sketch which sends and receives mqtt data
+ * using the DPTechnics BlueCherry cloud platform. It also supports
+ * OTA updates which are scheduled through the BlueCherry web interface.
  */
 
 #include <esp_system.h>
 #include <WalterModem.h>
 #include <HardwareSerial.h>
 
-/**
- * @brief TLS profile
- */
-#define TLS_PROFILE 1
-
-/**
- * @brief The modem instance.
- */
 WalterModem modem;
 
-/**
- * @brief Buffer for incoming response
- */
-uint8_t incomingBuf[256] = { 0 };
+uint8_t dataBuf[256] = { 0 };
+uint8_t otaBuffer[SPI_FLASH_BLOCK_SIZE];
+uint8_t counter = 0;
 
-/**
- * @brief MQTT client and message prefix based on mac address
- */
-char macString[32];
+void waitForNetwork()
+{
+  /* Wait for the network to become available */
+  WalterModemNetworkRegState regState = modem.getNetworkRegState();
+  while(!(regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_HOME ||
+          regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_ROAMING))
+  {
+    delay(100);
+    regState = modem.getNetworkRegState();
+  }
+  Serial.print("Connected to the network\r\n");
+}
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   delay(5000);
 
   Serial.print("Walter modem test v0.0.1\r\n");
 
-  esp_read_mac(incomingBuf, ESP_MAC_WIFI_STA);
-  sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X",
-    incomingBuf[0],
-    incomingBuf[1],
-    incomingBuf[2],
-    incomingBuf[3],
-    incomingBuf[4],
-    incomingBuf[5]);
+  /* Get the MAC address for board validation */
+  esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+    dataBuf[0],
+    dataBuf[1],
+    dataBuf[2],
+    dataBuf[3],
+    dataBuf[4],
+    dataBuf[5]);
 
   if(WalterModem::begin(&Serial2)) {
     Serial.print("Modem initialization OK\r\n");
@@ -173,15 +175,7 @@ void setup() {
     return;
   }
 
-  /* Wait for the network to become available */
-  WalterModemNetworkRegState regState = modem.getNetworkRegState();
-  while(!(regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_HOME ||
-          regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_ROAMING))
-  {
-    delay(100);
-    regState = modem.getNetworkRegState();
-  }
-  Serial.print("Connected to the network\r\n");
+  waitForNetwork();
 
   /* Activate the PDP context */
   if(modem.setPDPContextActive(true)) {
@@ -210,51 +204,70 @@ void setup() {
     return;
   }
 
-  /* Configure TLS profile */
-  if(modem.tlsConfigProfile(TLS_PROFILE)) {
-    Serial.print("Successfully configured the TLS profile\r\n");
-  } else {
-    Serial.print("Failed to configure TLS profile\r\n");
-  }
-
-  // other public mqtt broker with web client: mqtthq.com
-  if(modem.mqttConnect("test.mosquitto.org", 1883, macString)) {
-    Serial.print("MQTT connection succeeded\r\n");
-
-    if(modem.mqttSubscribe("waltertopic")) {
-      Serial.print("MQTT subscribed to topic 'waltertopic'\r\n");
-    } else {
-      Serial.print("MQTT subscribe failed\r\n");
-    }
-  } else {
-    Serial.print("MQTT connection failed\r\n");
-  }
+  modem.initBlueCherry("coap.bluecherry.io", 65534, 0x21, otaBuffer);
+  Serial.print("BlueCherry cloud platform link initialized\r\n");
 }
 
-void loop() {
+void loop()
+{
+  WalterModemRsp rsp = {};
+  bool moreDataAvailable;
+
   delay(15000);
 
-  WalterModemRsp rsp = {};
+  dataBuf[6] = counter++;
+  modem.blueCherryPublish(0x84, 7, dataBuf);
 
-  static int seq = 0;
-  static char outgoingMsg[64];
-  seq++;
-  if(seq % 3 == 0) {
-    sprintf(outgoingMsg, "%s-%d", macString, seq);
-    if(modem.mqttPublish("waltertopic", (uint8_t *) outgoingMsg, strlen(outgoingMsg))) {
-      Serial.printf("published '%s' on topic 'waltertopic'\r\n", outgoingMsg);
-    } else {
-      Serial.print("MQTT publish failed\r\n");
+  do {
+    if(!modem.blueCherrySynchronize()) {
+      Serial.print("Error communicating with BlueCherry cloud platform!\r\n");
+      Serial.print("Rebooting modem after BlueCherry sync failure (CoAP stack may be broken)\r\n");
+      modem.reset();
+      modem.setOpState(WALTER_MODEM_OPSTATE_FULL);
+      waitForNetwork();
+      return;
     }
-  }
 
-  while(modem.mqttDidRing("waltertopic", incomingBuf, sizeof(incomingBuf), &rsp)) {
-    Serial.printf("incoming: qos=%d msgid=%d len=%d:\r\n",
-    rsp.data.mqttResponse.qos,
-    rsp.data.mqttResponse.messageId,
-    rsp.data.mqttResponse.length);
-    for(int i = 0; i < rsp.data.mqttResponse.length; i++) {
-      Serial.printf("'%c' 0x%02x\r\n", incomingBuf[i], incomingBuf[i]);
+    Serial.print("Synchronized with the BlueCherry cloud platform, awaiting ACK\r\n");
+
+    while(!modem.blueCherryDidRing(&moreDataAvailable, &rsp)) {
+      Serial.print("Awaiting ring... ");
+      delay(100);
     }
-  }
+    Serial.print("\r\n");
+
+    if(rsp.data.blueCherry.nak) {
+      Serial.print("Rebooting modem after timeout waiting for ACK (workaround modem bug)\r\n");
+      modem.reset();
+      modem.setOpState(WALTER_MODEM_OPSTATE_FULL);
+      waitForNetwork();
+      delay(5000);
+      Serial.print("Continuing\r\n");
+      return;
+    }
+
+    Serial.printf("Successfully sent message. Nr incoming msgs: %d\r\n",
+      rsp.data.blueCherry.messageCount);
+
+    for(uint8_t msgIdx = 0; msgIdx < rsp.data.blueCherry.messageCount; msgIdx++) {
+      if(rsp.data.blueCherry.messages[msgIdx].topic == 0) {
+        Serial.printf("Incoming message %d/%d is a BlueCherry management message\r\n",
+          msgIdx + 1, rsp.data.blueCherry.messageCount);
+      } else {
+        Serial.printf("Incoming message %d/%d:\r\n", msgIdx + 1, rsp.data.blueCherry.messageCount);
+        Serial.printf("topic: %02x\r\n", rsp.data.blueCherry.messages[msgIdx].topic);
+        Serial.printf("data size: %d\r\n", rsp.data.blueCherry.messages[msgIdx].dataSize);
+
+        for(uint8_t byteIdx = 0; byteIdx < rsp.data.blueCherry.messages[msgIdx].dataSize; byteIdx++) {
+          Serial.printf("%02x ", rsp.data.blueCherry.messages[msgIdx].data[byteIdx]);
+        }
+
+        Serial.print("\r\n");
+      }
+    }
+
+    if(moreDataAvailable) {
+      Serial.print("(got some incoming data but more is waiting to be fetched: doing another sync call)\r\n");
+    }
+  } while(moreDataAvailable);
 }

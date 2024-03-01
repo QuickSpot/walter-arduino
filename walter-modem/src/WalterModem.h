@@ -526,7 +526,8 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_CLOCK,
     WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
     WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
-    WALTER_MODEM_RSP_DATA_TYPE_COAP
+    WALTER_MODEM_RSP_DATA_TYPE_COAP,
+    WALTER_MODEM_RSP_DATA_TYPE_MQTT
 } WalterModemRspDataType;
 
 /**
@@ -1193,23 +1194,24 @@ typedef struct {
  * @brief This strucure represents a COAP response
  */
 typedef struct {
-    /*
+    /**
      * @brief Profile id as received from the modem
      * (if one does not trust the modem, one might want to compare it
      * with the profile id for which data was requested)
      */
     uint8_t profileId;
 
-    /* @brief message id
+    /**
+     * @brief message id
      */
     uint16_t messageId;
 
-    /*
+    /**
      * @brief send type (con non ack rst)
      */
     WalterModemCoapSendType sendType;
     
-    /*
+    /**
      * @brief method or response code
      */
     WalterModemCoapSendMethodRsp methodRsp;
@@ -1219,6 +1221,30 @@ typedef struct {
      */
     uint16_t length;
 } WalterModemCoapResponse;
+
+/**
+ * @brief This strucure represents an incoming MQTT message
+ */
+typedef struct {
+    /**
+     * @brief Message id (0xffff means unknown, in case of qos 0)
+     */
+    uint16_t messageId;
+
+    /**
+     * @brief QOS
+     */
+    uint8_t qos;
+
+    /**
+     * @brief length of the message
+     */
+    uint16_t length;
+
+    /**
+     * topic not needed because mqttDidRing caller specifies desired topic
+     */
+} WalterModemMqttResponse;
 
 /**
  * @brief This strucure represents a http response
@@ -1330,6 +1356,11 @@ union uWalterModemRspData {
      * @brief COAP response
      */
     WalterModemCoapResponse coapResponse;
+
+    /**
+     * @brief MQTT response
+     */
+    WalterModemMqttResponse mqttResponse;
 };
 
 /**
@@ -1880,6 +1911,28 @@ typedef struct {
     uint16_t contentTypeSize;
 } WalterModemHttpContext;
 
+typedef struct {
+    /**
+     * @brief Message id (initialized 0 so message id 0 is not permitted)
+     */
+    uint16_t messageId = 0;
+
+    /**
+     * @brief QOS
+     */
+    uint8_t qos;
+
+    /**
+     * @brief Topic
+     */
+    char topic[WALTER_MODEM_HOSTNAME_BUF_SIZE] = { 0 };
+
+    /**
+     * @brief Message size
+     */
+    uint16_t length;
+} WalterModemMqttRing;
+
 /**
  * @brief This structure represents the state of the BlueCherry association.
  */
@@ -2032,6 +2085,11 @@ class WalterModem
          * @brief HTTP profile for which we are currently awaiting data
          */
         static inline uint8_t _httpCurrentProfile = 0xff;
+
+        /**
+         * @brief MQTT incoming messages for subscribed topics backlog
+         */
+        static inline WalterModemMqttRing _mqttRings[8];
 
         /**
          * @brief The task in which AT commands and responses are handled.
@@ -2520,6 +2578,24 @@ class WalterModem
          */
         static bool _processOtaFinishEvent(void);
 
+        /**
+         * @brief Configure mqtt client in the modem
+         *
+         * This function configures the modem mqtt client,
+         * without connecting.
+         *
+         * @param clientId MQTT client id to be used
+         * @param userName Username for auth
+         * @param password Password for auth
+         * @param tlsProfileId TLS profile id to be used
+         *
+         * @return True if succeeded, false if not.
+         */
+        static bool _mqttConfig(const char *clientId,
+            const char *userName,
+            const char *password,
+            uint8_t tlsProfileId);
+
     public:
         /**
          * @brief Initialize the modem.
@@ -2747,6 +2823,120 @@ class WalterModem
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
+
+        /**
+         * @brief Disconnect mqtt connection.
+         *
+         * This function disconnects the mqtt client connection
+         * to the broker.
+         *
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool mqttDisconnect(WalterModemRsp *rsp,
+                walterModemCb cb,
+                void *args);
+
+        /**
+         * @brief Initialize MQTT and establish connection in one call.
+         *
+         * This function initializes the mqtt client on the modem
+         * and establishes a connection.
+         *
+         * @param serverName MQTT broker hostname
+         * @param port Port to connect to
+         * @param clientId Client id string to be used
+         * @param userName Username
+         * @param password Password
+         * @param tlsProfileId TLS profile id to be used (default 0=plaintext)
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool mqttConnect(const char *serverName,
+            uint16_t port,
+            const char *clientId = "walter-mqtt-client",
+            const char *userName = "",
+            const char *password = "",
+            uint8_t tlsProfileId = 0,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Publish something through mqtt.
+         *
+         * This function publishes the passed data on the given mqtt topic
+         * using the connection established earlier through mqttConnect.
+         *
+         * @param topicString topic to publish on
+         * @param data Data to be published
+         * @param dataSize Size of the data block
+         * @param qos QOS 0=at most once 1=at least once 2=exactly once received
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool mqttPublish(const char *topicString,
+            uint8_t *data,
+            uint16_t dataSize,
+            uint8_t qos = 1,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Subscribe to a mqtt topic
+         *
+         * This function subscribes to a given topic using the
+         * connection established earlier through mqttConnect.
+         *
+         * @param topicString topic to publish on
+         * @param qos QOS 0=at most once 1=at least once 2=exactly once received
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool mqttSubscribe(const char *topicString,
+            uint8_t qos = 1,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Poll if there were incoming mqtt messages.
+         *
+         * Poll if the modem has reported any incoming mqtt messages on the
+         * topics we are subscribed on
+         *
+         * @param topic Topic to poll
+         * @param targetBuf Target buffer to write incoming mqtt data in
+         * @param targetBufSize Size of the target buffer
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool mqttDidRing(
+            const char *topic,
+            uint8_t *targetBuf,
+            uint16_t targetBufSize,
+            WalterModemRsp *rsp = NULL);
 
         /**
          * @brief Configure TLS profile.
