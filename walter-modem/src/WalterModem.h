@@ -2951,8 +2951,9 @@ class WalterModem
          *
          * @param profileId Security profile id (1-6)
          * @param tlsValid TLS validation level: nothing, URL, CA+period or all
-         * @param tlsVersion TLS version (please stick to the default, which is
-         * the most recent version)
+         * @param tlsVersion TLS version
+         * @param caCertificateId CA certificate for certificate validation,
+         * or 0 to specify none
          * @param rsp Pointer to a modem response structure to save the result
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -2965,6 +2966,7 @@ class WalterModem
             uint8_t profileId,
             WalterModemTlsValidation tlsValid = WALTER_MODEM_TLS_VALIDATION_NONE,
             WalterModemTlsVersion tlsVersion = WALTER_MODEM_TLS_VERSION_13,
+            uint8_t caCertificateId = 0,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);

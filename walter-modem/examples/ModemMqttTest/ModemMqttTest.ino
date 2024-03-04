@@ -211,14 +211,14 @@ void setup() {
   }
 
   /* Configure TLS profile */
-  if(modem.tlsConfigProfile(TLS_PROFILE)) {
+  if(modem.tlsConfigProfile(TLS_PROFILE, WALTER_MODEM_TLS_VALIDATION_NONE, WALTER_MODEM_TLS_VERSION_13, 1)) {
     Serial.print("Successfully configured the TLS profile\r\n");
   } else {
     Serial.print("Failed to configure TLS profile\r\n");
   }
 
   // other public mqtt broker with web client: mqtthq.com
-  if(modem.mqttConnect("test.mosquitto.org", 1883, macString)) {
+  if(modem.mqttConnect("test.mosquitto.org", 8883, macString, "", "", 1)) {
     Serial.print("MQTT connection succeeded\r\n");
 
     if(modem.mqttSubscribe("waltertopic")) {

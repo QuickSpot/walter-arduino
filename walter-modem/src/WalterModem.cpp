@@ -3073,6 +3073,7 @@ bool WalterModem::tlsConfigProfile(
     uint8_t profileId,
     WalterModemTlsValidation tlsValid,
     WalterModemTlsVersion tlsVersion,
+    uint8_t caCertificateId,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args)
@@ -3082,9 +3083,15 @@ bool WalterModem::tlsConfigProfile(
     }
 
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
-    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-            "AT+SQNSPCFG=%u,%d,\"\",%01x,,,,\"\",\"\",0,0,0",
-            profileId, tlsVersion, tlsValid);
+    if(caCertificateId) {
+        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                "AT+SQNSPCFG=%u,%d,\"\",%d,%d,,,\"\",\"\",0,0,0",
+                profileId, tlsVersion, tlsValid, caCertificateId);
+    } else {
+        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+                "AT+SQNSPCFG=%u,%d,\"\",%d,,,,\"\",\"\",0,0,0",
+                profileId, tlsVersion, tlsValid);
+    }
 
     _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
             NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
