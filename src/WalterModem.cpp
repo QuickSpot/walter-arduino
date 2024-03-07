@@ -2795,6 +2795,7 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
         &(_taskQueue.memHandle));
 
     gpio_set_direction((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_MODE_OUTPUT);
+    gpio_set_pull_mode((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_FLOATING);
     gpio_deep_sleep_hold_en();
 
 #ifdef CORE_DEBUG_LEVEL
