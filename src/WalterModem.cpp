@@ -2987,6 +2987,15 @@ bool WalterModem::getSignalQuality(
     _returnAfterReply();
 }
 
+bool WalterModem::getStatusInformation(
+        WalterModemRsp *rsp,
+        walterModemCb cb,
+        void *args)
+{
+    _runCmd(arr("AT+SQNMONI=0"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
 bool WalterModem::_mqttConfig(const char *clientId,
         const char *userName,
         const char *password,

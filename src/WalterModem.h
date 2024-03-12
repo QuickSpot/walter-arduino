@@ -2824,6 +2824,11 @@ class WalterModem
             walterModemCb cb = NULL,
             void *args = NULL);
 
+        static bool getStatusInformation(
+                WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);       
+
         /**
          * @brief Disconnect mqtt connection.
          *
