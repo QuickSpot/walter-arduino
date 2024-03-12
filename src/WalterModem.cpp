@@ -2992,7 +2992,7 @@ bool WalterModem::getStatusInformation(
         walterModemCb cb,
         void *args)
 {
-    _runCmd(arr("AT+SQNMONI=0"), "OK", rsp, cb, args);
+    _runCmd(arr("AT+SQNMONI=9"), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
