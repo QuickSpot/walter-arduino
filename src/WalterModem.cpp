@@ -3937,7 +3937,8 @@ bool WalterModem::setNetworkSelectionMode(
     _operator.format = format;
     _strncpy_s(_operator.name, operatorName, WALTER_MODEM_OPERATOR_MAX_SIZE);
 
-    if(mode == WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC) {
+    if(mode == WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC ||
+            mode == WALTER_MODEM_NETWORK_SEL_MODE_UNREGISTER) {
         _runCmd(arr("AT+COPS=", _digitStr(mode)), "OK", rsp, cb, args);
         _returnAfterReply();
     } else {
