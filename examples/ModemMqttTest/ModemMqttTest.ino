@@ -250,9 +250,9 @@ void loop() {
 
   while(modem.mqttDidRing("waltertopic", incomingBuf, sizeof(incomingBuf), &rsp)) {
     Serial.printf("incoming: qos=%d msgid=%d len=%d:\r\n",
-    rsp.data.mqttResponse.qos,
-    rsp.data.mqttResponse.messageId,
-    rsp.data.mqttResponse.length);
+        rsp.data.mqttResponse.qos,
+        rsp.data.mqttResponse.messageId,
+        rsp.data.mqttResponse.length);
     for(int i = 0; i < rsp.data.mqttResponse.length; i++) {
       Serial.printf("'%c' 0x%02x\r\n", incomingBuf[i], incomingBuf[i]);
     }
