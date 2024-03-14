@@ -3084,6 +3084,8 @@ bool WalterModem::tlsConfigProfile(
     WalterModemTlsValidation tlsValid,
     WalterModemTlsVersion tlsVersion,
     uint8_t caCertificateId,
+    uint8_t clientCertificateId,
+    uint8_t clientPrivKeyId,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args)
@@ -3093,21 +3095,84 @@ bool WalterModem::tlsConfigProfile(
     }
 
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
-    if(caCertificateId) {
-        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-                "AT+SQNSPCFG=%u,%d,\"\",%d,%d,,,\"\",\"\",0,0,0",
-                profileId, tlsVersion, tlsValid, caCertificateId);
-    } else {
-        stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-                "AT+SQNSPCFG=%u,%d,\"\",%d,,,,\"\",\"\",0,0,0",
-                profileId, tlsVersion, tlsValid);
+    stringsBuffer->size += sprintf((char *) stringsBuffer->data,
+            "AT+SQNSPCFG=%u,%d,\"\",%d,",
+            profileId, tlsVersion, tlsValid);
+    if(caCertificateId != 0xff) {
+        stringsBuffer->size += sprintf(
+                (char *) stringsBuffer->data + stringsBuffer->size,
+                "%d", caCertificateId);
     }
+    stringsBuffer->size += sprintf(
+            (char *) stringsBuffer->data + stringsBuffer->size, ",");
+    if(clientCertificateId != 0xff) {
+        stringsBuffer->size += sprintf(
+                (char *) stringsBuffer->data + stringsBuffer->size,
+                "%d", clientCertificateId);
+    }
+    stringsBuffer->size += sprintf(
+            (char *) stringsBuffer->data + stringsBuffer->size, ",");
+    if(clientPrivKeyId != 0xff) {
+        stringsBuffer->size += sprintf(
+                (char *) stringsBuffer->data + stringsBuffer->size,
+                "%d", clientPrivKeyId);
+    }
+    stringsBuffer->size += sprintf(
+            (char *) stringsBuffer->data + stringsBuffer->size, 
+            ",\"\",\"\",0,0,0");
 
     _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
             NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
             stringsBuffer);
 
     _returnAfterReply();
+}
+
+bool WalterModem::_tlsUploadKey(bool isPrivateKey, uint8_t slotIdx, const char *key)
+{
+    WalterModemRsp *rsp = NULL;
+    walterModemCb cb = NULL;
+    void *args = NULL;
+
+    const char *keyType = isPrivateKey ? "privatekey" : "certificate";
+
+    _runCmd(arr("AT+SQNSNVW=", _atStr(keyType), ",",
+                _atNum(slotIdx), ",", _atNum(strlen(key))),
+            "OK", rsp, cb, args, NULL, NULL,
+            WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, (uint8_t *) key, strlen(key));
+
+    _returnAfterReply();
+}
+
+bool WalterModem::tlsProvisionKeys(
+    const char *walterCertificate,
+    const char *walterPrivateKey,
+    const char *caCertificate,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    WalterModemState result = WALTER_MODEM_STATE_OK;
+
+    if(walterCertificate) {
+        if(!_tlsUploadKey(false, 5, walterCertificate)) {
+            result = WALTER_MODEM_STATE_ERROR;
+        }
+    }
+
+    if(walterPrivateKey) {
+        if(!_tlsUploadKey(true, 0, walterPrivateKey)) {
+            result = WALTER_MODEM_STATE_ERROR;
+        }
+    }
+
+    if(caCertificate) {
+        if(!_tlsUploadKey(false, 6, caCertificate)) {
+            result = WALTER_MODEM_STATE_ERROR;
+        }
+    }
+
+    _returnState(result);
 }
 
 bool WalterModem::httpConfigProfile(
@@ -3637,8 +3702,8 @@ bool WalterModem::coapCreateContext(
     uint8_t profileId,
     const char *serverName,
     int port,
+    uint8_t tlsProfileId,
     int localPort,
-    bool dtlsEnabled,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args)
@@ -3654,7 +3719,14 @@ bool WalterModem::coapCreateContext(
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
     stringsBuffer->size += sprintf((char *) stringsBuffer->data,
             "AT+SQNCOAPCREATE=%d,\"%s\",%d,%d,%d,10",
-            profileId, serverName, port, localPort, dtlsEnabled);
+            profileId, serverName, port, localPort,
+            tlsProfileId != 0);
+
+    if(tlsProfileId) {
+        stringsBuffer->size += sprintf(
+                (char *) stringsBuffer->data + stringsBuffer->size,
+                ",,%d", tlsProfileId);
+    }
 
     _runCmd(arr((const char *) stringsBuffer->data),
             "+SQNCOAPCONNECTED: ", rsp, cb, args,

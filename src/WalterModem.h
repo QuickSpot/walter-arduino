@@ -2596,6 +2596,20 @@ class WalterModem
             const char *password,
             uint8_t tlsProfileId);
 
+        /**
+         * @brief Upload key or certificate to modem NVRAM.
+         *
+         * This function uploads a key or certificate to the modem NVRAM.
+         *
+         * @param isPrivateKey true if it is a private key,
+         * false if it is a certificate
+         * @param slotIdx slot index within the modem NVRAM keystore
+         * @param key NULL-terminated string containing the PEM key/cert data
+         *
+         * @return True if succeeded, false if not.
+         */
+        static bool _tlsUploadKey(bool isPrivateKey, uint8_t slotIdx, const char *key);
+
     public:
         /**
          * @brief Initialize the modem.
@@ -2958,7 +2972,11 @@ class WalterModem
          * @param tlsValid TLS validation level: nothing, URL, CA+period or all
          * @param tlsVersion TLS version
          * @param caCertificateId CA certificate for certificate validation,
-         * or 0 to specify none
+         * 0-19 or 0xff to specify none
+         * @param clientCertificateId Client TLS certificate index,
+         * 0-19 or 0xff to specify none
+         * @param clientPrivKeyId Client TLS private key index,
+         * 0-19 or 0xff to specify none
          * @param rsp Pointer to a modem response structure to save the result
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -2971,7 +2989,37 @@ class WalterModem
             uint8_t profileId,
             WalterModemTlsValidation tlsValid = WALTER_MODEM_TLS_VALIDATION_NONE,
             WalterModemTlsVersion tlsVersion = WALTER_MODEM_TLS_VERSION_13,
-            uint8_t caCertificateId = 0,
+            uint8_t caCertificateId = 0xff,
+            uint8_t clientCertificateId = 0xff,
+            uint8_t clientPrivKeyId = 0xff,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Upload BlueCherry keys to the modem.
+         *
+         * Upload the Walter certificate and private key and the BlueCherry
+         * bridge server CA certificate to the modem.
+         *
+         * The key parameters are NULL terminated strings containing the
+         * PEM data with each line terminated by CRLF.
+         *
+         * @param walterCertificate Walter X.509 certificate as PEM string
+         * @param walterPrivateKey Walter private key as PEM string
+         * @param caCertificate BlueCherry CA certificate
+         * @param rsp Pointer to a modem response structure to save the result
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool tlsProvisionKeys(
+            const char *walterCertificate,
+            const char *walterPrivateKey,
+            const char *caCertificate,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
@@ -3268,8 +3316,8 @@ class WalterModem
          * and should not be used for regular COAP)
          * @param serverName The server name to connect to.
          * @param port The port of the server to connect to.
-         * @param localPort The local port to use.
-         * @param dtlsEnabled True if dtls is enabled
+         * @param tlsProfileId If not 0, DTLS is used with the given profile (1-6).
+         * @param localPort The local port to use (default 0=random).
          * @param rsp Pointer to a modem response structure to save the result 
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -3282,8 +3330,8 @@ class WalterModem
             uint8_t profileId,
             const char *serverName,
             int port,    
+            uint8_t tlsProfileId = 0,
             int localPort = 0,
-            bool dtlsEnabled = false,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
