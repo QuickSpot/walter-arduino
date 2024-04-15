@@ -114,11 +114,27 @@ void setup() {
 }
 
 void loop() {
+  static bool rawMode = false;
+
   if(Serial.available()) {
-    ModemSerial.write(Serial.read());
+    int x = Serial.read();
+    if(x == '|') {
+      rawMode = !rawMode;
+    } else {
+      if(rawMode) {
+        Serial.printf("OUT to modem: %02x  %c\r\n", x, x);
+      }
+      
+      ModemSerial.write(x);
+    }
   }
 
   if(ModemSerial.available()) {
-    Serial.write(ModemSerial.read());
+    int x = ModemSerial.read();
+    if(rawMode) {
+      Serial.printf("IN from modem: %02x  %c\r\n", x, x);
+    } else {
+      Serial.write(x);
+    }
   }
 }

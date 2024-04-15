@@ -634,7 +634,8 @@ typedef enum {
 typedef enum {
     WALTER_MODEM_TLS_VALIDATION_NONE = 0,
     WALTER_MODEM_TLS_VALIDATION_CA = 1,
-    WALTER_MODEM_TLS_VALIDATION_URL = 4
+    WALTER_MODEM_TLS_VALIDATION_URL = 4,
+    WALTER_MODEM_TLS_VALIDATION_URL_AND_CA = 5
 } WalterModemTlsValidation;
 
 /**
@@ -1938,9 +1939,9 @@ typedef struct {
  */
 typedef struct {
     /**
-     * @brief Client ID
+     * @brief The tls profile
      */
-    uint8_t clientId = 1;       /* simple identification byte for now */
+    uint8_t tlsProfileId;
 
     /**
      * @brief COAP server name
@@ -2988,7 +2989,7 @@ class WalterModem
         static bool tlsConfigProfile(
             uint8_t profileId,
             WalterModemTlsValidation tlsValid = WALTER_MODEM_TLS_VALIDATION_NONE,
-            WalterModemTlsVersion tlsVersion = WALTER_MODEM_TLS_VERSION_13,
+            WalterModemTlsVersion tlsVersion = WALTER_MODEM_TLS_VERSION_12,
             uint8_t caCertificateId = 0xff,
             uint8_t clientCertificateId = 0xff,
             uint8_t clientPrivKeyId = 0xff,
@@ -3204,22 +3205,24 @@ class WalterModem
         /**
          * @brief Initialize BlueCherry COAP bridge.
          * 
-         * This fuction will set the serverName and port of the BlueCherry
-         * COAP server, initialize the accumulated outgoing datagram,
-         * initialize the current message id to 1, the last acknowledged id to 0
-         * and set the state machine to IDLE.
+         * This fuction will set the TLS profile id (configured using
+         * tlsConfigProfile and tlsProvisionKeys), serverName, port of the
+         * BlueCherry lite COAP server, initialize the accumulated outgoing
+         * datagram, initialize the current message id to 1,
+         * the last acknowledged id to 0 and set the state machine to IDLE.
          * 
+         * @param tlsProfileId DTLS is used with the given profile (1-6).
          * @param serverName The name of the server to connect to.
          * @param port The port of the server.
-         * @param clientId Our client ID.
          * @param otaBuffer A user-supplied buffer for OTA updates to flash;
          * must be 4K = the flash sector size.
          * 
          * @return None.
          */
-        static void initBlueCherry(const char *serverName = "",
-            uint16_t port = 0, uint8_t clientId = 1,
-            uint8_t *otaBuffer = NULL);
+        static void initBlueCherry(uint8_t tlsProfileId,
+                const char *serverName = "",
+                uint16_t port = 0, 
+                uint8_t *otaBuffer = NULL);
 
         /**
          * @brief Enqueue a MQTT publish message.

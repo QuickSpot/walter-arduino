@@ -60,6 +60,7 @@
  * @brief The modem instance.
  */
 WalterModem modem;
+WalterModemRsp rsp = {};
 
 /**
  * @brief The buffer to transmit to the COAP server.
@@ -106,7 +107,6 @@ void setup() {
     return;
   }
 
-  WalterModemRsp rsp = {};
   if(modem.getOpState(&rsp)) {
     Serial.printf("Modem operational state: %d\r\n", rsp.data.opState);
   } else {
@@ -218,10 +218,12 @@ void setup() {
 }
 
 void loop() {
+  delay(10000);
+
+  Serial.print("hello world\r\n");
+
   dataBuf[6] = counter >> 8;
   dataBuf[7] = counter & 0xFF;
-
-  WalterModemRsp rsp = {};
 
   counter++;
 
@@ -275,6 +277,4 @@ void loop() {
       Serial.print("\r\n");
     }
   }
-
-  delay(10000);
 }

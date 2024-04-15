@@ -209,7 +209,7 @@ void setup() {
   }
 
   /* Configure http profile for a simple test */
-  if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io", TLS_PROFILE)) {
+  if(modem.httpConfigProfile(HTTP_PROFILE, "tls13.akamai.io", TLS_PROFILE)) {
     Serial.print("Successfully configured the http profile\r\n");
   } else {
     Serial.print("Failed to configure HTTP profile\r\n");

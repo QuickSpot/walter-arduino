@@ -3524,17 +3524,17 @@ bool WalterModem::mqttDidRing(
     }
 }
 
-void WalterModem::initBlueCherry(const char *serverName, uint16_t port,
-        uint8_t clientId, uint8_t *otaBuffer)
+void WalterModem::initBlueCherry(uint8_t tlsProfileId,
+        const char *serverName, uint16_t port,
+        uint8_t *otaBuffer)
 {
-    blueCherry.clientId = clientId;
     blueCherry.port = port;
     strncpy(blueCherry.serverName, serverName == NULL ? "" : serverName,
         WALTER_MODEM_HOSTNAME_MAX_SIZE);
 
-    /* FIXME: later client id will be removed (also in the bridge server) */
-    blueCherry.messageOutLen = 1;
-    blueCherry.messageOut[0] = blueCherry.clientId;
+    blueCherry.tlsProfileId = tlsProfileId;
+
+    blueCherry.messageOutLen = 0;
     blueCherry.curMessageId = 0x1;
     blueCherry.lastAckedMessageId = 0x0;
     blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
@@ -3570,7 +3570,8 @@ bool WalterModem::blueCherrySynchronize(void)
         return false;
     }
 
-    if(!coapCreateContext(0, blueCherry.serverName, blueCherry.port)) {
+    if(!coapCreateContext(0, blueCherry.serverName, blueCherry.port,
+                blueCherry.tlsProfileId)) {
         return false;
     }
 
@@ -3684,9 +3685,7 @@ bool WalterModem::blueCherryDidRing(bool *moreDataAvailable, WalterModemRsp *rsp
         /* on wrap around, skip msg id 0 which we use as a special/error value */
         blueCherry.curMessageId++;
     }
-    blueCherry.messageOutLen = 1;
-    /* FIXME: client id will become obsolete */
-    blueCherry.messageOut[0] = blueCherry.clientId;
+    blueCherry.messageOutLen = 0;
 
     if(blueCherry.emitErrorEvent) {
         uint8_t blueCherryErrorEventCode =
@@ -4426,6 +4425,7 @@ bool WalterModem::socketSend(
     return socketSend((uint8_t*) str, strlen(str), rsp, cb, args, rai, 
         socketId);
 }
+
 
 bool WalterModem::configGNSS(
     WalterModemGNSSSensMode sensMode,

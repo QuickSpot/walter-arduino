@@ -211,7 +211,7 @@ void setup() {
   }
 
   /* Configure TLS profile */
-  if(modem.tlsConfigProfile(TLS_PROFILE, WALTER_MODEM_TLS_VALIDATION_NONE, WALTER_MODEM_TLS_VERSION_13, 1)) {
+  if(modem.tlsConfigProfile(TLS_PROFILE, WALTER_MODEM_TLS_VALIDATION_NONE, WALTER_MODEM_TLS_VERSION_12, 1)) {
     Serial.print("Successfully configured the TLS profile\r\n");
   } else {
     Serial.print("Failed to configure TLS profile\r\n");
