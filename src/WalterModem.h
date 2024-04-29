@@ -62,6 +62,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <freertos/semphr.h>
+#include <esp_vfs.h>
+#include <esp_vfs_fat.h>
+#include <esp_system.h>
 
 /**
  * @brief The maximum number of items in the task queue.
@@ -892,7 +895,11 @@ typedef enum {
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE = 1, /* payload: 32 bit size */
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_CHUNK = 2, /* payload: chunk data */
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_FINISH = 3,
-    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR = 4
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR = 4,
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_INITIALIZE = 5,
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_CHUNK = 6,
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH = 7,
+    WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8
 } WalterModemBlueCherryEventType;
 
 /**
@@ -2013,6 +2020,45 @@ typedef struct {
     const esp_partition_t *otaPartition = NULL;
 } WalterModemBlueCherryState;
 
+#define WALTER_MODEM_STP_SIGNATURE_REQUEST 0x66617374
+#define WALTER_MODEM_STP_SIGNATURE_RESPONSE 0x74736166
+
+#define WALTER_MODEM_STP_OPERATION_RESET 0x00
+#define WALTER_MODEM_STP_OPERATION_OPEN_SESSION 0x01
+#define WALTER_MODEM_STP_OPERATION_TRANSFER_BLOCK_COMMAND 0x02
+#define WALTER_MODEM_STP_OPERATION_TRANSFER_BLOCK 0x03
+
+/**
+ * @brief STP packet for modem firmware upload
+ */
+struct WalterModemStpRequest
+{
+    uint32_t signature;
+    uint8_t operation;
+    uint8_t sessionId;
+    uint16_t payloadLength;
+    uint32_t transactionId;
+    uint16_t headerCrc16;
+    uint16_t payloadCrc16;
+};
+
+struct WalterModemStpResponseSessionOpen
+{
+    uint8_t success;
+    uint8_t version;
+    uint16_t maxTransferSize;
+};
+
+struct WalterModemStpRequestTransferBlockCmd
+{
+    uint16_t blockSize;
+};
+
+struct WalterModemStpResponseTransferBlock
+{
+    uint16_t residue;
+};
+
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem
  * and positioning functionality.
@@ -2214,6 +2260,57 @@ class WalterModem
          * @brief BlueCherry state
          */
         static inline WalterModemBlueCherryState blueCherry;
+
+        /*
+         * @brief FAT partition mount handle (used for modem firmware upgrade)
+         */
+        static inline wl_handle_t _wl_handle = WL_INVALID_HANDLE;
+
+        /*
+         * @brief Current modem firmware file handle in the FAT partition
+         */
+        static inline FILE *_mota_file_ptr = NULL;
+
+        /*
+         * @brief Flag to interrupt the rx interrupt handler
+         * during MOTA updates where we want to read the raw uart
+         * data directly
+         */
+        static inline bool _rxHandlerInterrupted = false;
+
+        /*
+         * @brief Helper to boot modem to recovery modem and start upgrade
+         */
+        static uint16_t _modemFirmwareUpgradeStart(void);   // returns modem max blockSize
+                                                            //
+        /*
+         * @brief Helper to boot modem into new firmware after upgrade
+         */
+        static void _modemFirmwareUpgradeFinish(bool success);
+
+        /*
+         * @brief Helper to transfer a chunk of the modem firmware to modem
+         * during MOTA update
+         */
+        static void _modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transactionId);
+
+        /*
+         * @brief Helper to abstract away the difference between arduino
+         * and ESP-IDF for reading uart
+         */
+        static size_t _uartRead(uint8_t *buf, int readSize, bool tryHard = false);
+
+        /*
+         * @brief Helper to abstract away the difference between arduino
+         * and ESP-IDF for writing to uart
+         */
+        static size_t _uartWrite(uint8_t *buf, int writeSize);
+
+        /*
+         * @brief Helper for the CRC used in the modem binary transfer
+         * STP protocol
+         */
+        static uint16_t _calculateStpCrc16(const void *input, size_t length);
 
         /**
          * @brief Get a command from the command pool.
@@ -2578,6 +2675,11 @@ class WalterModem
          * included SHA256 digest mismatches the corresponding image.
          */
         static bool _processOtaFinishEvent(void);
+
+        static bool _formatFat(void);
+        static bool _processMotaInitializeEvent(uint8_t *data, uint16_t len);
+        static bool _processMotaChunkEvent(uint8_t *data, uint16_t len);
+        static bool _processMotaFinishEvent(void);
 
         /**
          * @brief Configure mqtt client in the modem
@@ -4164,6 +4266,21 @@ class WalterModem
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
+
+        /**
+         * @brief Offline update modem firmware from file on flash
+         *
+         * This function upgrades the modem firmware from a file called mota.dup
+         * on the FAT filesystem on the flash. See the ModemFota example
+         * sketch. Do not forget to put the supplied FAT image on
+         * the flash using esptool - see comments in ModemFota.ino.
+         *
+         * Do not combine with initBlueCherry.
+         *
+         * @param otaBuffer Buffer we can use for block transfers to modem,
+         * expected to be at least SPI_FLASH_SEC_SIZE = 4K
+         */
+        static void offlineMotaUpgrade(uint8_t *otaBuffer);
 };
 
 #endif

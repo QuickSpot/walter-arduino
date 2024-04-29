@@ -60,7 +60,8 @@ settings in de IDE:
  - CPU Frequency: 240MHz (WiFi)
  - Flash Mode: QIO 80MHz
  - Flash Size: 16MB (128Mb)
- - Partition Scheme: Anything that goes for you
+ - Partition Scheme: 16M Flash (2MB APP/12.5MB FATFS)
+   (must be this partition scheme to make modem firmware updates possible)
  - Core Debug Level: Anything that goes for you
  - PSRAM: QSPI PSRAM
  - Arduino Runs On: Core 1

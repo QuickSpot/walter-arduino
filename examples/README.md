@@ -36,3 +36,7 @@ The included examples are:
  - [Positioning](Positioning/): this sketch requires Walter to be placed onto
    a board which contains various sensors. It will read out the sensors and
    transmit them to the demo server every 60 seconds.
+
+ - [ModemMota](ModemMota/): this sketch updates the modem firmware.
+   Please read the comments at the top for info on how to put the
+   firmware image on the ESP32 flash before running the sketch.
