@@ -276,7 +276,7 @@ void setup()
     Serial.print("Failed to configure TLS profile\r\n");
   }
 
-  modem.initBlueCherry(1, "coap.bluecherry.io", 5684, otaBuffer);
+  modem.initBlueCherry(TLS_PROFILE, "coap.bluecherry.io", 5684, otaBuffer);
   Serial.print("BlueCherry cloud platform link initialized\r\n");
 }
 
