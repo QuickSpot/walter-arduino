@@ -291,14 +291,14 @@ void loop()
   modem.blueCherryPublish(0x84, 7, dataBuf);
 
   do {
-    if(!modem.blueCherrySynchronize()) {
+    while(!modem.blueCherrySynchronize()) {
       Serial.print("Error communicating with BlueCherry cloud platform!\r\n");
       Serial.print("Rebooting modem after BlueCherry sync failure (CoAP stack may be broken)\r\n");
       modem.reset();
       modem.setOpState(WALTER_MODEM_OPSTATE_FULL);
       waitForNetwork();
-      Serial.print("Continuing\r\n");
-      return;
+      delay(1000);
+      Serial.print("New attempt...\r\n");
     }
 
     Serial.print("Synchronized with the BlueCherry cloud platform, awaiting ACK\r\n");
@@ -311,6 +311,8 @@ void loop()
 
     if(rsp.data.blueCherry.nak) {
       Serial.print("Rebooting modem after timeout waiting for ACK (workaround bug)\r\n");
+      Serial.print("Published data lost: next attempt will be a new COAP msg (msgid++)\r\n");
+      Serial.print("so the developer has the chance to disregard data that is obsolete by now...");
       modem.reset();
       modem.setOpState(WALTER_MODEM_OPSTATE_FULL);
       waitForNetwork();
