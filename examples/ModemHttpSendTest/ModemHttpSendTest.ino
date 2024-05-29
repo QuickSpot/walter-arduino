@@ -218,7 +218,7 @@ void setup() {
   }
 
   /* Configure http profile for a simple test */
-  if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io")) {
+  if(modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io", 80)) {
     Serial.print("Successfully configured the http profile\r\n");
   } else {
     Serial.print("Failed to configure HTTP profile\r\n");

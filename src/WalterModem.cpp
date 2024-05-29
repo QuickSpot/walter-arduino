@@ -3789,8 +3789,8 @@ bool WalterModem::tlsProvisionKeys(
 bool WalterModem::httpConfigProfile(
     uint8_t profileId,
     const char *serverName,
-    uint8_t tlsProfileId,
     uint16_t port,
+    uint8_t tlsProfileId,
     bool useBasicAuth,
     const char *authUser,
     const char *authPass,
@@ -3808,10 +3808,14 @@ bool WalterModem::httpConfigProfile(
 
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
     stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-            "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\",%d,,,%u",
-            profileId, serverName, port, useBasicAuth, authUser, authPass,
-            tlsProfileId ? 1 : 0, tlsProfileId);
+            "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"",
+            profileId, serverName, port, useBasicAuth, authUser, authPass);
 
+    if(tlsProfileId) {
+            stringsBuffer->size += sprintf(
+            (char *) stringsBuffer->data + stringsBuffer->size, 
+            ",1,,,%u", tlsProfileId);
+    }
     _runCmd(arr((const char *) stringsBuffer->data), "OK", rsp, cb, args,
             NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
             stringsBuffer);

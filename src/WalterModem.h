@@ -3142,8 +3142,8 @@ class WalterModem
          * 
          * @param profileId HTTP profile id (0, 1 or 2)
          * @param serverName The server name to connect to.
-         * @param tlsProfileId If not 0, TLS is used with the given profile (1-6).
          * @param port The port of the server to connect to.
+         * @param tlsProfileId If not 0, TLS is used with the given profile (1-6).
          * @param useBasicAuth Set true to use basic auth and send username/pw.
          * @param authUser Username.
          * @param authPass Password.
@@ -3158,8 +3158,8 @@ class WalterModem
         static bool httpConfigProfile(
             uint8_t profileId,
             const char *serverName,
-            uint8_t tlsProfileId = 0,
             uint16_t port = 80,
+            uint8_t tlsProfileId = 0,
             bool useBasicAuth = false,
             const char *authUser = "",
             const char *authPass = "",
