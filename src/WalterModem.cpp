@@ -4073,6 +4073,16 @@ bool WalterModem::httpDidRing(
         _returnState(WALTER_MODEM_STATE_ERROR);
     }
 
+    if(_httpContextSet[profileId].contentLength == 0) {
+        _httpContextSet[profileId].state = 
+            WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE;
+        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE;
+        rsp->data.httpResponse.httpStatus = 
+            _httpContextSet[profileId].httpStatus;
+        rsp->data.httpResponse.contentLength = 0;
+        _returnState(WALTER_MODEM_STATE_NO_DATA);
+    }
+
     _httpCurrentProfile = profileId;
 
     auto completeHandler = [](WalterModemCmd *cmd, WalterModemState result)
