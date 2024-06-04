@@ -162,8 +162,8 @@ bool lteConnect()
 
   /* Wait for the network to become available */
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
-  while(!(regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_HOME ||
-          regState == WALTER_MODEM_NETOWRK_REG_REGISTERED_ROAMING))
+  while(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
+          regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
   {
     delay(1000);
     WalterModemRsp rsp;
