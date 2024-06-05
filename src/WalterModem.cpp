@@ -3383,7 +3383,7 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
         if(_watchdogTimeout * 1000UL < WALTER_MODEM_CMD_TIMEOUT_MS + 5000UL) {
             _watchdogTimeout = (WALTER_MODEM_CMD_TIMEOUT_MS / 1000UL) + 5;
         }
-#ifdef CORE_DEBUG_LEVEL
+#if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         esp_task_wdt_init(_watchdogTimeout, true);
 #else
         esp_task_wdt_config_t twdt_config = {

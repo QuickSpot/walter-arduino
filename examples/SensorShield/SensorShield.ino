@@ -47,7 +47,7 @@
  * a reading of these sensors to the Walter demo server every 60 seconds.
  */
 
-#include <esp_system.h>
+#include <esp_mac.h>
 #include <LTR329ALS01.h>
 #include <WalterModem.h>
 #include <HardwareSerial.h>

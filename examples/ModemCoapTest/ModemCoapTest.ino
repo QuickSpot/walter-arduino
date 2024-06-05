@@ -47,7 +47,7 @@
  * COAP test server.
  */
 
-#include <esp_system.h>
+#include <esp_mac.h>
 #include <WalterModem.h>
 #include <HardwareSerial.h>
 

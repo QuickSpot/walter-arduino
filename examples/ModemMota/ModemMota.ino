@@ -60,7 +60,7 @@
    esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 read_flash 0x410000 0xbe0000 fat.img
  */
 
-#include <esp_system.h>
+#include <esp_mac.h>
 #include <WalterModem.h>
 #include <HardwareSerial.h>
 

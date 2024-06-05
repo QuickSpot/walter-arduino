@@ -47,7 +47,7 @@
  * connection to a network and upload counter values to the Walter demo server.
  */
 
-#include <esp_system.h>
+#include <esp_mac.h>
 #include <WalterModem.h>
 #include <HardwareSerial.h>
 

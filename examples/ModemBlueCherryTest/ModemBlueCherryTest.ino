@@ -48,7 +48,7 @@
  * OTA updates which are scheduled through the BlueCherry web interface.
  */
 
-#include <esp_system.h>
+#include <esp_mac.h>
 #include <WalterModem.h>
 #include <HardwareSerial.h>
 
