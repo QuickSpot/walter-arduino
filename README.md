@@ -68,11 +68,7 @@ settings in de IDE:
  - Events Run On: Core 1
  - Erase All Flash Before Sketch Upload: Enabled
  - JTAG Adapter: Integrated USB JTAG
-
-The above settings can be changed from the 'Tools' menu in the Arduino IDE. Your
-settings should look like the screenshot below:
-
-![Screenshot of original Arduino IDE settings](orig_ide_settings.png "Original Arduino IDE settings")
+ - Zigbee Mode: Disabled
 
 Now you need to clone this repository in the `libraries` directory of your 
 Arduino IDE. The location of this folder depends on your OS and installation,
