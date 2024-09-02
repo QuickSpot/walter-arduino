@@ -1,7 +1,7 @@
 /**
  * @file Positioning.ino
  * @author Daan Pape <daan@dptechnics.com>
- * @date 7 Apr 2023
+ * @date 2 Sep 2024
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -62,14 +62,19 @@
 #define SERV_PORT 1999
 
 /**
- * @brief The size in bytes of a minimal sensor + GNSS packet.
+ * @brief The size in bytes of a minimal sensor + GNSS + cell info packet.
  */
-#define PACKET_SIZE 18
+#define PACKET_SIZE 29
 
 /**
  * @brief All fixes with a confidence below this number are considered ok.
  */
 #define MAX_GNSS_CONFIDENCE 100.0
+
+/**
+ * @brief The serial interface to talk to the modem.
+ */
+#define ModemSerial Serial2
 
 /**
  * @brief The radio access technology to use - LTEM or NBIOT.
@@ -98,47 +103,6 @@ WalterModemGNSSFix posFix = {};
 uint8_t dataBuf[PACKET_SIZE] = { 0 };
 
 /**
- * @brief Configure the modem's network.
- * 
- * This function will set up the APN so that the modem can connect to
- * a network.
- * 
- * @param apn The APN to use for the PDP context.
- * @param user The APN username.
- * @param pass The APN password.
- * 
- * @return True on success, false on error.
- */
-bool lteInit(const char *apn, const char *user = NULL, const char *pass = NULL)
-{
-  /* Create PDP context */
-  if(user != NULL) {
-    if(!modem.createPDPContext(
-        apn,
-        WALTER_MODEM_PDP_AUTH_PROTO_PAP,
-        user,
-        pass))
-    {
-      Serial.print("Could not create PDP context\r\n");
-      return false;
-    }
-  } else {
-    if(!modem.createPDPContext(apn)) {
-      Serial.print("Could not create PDP context\r\n");
-      return false;
-    }
-  }
-
-  /* Authenticate the PDP context */
-  if(!modem.authenticatePDPContext()) {
-    Serial.print("Could not authenticate the PDP context\r\n");
-    return false;
-  }
-
-  return true;
-}
-
-/**
  * @brief Connect to the LTE network.
  * 
  * This function will connect the modem to the LTE network. This function will
@@ -165,10 +129,7 @@ bool lteConnect()
   while(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
           regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
   {
-    delay(1000);
-    WalterModemRsp rsp;
-    modem.getRSSI(&rsp);
-    Serial.printf("rssi: %d\r\n", rsp.data.rssi);
+    delay(100);
     regState = modem.getNetworkRegState();
   }
 
@@ -393,22 +354,8 @@ bool updateGNSSAssistance()
  */
 bool socketConnect(const char *ip, uint16_t port)
 {
-  WalterModemRsp rsp = {};
-
-  /* Activate the PDP context */
-  if(!modem.setPDPContextActive(true)) {
-    Serial.print("Could not activate the PDP context\r\n");
-    return false;
-  }
-
-  /* Attach the PDP context */
-  if(!modem.attachPDPContext(true)) {
-    Serial.print("Could not attach to the PDP context\r\n");
-    return false;
-  }
-
   /* Construct a socket */
-  if(!modem.createSocket(&rsp)) {
+  if(!modem.createSocket()) {
     Serial.print("Could not create a new socket\r\n");
     return false;
   }
@@ -449,9 +396,9 @@ void fixHandler(const WalterModemGNSSFix *fix, void *args)
 }
 
 /**
- * @brief Set-up the system.
+ * @brief Set up the system.
  * 
- * This function will setup the system and initialize the modem.
+ * This function will set up the system and initialize the modem.
  * 
  * @return None.
  */
@@ -460,7 +407,7 @@ void setup()
   Serial.begin(115200);
   delay(5000);
 
-  Serial.print("Walter Positioning v0.0.1\r\n");
+  Serial.print("Walter Positioning v0.0.2\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
@@ -473,7 +420,7 @@ void setup()
     dataBuf[5]);
 
   /* Modem initialization */
-  if(modem.begin(&Serial2)) {
+  if(modem.begin(&ModemSerial)) {
     Serial.print("Modem initialization OK\r\n");
   } else {
     Serial.print("Modem initialization ERROR\r\n");
@@ -482,7 +429,7 @@ void setup()
     return;
   }
 
-   WalterModemRsp rsp = {};
+  WalterModemRsp rsp = {};
    if(modem.getRAT(&rsp)) {
      if(rsp.data.rat != RADIO_TECHNOLOGY) {
        modem.setRAT(RADIO_TECHNOLOGY);
@@ -492,10 +439,8 @@ void setup()
      Serial.println("Could not retrieve radio access technology");
    }
 
-  if(lteInit("soracom.io", "sora", "sora")) {
-    Serial.print("Initialized LTE parameters\r\n");
-  } else {
-    Serial.print("Could not initialize LTE network parameters\r\n");
+  if(!modem.createPDPContext("")) {
+    Serial.println("Could not create PDP context");
     delay(1000);
     ESP.restart();
     return;
@@ -522,6 +467,8 @@ void setup()
 
 void loop()
 {
+  static WalterModemRsp rsp = {};
+
   /* Check clock and assistance data, update if required */
   if(!updateGNSSAssistance()) {
     Serial.print("Could not update GNSS assistance data\r\n");
@@ -611,6 +558,30 @@ void loop()
     ESP.restart();
     return;
   }
+
+  if(!modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
+    Serial.println("Could not request cell information");
+  } else {
+    Serial.printf("Connected on band %u using operator %s (%u%02u)",
+      rsp.data.cellInformation.band, rsp.data.cellInformation.netName,
+      rsp.data.cellInformation.cc, rsp.data.cellInformation.nc);
+    Serial.printf(" and cell ID %u.\r\n",
+      rsp.data.cellInformation.cid);
+    Serial.printf("Signal strength: RSRP: %.2f, RSRQ: %.2f.\r\n",
+      rsp.data.cellInformation.rsrp, rsp.data.cellInformation.rsrq);
+  }
+
+  dataBuf[18] = rsp.data.cellInformation.cc >> 8;
+  dataBuf[19] = rsp.data.cellInformation.cc & 0xFF;
+  dataBuf[20] = rsp.data.cellInformation.nc >> 8;
+  dataBuf[21] = rsp.data.cellInformation.nc & 0xFF;
+  dataBuf[22] = rsp.data.cellInformation.tac >> 8;
+  dataBuf[23] = rsp.data.cellInformation.tac & 0xFF;
+  dataBuf[24] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
+  dataBuf[25] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
+  dataBuf[26] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
+  dataBuf[27] = rsp.data.cellInformation.cid & 0xFF;
+  dataBuf[28] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
 
   if(!socketConnect(SERV_ADDR, SERV_PORT)) {
     Serial.print("Could not connect to UDP server socket\r\n");

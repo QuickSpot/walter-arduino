@@ -332,6 +332,17 @@ typedef enum {
 } WalterModemCEREGReportsType;
 
 /**
+ * @brief The SQNMONI cell information reporting scopes.
+ */
+typedef enum {
+    WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL = 0,
+    WALTER_MODEM_SQNMONI_REPORTS_INTRA_FREQUENCY_CELLS = 1,
+    WALTER_MODEM_SQNMONI_REPORTS_INTER_FREQUENCY_CELLS = 2,
+    WALTER_MODEM_SQNMONI_REPORTS_ALL_CELLS = 7,
+    WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL_WITH_CINR = 9
+} WalterModemSQNMONIReportsType;
+
+/**
  * @brief All supported CME error codes.
  */
 typedef enum {
@@ -519,6 +530,7 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_RAT,
     WALTER_MODEM_RSP_DATA_TYPE_RSSI,
     WALTER_MODEM_RSP_DATA_TYPE_SIGNAL_QUALITY,
+    WALTER_MODEM_RSP_DATA_TYPE_CELL_INFO,
     WALTER_MODEM_RSP_DATA_TYPE_SIM_STATE,
     WALTER_MODEM_RSP_DATA_TYPE_CME_ERROR,
     WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID,
@@ -1286,6 +1298,86 @@ typedef struct {
 } WalterModemSignalQuality;
 
 /**
+ * @brief This structure groups all possible cell monitoring response values.
+ */
+typedef struct {
+    /**
+     * @brief Name of the network operator.
+     */
+    char netName[WALTER_MODEM_OPERATOR_MAX_SIZE];
+
+    /**
+     * @brief Mobile country code.
+     */
+    uint16_t cc;
+
+    /**
+     * @brief Mobile network operator code.
+     */
+    uint8_t nc;
+
+    /**
+     * @brief Reference Signal Received Power.
+     */
+    float rsrp;
+
+    /**
+     * @brief Carrier to Interference-plus-Noise Ratio.
+     */
+    float cinr;
+
+    /**
+     * @brief Reference Signal Received Quality.
+     */
+    float rsrq;
+
+    /**
+     * @brief Tracking Area Code.
+     */
+    uint16_t tac;
+
+    /**
+     * @brief Physical Cell ID.
+     */
+    uint16_t pci;
+
+    /**
+     * @brief E-UTRA Assigned Radio Channel.
+     */
+    uint16_t earfcn;
+
+    /**
+     * @brief Received signal strength in dBm.
+     */
+    float rssi;
+
+    /**
+     * @brief DRX cycle in number of radio frames (1 frame = 10 ms).
+     */
+    uint16_t paging;
+
+    /**
+     * @brief 28-bit E-UTRAN Cell Identity.
+     */
+    uint32_t cid;
+
+    /**
+     * @brief Band number.
+     */
+    uint8_t band;
+
+    /**
+     * @brief Downlink bandwidth in kHz.
+     */
+    uint16_t bw;
+
+    /**
+     * @brief Coverage Enhancement level.
+     */
+    uint8_t ceLevel;
+} WalterModemCellInformation;
+
+/**
  * @brief This union groups the response data of all different commands.
  */
 union uWalterModemRspData {
@@ -1324,6 +1416,11 @@ union uWalterModemRspData {
      * 
      */
     WalterModemSignalQuality signalQuality;
+
+    /**
+     * @brief Current cell information data
+     */
+    WalterModemCellInformation cellInformation;
 
     /**
      * @brief The band selection configuration set.
@@ -2941,7 +3038,24 @@ class WalterModem
             walterModemCb cb = NULL,
             void *args = NULL);
 
-        static bool getStatusInformation(
+
+        /**
+         * @brief Get information on the serving and neighbouring cells.
+         * 
+         * This function returns information about the serving and
+         * neighbouring cells such as operator, cell ID, RSSI, RSRP...
+         * 
+         * @param rsp Pointer to a modem response structure to save the result
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool getCellInformation(
+                WalterModemSQNMONIReportsType type =
+                    WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
                 WalterModemRsp *rsp = NULL,
                 walterModemCb cb = NULL,
                 void *args = NULL);       

@@ -574,6 +574,61 @@ static int64_t strTotime(
     return (int64_t) utcTime;
 }
 
+bool strToUint(const char *str, int len, uint32_t *result, int radix)
+{
+    size_t l = len == -1 ? strlen(str) : (size_t) len;
+
+    /* Create a temp buffer to make the string 0-terminated */
+    char buff[l + 1];
+    memcpy(buff, str, l);
+    buff[l] = '\0';
+
+    char *end;
+    errno = 0;
+    long long int sl = strtol(buff, &end, radix);
+
+    if(end == buff) {
+        return false;
+    } else if ('\0' != *end) {
+        return false;
+    } else if(errno == ERANGE) {
+        return false;
+    } else if (sl > UINT32_MAX) {
+        return false;
+    } else if (sl < 0) {
+        return false;
+    } else {
+        *result = (uint32_t) sl;
+        return true;
+    }
+
+    return false;
+}
+
+bool strToFloat(const char *str, int len, float *result)
+{
+    size_t l = len == -1 ? strlen(str) : (size_t) len;
+
+    /* Create a temp buffer to make the string 0-terminated */
+    char buff[l + 1];
+    memcpy(buff, str, l);
+    buff[l] = '\0';
+
+    char *end;
+    errno = 0;
+    *result = strtof(buff, &end);
+
+    if(end == buff) {
+        return false;
+    } else if ('\0' != *end) {
+        return false;
+    } else if(errno == ERANGE) {
+        return false;
+    }
+
+    return true;
+}
+
 WalterModemCmd* WalterModem::_cmdPoolGet()
 {
     for(size_t i = 0; i < WALTER_MODEM_MAX_PENDING_COMMANDS; ++i) {
@@ -1652,6 +1707,86 @@ void WalterModem::_processQueueRsp(
 
             param += 1;
             offset = i + 1;
+        }
+    }
+    else if(_buffStartsWith(buff, "+SQNMONI: "))
+    {
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_CELL_INFO;
+
+        const char *rspStr = _buffStr(buff);
+        char *data = (char*) rspStr;
+        uint16_t dataSize = buff->size;
+        uint16_t offset = _strLitLen("+SQNMONI: ") - 1;
+        int8_t lastColon = -1;
+        bool firstKeyParsed = false;
+
+        for(int i = offset + 1; i < dataSize; ++i) {
+            if(data[i] == ':') {
+                lastColon = i;
+            } else if(data[i] == ' ' || data[i] == '\r') {
+                if(lastColon > 0) {
+                    const char *key = data + offset + 1;
+                    int key_len = lastColon - offset - 1;
+                    const char *value = data + lastColon + 1;
+                    int value_len = i - lastColon - 1;
+                    if(!firstKeyParsed) {
+                        if(key_len > 2) {
+                            /* The operator name is present */
+                            memcpy(cmd->rsp->data.cellInformation.netName,
+                                key, key_len - 3 > (WALTER_MODEM_OPERATOR_MAX_SIZE - 1) ?
+                                    WALTER_MODEM_OPERATOR_MAX_SIZE - 1 : key_len - 3);
+                            key += key_len - 2;
+                            key_len = 2;
+                        }
+                        firstKeyParsed = true;
+                    }
+                    if(strncmp("Cc", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.cc), 10);
+                    } else if(strncmp("Nc", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.nc), 10);
+                    } else if(strncmp("RSRP", key, key_len) == 0) {
+                        strToFloat(value, value_len,
+                            &(cmd->rsp->data.cellInformation.rsrp));
+                    } else if(strncmp("CINR", key, key_len) == 0) {
+                        strToFloat(value, value_len,
+                            &(cmd->rsp->data.cellInformation.cinr));
+                    } else if(strncmp("RSRQ", key, key_len) == 0) {
+                        strToFloat(value, value_len,
+                            &(cmd->rsp->data.cellInformation.rsrq));
+                    } else if(strncmp("TAC", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.tac), 10);
+                    } else if(strncmp("Id", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.pci), 10);
+                    } else if(strncmp("EARFCN", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.earfcn), 10);
+                    } else if(strncmp("PWR", key, key_len) == 0) {
+                        strToFloat(value, value_len,
+                            &(cmd->rsp->data.cellInformation.rssi));
+                    } else if(strncmp("PAGING", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.paging), 10);
+                    } else if(strncmp("CID", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            &(cmd->rsp->data.cellInformation.cid), 16);
+                    } else if(strncmp("BAND", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.band), 10);
+                    } else if(strncmp("BW", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.bw), 10);
+                    } else if(strncmp("CE", key, key_len) == 0) {
+                        strToUint(value, value_len,
+                            (uint32_t *)&(cmd->rsp->data.cellInformation.ceLevel), 10);
+                    }
+
+                    offset = i;
+                }
+            }
         }
     }
     else if(_buffStartsWith(buff, "+SQNMODEACTIVE: "))
@@ -3598,12 +3733,13 @@ bool WalterModem::getSignalQuality(
     _returnAfterReply();
 }
 
-bool WalterModem::getStatusInformation(
+bool WalterModem::getCellInformation(
+        WalterModemSQNMONIReportsType type,
         WalterModemRsp *rsp,
         walterModemCb cb,
         void *args)
 {
-    _runCmd(arr("AT+SQNMONI=9"), "OK", rsp, cb, args);
+    _runCmd(arr("AT+SQNMONI=", _digitStr(type)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
