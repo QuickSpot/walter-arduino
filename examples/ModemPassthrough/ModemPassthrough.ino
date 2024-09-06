@@ -96,7 +96,7 @@ void setup() {
   while(!Serial);
   
   pinMode(WALTER_MODEM_PIN_RX, INPUT);
-  pinMode(WALTER_MODEM_PIN_TX, INPUT);
+  pinMode(WALTER_MODEM_PIN_TX, OUTPUT);
   pinMode(WALTER_MODEM_PIN_CTS, INPUT);
   pinMode(WALTER_MODEM_PIN_RTS, OUTPUT);
   pinMode(WALTER_MODEM_PIN_RESET, OUTPUT);
