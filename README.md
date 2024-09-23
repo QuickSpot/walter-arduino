@@ -22,12 +22,12 @@ available for a minimum of 10 years. This makes Walter a solid choice to design
 your next LPWAN IoT product with.
 
 The Walter modem library makes it easy to interface with the Sequans Monarch 2
-modem on the Aruino platform. The library allows for UDP and TCP communication
+modem on the Arduino platform. The library allows for UDP and TCP communication
 over NB-IoT and LTE-M networks and also supports the GNSS functionality. 
 
 This library is designed to consume as little energy as possible by making use
 of the FreeRTOS locking mechanisms and the hardware UART. There are not active
-wait situations which consume useless CPU cyles. Besides that the library
+wait situations which consume useless CPU cycles. Besides that the library
 does not allocate dynamic heap memory. All RAM is determined at compiled time.
 This makes debugging easier and mitigates unexpected out-of-memory situations.
 
