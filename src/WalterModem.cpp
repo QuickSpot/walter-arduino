@@ -4636,7 +4636,7 @@ bool WalterModem::coapClose(
     }
 
     _runCmd(arr("AT+SQNCOAPCLOSE=", _atNum(profileId)),
-        "OK", rsp, cb, args);
+        "+SQNCOAPCLOSED: ", rsp, cb, args);
     _returnAfterReply();
 }
 
