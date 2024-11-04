@@ -3635,7 +3635,7 @@ class WalterModem
             const char *serverName,
             int port,    
             uint8_t tlsProfileId = 0,
-            int localPort = 0,
+            int localPort = -1,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);

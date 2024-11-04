@@ -4594,9 +4594,18 @@ bool WalterModem::coapCreateContext(
 
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
     stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-            "AT+SQNCOAPCREATE=%d,\"%s\",%d,%d,%d,10",
-            profileId, serverName, port, localPort,
-            tlsProfileId != 0);
+            "AT+SQNCOAPCREATE=%d,\"%s\",%d,",
+            profileId, serverName, port);
+
+    if(localPort > -1) {
+        stringsBuffer->size += sprintf(
+                (char *) stringsBuffer->data + stringsBuffer->size,
+                "%d", localPort);
+    }
+
+    stringsBuffer->size += sprintf(
+            (char *) stringsBuffer->data + stringsBuffer->size,
+            ",%d,60", tlsProfileId != 0);
 
     if(tlsProfileId) {
         stringsBuffer->size += sprintf(
