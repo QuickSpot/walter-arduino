@@ -86,9 +86,11 @@
  */
 static void _modem_reset()
 {
+  gpio_hold_dis((gpio_num_t) WALTER_MODEM_PIN_RESET);
   digitalWrite(WALTER_MODEM_PIN_RESET, LOW);
   delay(1000);
   digitalWrite(WALTER_MODEM_PIN_RESET, HIGH);
+  gpio_hold_en((gpio_num_t) WALTER_MODEM_PIN_RESET);
 }
 
 void setup() {
