@@ -230,6 +230,11 @@
 #define SPI_FLASH_BLOCK_SIZE    (SPI_SECTORS_PER_BLOCK*SPI_FLASH_SEC_SIZE)
 
 /**
+ * @brief Max length of queue set for callbacks
+ */
+#define WALTER_CALLBACK_QUEUE_SET_LENGTH 10
+
+/**
  * @brief This enum groups status codes of functions and operational components
  * of the modem.
  */
@@ -913,6 +918,14 @@ typedef enum {
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH = 7,
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8
 } WalterModemBlueCherryEventType;
+
+/**
+ * @brief Callbacks for the modem
+ */
+typedef enum {
+    WALTER_CALLBACK_CMD_CEREG = 0,
+    WALTER_CALLBACK_CMD_MQTT_MESSAGE,
+} WalterCallbackCmd;
 
 /**
  * @brief This structure represents the 
@@ -2156,6 +2169,20 @@ struct WalterModemStpResponseTransferBlock
     uint16_t residue;
 };
 
+struct WalterCallbackMqttMessage {
+    char *topic;
+    uint16_t length;
+    uint8_t qos;
+    uint16_t id;
+};
+struct WalterCallbackPayload {
+    WalterCallbackCmd cmd;
+    union {
+        WalterModemNetworkRegState regState;
+        WalterCallbackMqttMessage mqtt_message;
+    } data;
+};
+
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem
  * and positioning functionality.
@@ -2163,6 +2190,15 @@ struct WalterModemStpResponseTransferBlock
 class WalterModem
 {
     private:
+        /**
+         * @brief 
+         */
+        static inline QueueHandle_t _callback_queues[WALTER_CALLBACK_QUEUE_SET_LENGTH];
+        
+        static inline uint _callback_queue_current = 0;
+
+        static inline SemaphoreHandle_t _callback_list_mutex;
+
         /**
          * @brief This flag is set to true when the modem is initialized.
          */
@@ -4395,6 +4431,26 @@ class WalterModem
          * expected to be at least SPI_FLASH_SEC_SIZE = 4K
          */
         static void offlineMotaUpgrade(uint8_t *otaBuffer);
+
+        /**
+         * @brief
+         */
+        static bool getCereg(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief
+         */
+        static bool addCallback(QueueHandle_t handle);
+
+        /**
+         * @brief
+         */
+        static bool removeCallback(QueueHandle_t handle);
+
+        /**
+         * @brief
+         */
+        static void _sendCallbackToQueues(WalterCallbackPayload *payload);
 };
 
 #endif

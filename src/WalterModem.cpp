@@ -1504,6 +1504,14 @@ void WalterModem::_processQueueRsp(
         int ceReg = atoi(rspStr + _strLitLen("+CEREG: "));
         _regState = (WalterModemNetworkRegState) ceReg;
         //TODO: call correct handlers
+        
+        // Send callback of CEREG notifications
+        WalterCallbackPayload payload = {
+            .cmd = WalterCallbackCmd::WALTER_CALLBACK_CMD_CEREG,
+        };
+        payload.data.regState = _regState;
+
+        _sendCallbackToQueues(&payload);
     }
     else if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>"))
     {
@@ -2708,6 +2716,17 @@ void WalterModem::_processQueueRsp(
                 }
             }
 
+            WalterCallbackPayload payload = {
+                .cmd = WALTER_CALLBACK_CMD_MQTT_MESSAGE
+            };
+            payload.data.mqtt_message = {
+                .topic = topic,
+                .length = length,
+                .qos = qos,
+                .id = messageId
+            };
+            _sendCallbackToQueues(&payload);
+
             if(ringIdx == sizeof(_mqttRings) / sizeof(WalterModemMqttRing)) {
                 /* ring buffer full unfortunately, dropping ring.
                  * TODO: error reporting mechanism for this failed URC
@@ -3544,6 +3563,11 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
     gpio_set_pull_mode((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_FLOATING);
     gpio_deep_sleep_hold_en();
 
+    _callback_list_mutex = xSemaphoreCreateMutex();
+    if (_callback_list_mutex == NULL) {
+        return false;
+    }
+
 #ifdef CORE_DEBUG_LEVEL
     _uart = uart;
     _uart->begin(
@@ -4228,6 +4252,7 @@ bool WalterModem::httpDidRing(
         _httpCurrentProfile = 0xff;
     };
 
+    //_runCmd(arr("AT+SQNHTTPRCV=", _atNum(profileId), ",", _atNum(targetBufSize)),
     _runCmd(arr("AT+SQNHTTPRCV=", _atNum(profileId)),
             "<<<", rsp, cb, args,
             completeHandler, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT,
@@ -5247,4 +5272,74 @@ bool WalterModem::performGNSSAction(
         "AT+LPGNSSFIXPROG=\"",
         gnssActionStr(action),"\""), "OK", rsp, cb, args);
     _returnAfterReply();
+}
+
+bool WalterModem::getCereg(WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+CEREG?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::addCallback(QueueHandle_t handle) {
+    if (_callback_list_mutex == NULL) {
+        return false;
+    }
+
+    if (xSemaphoreTake(_callback_list_mutex, portMAX_DELAY) == pdTRUE) {
+        if (_callback_queue_current >= WALTER_CALLBACK_QUEUE_SET_LENGTH) {
+            return false;
+        }
+
+        _callback_queues[_callback_queue_current] = handle;
+        _callback_queue_current++;
+
+        xSemaphoreGive(_callback_list_mutex);
+
+        return true;
+    }
+
+    return false;
+}
+
+bool WalterModem::removeCallback(QueueHandle_t handle) {
+    if (_callback_list_mutex == NULL) {
+        return false;
+    }
+
+    if (xSemaphoreTake(_callback_list_mutex, portMAX_DELAY) == pdTRUE) {
+        for (int i = 0; i < _callback_queue_current; i++) {
+            if (_callback_queues[i] == handle) {
+                // Shift remaining handles down
+                for (int j = i; j < _callback_queue_current - 1; j++) {
+                    _callback_queues[j] = _callback_queues[j + 1];
+                }
+                _callback_queue_current--;
+                return true;
+            }
+        }
+
+        xSemaphoreGive(_callback_list_mutex);
+    }
+
+    return false; 
+}
+
+void WalterModem::_sendCallbackToQueues(WalterCallbackPayload *payload) {
+    ESP_LOGW("WalterModemCB", "Sending CALLBACK to queues\r\n");
+    if (_callback_list_mutex == NULL) {
+        return;
+    }
+
+    // Create local copies to minimize time holding the mutex
+    QueueHandle_t local_queues[WALTER_CALLBACK_QUEUE_SET_LENGTH];
+    int local_count = 0;
+
+    xSemaphoreTake(_callback_list_mutex, portMAX_DELAY);
+    local_count = _callback_queue_current;
+    memcpy(local_queues, _callback_queues, sizeof(QueueHandle_t) * local_count);
+    xSemaphoreGive(_callback_list_mutex);
+
+    for (int i = 0; i < local_count; i++) {
+        ESP_LOGD("WalterModemCB", "Sending to queue %i \r\n", i);
+        xQueueSend(local_queues[i], payload, 0);
+    }
 }
