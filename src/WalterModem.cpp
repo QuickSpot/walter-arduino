@@ -1491,6 +1491,124 @@ static void coap_received_from_bluecherry(const WalterModemRsp *rsp, void *args)
     }
 }
 
+bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMessage* parsed) {
+    unsigned char* ptr = buffer;
+    unsigned char* buffer_end = buffer + size;  // Pointer to the end of the buffer
+
+    // Initialize the parsed structure
+    memset(parsed, 0, sizeof(ParsedMessage));
+    parsed->num_params = 0;
+
+    // Check if buffer is not empty
+    if (size == 0 || ptr >= buffer_end) {
+        // Buffer is empty or invalid
+        return false;
+    }
+
+    // Check if buffer starts with '+'
+    if (*ptr != '+') {
+        // Invalid format
+        return false;
+    }
+    ptr++;  // Skip '+'
+
+    // Extract message up to ':'
+    char* msg_ptr = parsed->message;
+    size_t msg_len = 0;
+    while (ptr < buffer_end && *ptr != ':' && *ptr != '\0' && msg_len < MAX_MESSAGE_SIZE - 1) {
+        *msg_ptr++ = *ptr++;
+        msg_len++;
+    }
+    *msg_ptr = '\0';  // Null-terminate the message
+
+    if (ptr >= buffer_end || (*ptr != ':' && *ptr != '\0')) {
+        // ':' not found or buffer ended unexpectedly
+        return false;
+    }
+
+    if (*ptr == ':') {
+        ptr++;  // Skip ':'
+    } else {
+        // No parameters to parse
+        return true;
+    }
+
+    // Skip any whitespace after ':'
+    while (ptr < buffer_end && (*ptr == ' ' || *ptr == '\t')) {
+        ptr++;
+    }
+
+    // Parse parameters
+    int param_index = 0;
+    while (ptr < buffer_end && *ptr != '\0' && param_index < MAX_PARAMS) {
+        // Skip any leading whitespace
+        while (ptr < buffer_end && (*ptr == ' ' || *ptr == '\t')) {
+            ptr++;
+        }
+
+        if (ptr >= buffer_end || *ptr == '\0') {
+            break;  // End of buffer or string
+        }
+
+        if (*ptr == '"') {
+            // Parameter is a string enclosed in double quotes
+            ptr++;  // Skip opening quote
+            char* param_ptr = parsed->params[param_index];
+            size_t param_len = 0;
+
+            while (ptr < buffer_end && *ptr != '"' && *ptr != '\0' && param_len < MAX_PARAM_SIZE - 1) {
+                if (*ptr == '\\' && (ptr + 1) < buffer_end && *(ptr + 1) == '"') {
+                    // Handle escaped quote
+                    ptr++;  // Skip the backslash
+                }
+                *param_ptr++ = *ptr++;
+                param_len++;
+            }
+            *param_ptr = '\0';  // Null-terminate the parameter
+
+            if (ptr >= buffer_end || *ptr != '"') {
+                // Closing quote not found or buffer ended unexpectedly
+                return false;
+            }
+            ptr++;  // Skip closing quote
+        } else {
+            // Parameter is not in quotes
+            char* param_ptr = parsed->params[param_index];
+            size_t param_len = 0;
+            while (ptr < buffer_end && *ptr != ',' && *ptr != '\0' && *ptr != '\r' && *ptr != '\n' && param_len < MAX_PARAM_SIZE - 1) {
+                *param_ptr++ = *ptr++;
+                param_len++;
+            }
+            // Remove trailing whitespace
+            while (param_len > 0 && (param_ptr[-1] == ' ' || param_ptr[-1] == '\t')) {
+                param_ptr--;
+                param_len--;
+            }
+            *param_ptr = '\0';  // Null-terminate the parameter
+        }
+
+        param_index++;
+        parsed->num_params = param_index;
+
+        // Skip any whitespace after parameter
+        while (ptr < buffer_end && (*ptr == ' ' || *ptr == '\t')) {
+            ptr++;
+        }
+
+        if (ptr >= buffer_end || *ptr == '\0' || *ptr == '\r' || *ptr == '\n') {
+            // End of parameters
+            break;
+        } else if (*ptr == ',') {
+            ptr++;  // Skip ','
+        } else {
+            // Unexpected character
+            return false;
+        }
+    }
+
+    return true;
+}
+
 void WalterModem::_processQueueRsp(
     WalterModemCmd *cmd,
     WalterModemBuffer *buff)
@@ -1498,20 +1616,63 @@ void WalterModem::_processQueueRsp(
     ESP_LOGD("WalterModem", "RX: %.*s", buff->size, buff->data);
 
     WalterModemState result = WALTER_MODEM_STATE_OK;
+    
+    if (_buffStartsWith(buff, "+")) {
+        ParsedMessage p = {};
+        unsigned char* localBuffer = (unsigned char*)pvPortMalloc(buff->size + 1);
+        if (localBuffer != NULL) {
+            memcpy(localBuffer, buff->data, buff->size);
+            localBuffer[buff->size] = '\0';
+
+            if (_parseMessage(localBuffer, buff->size, &p)) {
+                WalterCallbackPayload payload = {
+                    .cmd = WalterCallbackCmd::WALTER_CALLBACK_CMD_CUSTOM,
+                    .num_params = p.num_params,
+                };
+                strncpy(payload.at, p.message, MAX_MESSAGE_SIZE);
+                payload.at[MAX_MESSAGE_SIZE - 1] = '\0';
+
+                for (int i = 0; i < p.num_params && i < MAX_PARAMS; i++) {
+                    strncpy(payload.params[i], p.params[i], MAX_PARAM_SIZE);
+                    payload.params[i][MAX_PARAM_SIZE - 1] = '\0';  // Ensure null-termination
+                }
+
+                _sendCallbackToQueues(&payload);
+            } else {
+                ESP_LOGD("WalterModem", "Unable to parse message!");
+            }
+
+            vPortFree(localBuffer);
+        }
+    }
+    
 
     if(_buffStartsWith(buff, "+CEREG: ")) {
-        const char *rspStr = _buffStr(buff);
-        int ceReg = atoi(rspStr + _strLitLen("+CEREG: "));
-        _regState = (WalterModemNetworkRegState) ceReg;
-        //TODO: call correct handlers
-        
-        // Send callback of CEREG notifications
-        WalterCallbackPayload payload = {
-            .cmd = WalterCallbackCmd::WALTER_CALLBACK_CMD_CEREG,
-        };
-        payload.data.regState = _regState;
+        int ceReg = -1;
 
-        _sendCallbackToQueues(&payload);
+        ParsedMessage parsed;
+        if (_parseMessage(buff->data, buff->size, &parsed)) {
+            if (parsed.num_params == 2) {
+                ceReg = atoi(parsed.params[1]);
+            } else {
+                ceReg = atoi(parsed.params[0]);
+            }
+        } else {
+            ESP_LOGD("WalterModem", "Failed to parse buffer");
+        }
+
+        if (ceReg >= 0) {
+            _regState = (WalterModemNetworkRegState) ceReg;
+            //TODO: call correct handlers
+            
+            // Send callback of CEREG notifications
+            WalterCallbackPayload payload = {
+                .cmd = WalterCallbackCmd::WALTER_CALLBACK_CMD_CEREG,
+            };
+            payload.data.regState = _regState;
+
+            _sendCallbackToQueues(&payload);
+        }
     }
     else if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>"))
     {
@@ -1533,19 +1694,33 @@ void WalterModem::_processQueueRsp(
             cmd->state = WALTER_MODEM_CMD_STATE_RETRY_AFTER_ERROR;
         }
         buff->free = true;
+
+        WalterCallbackPayload payload = {
+            .cmd = WALTER_CALLBACK_CMD_ERROR
+        };
+        _sendCallbackToQueues(&payload);
+
         return;
     }
     else if(_buffStartsWith(buff, "+CME ERROR: "))
     {
+        const char *rspStr = _buffStr(buff);
+        int cmeError = atoi(rspStr + _strLitLen("+CME ERROR: "));
+
         if(cmd != NULL) {
-            const char *rspStr = _buffStr(buff);
-            int cmeError = atoi(rspStr + _strLitLen("+CME ERROR: "));
             cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_CME_ERROR;
             cmd->rsp->data.cmeError = (WalterModemCMEError) cmeError;
         }
 
         cmd->state = WALTER_MODEM_CMD_STATE_RETRY_AFTER_ERROR;
         buff->free = true;
+
+        WalterCallbackPayload payload = {
+            .cmd = WALTER_CALLBACK_CMD_CMEERROR
+        };
+        payload.data.cmeError = (WalterModemCMEError) cmeError;
+        _sendCallbackToQueues(&payload);
+
         return;
     }
     else if(_buffStartsWith(buff, "+CFUN: "))
@@ -1553,6 +1728,12 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         int opState = atoi(rspStr + _strLitLen("+CFUN: "));
         _opState = (WalterModemOpState) opState;
+
+        WalterCallbackPayload payload = {
+            .cmd = WALTER_CALLBACK_CMD_CFUNC
+        };
+        payload.data.opState = (WalterModemOpState) opState;
+        _sendCallbackToQueues(&payload);
 
         if(cmd == NULL) {
             buff->free = true;
@@ -5324,7 +5505,7 @@ bool WalterModem::removeCallback(QueueHandle_t handle) {
 }
 
 void WalterModem::_sendCallbackToQueues(WalterCallbackPayload *payload) {
-    ESP_LOGW("WalterModemCB", "Sending CALLBACK to queues\r\n");
+    //ESP_LOGW("WalterModemCB", "Sending CALLBACK to queues\r\n");
     if (_callback_list_mutex == NULL) {
         return;
     }
@@ -5339,7 +5520,7 @@ void WalterModem::_sendCallbackToQueues(WalterCallbackPayload *payload) {
     xSemaphoreGive(_callback_list_mutex);
 
     for (int i = 0; i < local_count; i++) {
-        ESP_LOGD("WalterModemCB", "Sending to queue %i \r\n", i);
+        //ESP_LOGD("WalterModemCB", "Sending to queue %i \r\n", i);
         xQueueSend(local_queues[i], payload, 0);
     }
 }

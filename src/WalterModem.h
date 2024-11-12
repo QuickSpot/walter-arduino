@@ -925,6 +925,10 @@ typedef enum {
 typedef enum {
     WALTER_CALLBACK_CMD_CEREG = 0,
     WALTER_CALLBACK_CMD_MQTT_MESSAGE,
+    WALTER_CALLBACK_CMD_CFUNC,
+    WALTER_CALLBACK_CMD_CMEERROR,
+    WALTER_CALLBACK_CMD_ERROR, 
+    WALTER_CALLBACK_CMD_CUSTOM
 } WalterCallbackCmd;
 
 /**
@@ -2175,13 +2179,30 @@ struct WalterCallbackMqttMessage {
     uint8_t qos;
     uint16_t id;
 };
+
+#define MAX_MESSAGE_SIZE 32
+#define MAX_PARAMS 10
+#define MAX_PARAM_SIZE 64
+
 struct WalterCallbackPayload {
     WalterCallbackCmd cmd;
+    char at[MAX_MESSAGE_SIZE];
+    char params[MAX_PARAMS][MAX_PARAM_SIZE];
+    int num_params;
+
     union {
         WalterModemNetworkRegState regState;
+        WalterModemOpState opState;
+        WalterModemCMEError cmeError;
         WalterCallbackMqttMessage mqtt_message;
     } data;
 };
+
+typedef struct {
+    char message[MAX_MESSAGE_SIZE];
+    int num_params;
+    char params[MAX_PARAMS][MAX_PARAM_SIZE];
+} ParsedMessage;
 
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem
@@ -4451,6 +4472,11 @@ class WalterModem
          * @brief
          */
         static void _sendCallbackToQueues(WalterCallbackPayload *payload);
+
+        /**
+         * @brief
+         */
+        static bool _parseMessage(unsigned char* buffer, uint16_t size, ParsedMessage* parsed);
 };
 
 #endif
