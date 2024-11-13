@@ -526,6 +526,14 @@ typedef enum {
     WALTER_MODEM_PDP_AUTH_PROTO_CHAP = 2
 } WalterModemPDPAuthProtocol;
 
+typedef enum {
+    WALTER_MODEM_BATTERT_MODE_DISABLED = 0,
+    WALTER_MODEM_BATTERY_MODE_ENABLED_ACTIVE = 1,
+    WALTER_MODEM_BATTERY_MODE_ENABLED_EMERGENCY_SHUTDOWN = 2,
+    WALTER_MODEM_BATTERY_MODE_ENABLES_DEEP_SLEEP = 3,
+    WALTER_MODEM_BATTERY_MODE_ENABLES_DEEP_SLEEP_ERMERGENCY_SHUTDOWN = 4
+} WalterModemBatteryMode;
+
 /**
  * @brief This enum represents the different implemented response types.
  */
@@ -547,7 +555,8 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
     WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
     WALTER_MODEM_RSP_DATA_TYPE_COAP,
-    WALTER_MODEM_RSP_DATA_TYPE_MQTT
+    WALTER_MODEM_RSP_DATA_TYPE_MQTT,
+    WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE
 } WalterModemRspDataType;
 
 /**
@@ -1394,6 +1403,12 @@ typedef struct {
     uint8_t ceLevel;
 } WalterModemCellInformation;
 
+typedef struct {
+    WalterModemBatteryMode mode;
+    uint8_t status;
+    uint32_t voltage;
+} WalterModemVoltage;
+
 /**
  * @brief This union groups the response data of all different commands.
  */
@@ -1483,6 +1498,11 @@ union uWalterModemRspData {
      * @brief MQTT response
      */
     WalterModemMqttResponse mqttResponse;
+
+    /**
+     * @brief Voltage response
+     */
+    WalterModemVoltage voltage;
 };
 
 /**
@@ -4457,6 +4477,25 @@ class WalterModem
          * @brief
          */
         static bool getCereg(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief
+         * 
+         * @param mode
+         * @param threshold Threshold for low voltage - defaults to 25 (2.5V)
+         * @param period Time between voltage reads - defaults to 30 seconds
+         */
+        static bool setBatteryMonitoring(WalterModemBatteryMode mode, int8_t threshold = 25, int8_t period = 30, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief
+         */
+        static bool getBatteryVoltage(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief
+         */
+        static bool sendSMS(const char *number, const char *message, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
 
         /**
          * @brief

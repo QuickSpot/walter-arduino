@@ -1674,6 +1674,27 @@ void WalterModem::_processQueueRsp(
             _sendCallbackToQueues(&payload);
         }
     }
+    else if (_buffStartsWith(buff, "+SQNVMON: "))
+    {
+        ParsedMessage parsed;
+        if (_parseMessage(buff->data, buff->size, &parsed)) {
+            ESP_LOGD("WalterModem", "Got voltage data!");
+
+            if (cmd != NULL && parsed.num_params == 4) {
+                cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE;
+
+                cmd->rsp->data.voltage.mode = (WalterModemBatteryMode)atoi(parsed.params[0]);
+                //cmd->rsp->data.voltage.status = atoi(parsed.params[1]);
+                cmd->rsp->data.voltage.voltage = atoi(parsed.params[3]);
+            } else if (cmd != NULL && parsed.num_params == 3) {
+                cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE;
+
+                cmd->rsp->data.voltage.mode = (WalterModemBatteryMode)atoi(parsed.params[0]);
+                cmd->rsp->data.voltage.status = atoi(parsed.params[1]);
+                cmd->rsp->data.voltage.voltage = atoi(parsed.params[2]);
+            }
+        }
+    }
     else if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>"))
     {
         if(cmd != NULL &&
@@ -5457,6 +5478,21 @@ bool WalterModem::performGNSSAction(
 
 bool WalterModem::getCereg(WalterModemRsp *rsp, walterModemCb cb, void *args) {
     _runCmd(arr("AT+CEREG?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::setBatteryMonitoring(WalterModemBatteryMode mode, int8_t threshold, int8_t period, WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNVMON=", _digitStr(mode), ",", _atNum(threshold), ",", _atNum(period)), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getBatteryVoltage(WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNVMON?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::sendSMS(const char *number, const char *message, WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNSMSSEND=", _atStr(number), ",", _atStr(message)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
