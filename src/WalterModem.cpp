@@ -1502,12 +1502,15 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
     // Check if buffer is not empty
     if (size == 0 || ptr >= buffer_end) {
         // Buffer is empty or invalid
+        ESP_LOGD("WalterModem", "ParseMessage Buffer is empty or invalid");
+
         return false;
     }
 
     // Check if buffer starts with '+'
     if (*ptr != '+') {
         // Invalid format
+        ESP_LOGD("WalterModem", "ParseMessage invalid format");
         return false;
     }
     ptr++;  // Skip '+'
@@ -1523,6 +1526,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
 
     if (ptr >= buffer_end || (*ptr != ':' && *ptr != '\0')) {
         // ':' not found or buffer ended unexpectedly
+        ESP_LOGD("WalterModem", "ParseMessage : not found or buffer ended unexpectedly");
         return false;
     }
 
@@ -1530,6 +1534,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
         ptr++;  // Skip ':'
     } else {
         // No parameters to parse
+        ESP_LOGD("WalterModem", "ParseMessage no parameters to parse");
         return true;
     }
 
@@ -1568,6 +1573,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
 
             if (ptr >= buffer_end || *ptr != '"') {
                 // Closing quote not found or buffer ended unexpectedly
+                ESP_LOGD("WalterModem", "ParseMessage closing quote not found or buffer ended unexpectedly");
                 return false;
             }
             ptr++;  // Skip closing quote
@@ -1602,6 +1608,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
             ptr++;  // Skip ','
         } else {
             // Unexpected character
+            ESP_LOGD("WalterModem", "ParseMessage unexpected character");
             return false;
         }
     }

@@ -95,7 +95,8 @@
 /**
  * @brief The size of the stack of the command and response processing task.
  */
-#define WALTER_MODEM_TASK_STACK_SIZE 4096
+//#define WALTER_MODEM_TASK_STACK_SIZE 4096
+#define WALTER_MODEM_TASK_STACK_SIZE 6144
 
 /**
  * @brief The default number of attempts to execute a command.
@@ -2202,7 +2203,7 @@ struct WalterCallbackMqttMessage {
 
 #define MAX_MESSAGE_SIZE 32
 #define MAX_PARAMS 10
-#define MAX_PARAM_SIZE 64
+#define MAX_PARAM_SIZE 128
 
 struct WalterCallbackPayload {
     WalterCallbackCmd cmd;
