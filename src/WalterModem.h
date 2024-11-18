@@ -557,7 +557,8 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
     WALTER_MODEM_RSP_DATA_TYPE_COAP,
     WALTER_MODEM_RSP_DATA_TYPE_MQTT,
-    WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE
+    WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE,
+    WALTER_MODEM_RSP_DATA_TYPE_CEREG
 } WalterModemRspDataType;
 
 /**
@@ -1504,6 +1505,11 @@ union uWalterModemRspData {
      * @brief Voltage response
      */
     WalterModemVoltage voltage;
+
+    /**
+     * @brief
+     */
+    WalterModemNetworkRegState cereg;
 };
 
 /**
@@ -3152,9 +3158,9 @@ class WalterModem
          * 
          * @return True on success, false otherwise.
          */
-        static bool mqttDisconnect(WalterModemRsp *rsp,
-                walterModemCb cb,
-                void *args);
+        static bool mqttDisconnect(WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);
 
         /**
          * @brief Initialize MQTT and establish connection in one call.
@@ -4497,6 +4503,11 @@ class WalterModem
          * @brief
          */
         static bool sendSMS(const char *number, const char *message, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief
+         */
+        bool setReleaseAssistance(WalterModemRAT rat, uint8_t enabled, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
 
         /**
          * @brief

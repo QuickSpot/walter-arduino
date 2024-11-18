@@ -1502,7 +1502,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
     // Check if buffer is not empty
     if (size == 0 || ptr >= buffer_end) {
         // Buffer is empty or invalid
-        ESP_LOGD("WalterModem", "ParseMessage Buffer is empty or invalid");
+        ESP_LOGW("WalterModem", "ParseMessage Buffer is empty or invalid");
 
         return false;
     }
@@ -1510,7 +1510,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
     // Check if buffer starts with '+'
     if (*ptr != '+') {
         // Invalid format
-        ESP_LOGD("WalterModem", "ParseMessage invalid format");
+        ESP_LOGW("WalterModem", "ParseMessage invalid format");
         return false;
     }
     ptr++;  // Skip '+'
@@ -1526,15 +1526,15 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
 
     if (ptr >= buffer_end || (*ptr != ':' && *ptr != '\0')) {
         // ':' not found or buffer ended unexpectedly
-        ESP_LOGD("WalterModem", "ParseMessage : not found or buffer ended unexpectedly");
-        return false;
+        //ESP_LOGW("WalterModem", "ParseMessage : not found or buffer ended unexpectedly");
+        return true;
     }
 
     if (*ptr == ':') {
         ptr++;  // Skip ':'
     } else {
         // No parameters to parse
-        ESP_LOGD("WalterModem", "ParseMessage no parameters to parse");
+        ESP_LOGW("WalterModem", "ParseMessage no parameters to parse");
         return true;
     }
 
@@ -1573,7 +1573,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
 
             if (ptr >= buffer_end || *ptr != '"') {
                 // Closing quote not found or buffer ended unexpectedly
-                ESP_LOGD("WalterModem", "ParseMessage closing quote not found or buffer ended unexpectedly");
+                ESP_LOGW("WalterModem", "ParseMessage closing quote not found or buffer ended unexpectedly");
                 return false;
             }
             ptr++;  // Skip closing quote
@@ -1608,7 +1608,7 @@ bool WalterModem::_parseMessage(unsigned char* buffer, uint16_t size, ParsedMess
             ptr++;  // Skip ','
         } else {
             // Unexpected character
-            ESP_LOGD("WalterModem", "ParseMessage unexpected character");
+            ESP_LOGW("WalterModem", "ParseMessage unexpected character");
             return false;
         }
     }
@@ -1659,8 +1659,13 @@ void WalterModem::_processQueueRsp(
 
         ParsedMessage parsed;
         if (_parseMessage(buff->data, buff->size, &parsed)) {
-            if (parsed.num_params == 2) {
+            if (parsed.num_params == 2) { // Response from request to AT+CEREG?
                 ceReg = atoi(parsed.params[1]);
+
+                if (cmd != NULL) {
+                    cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_CEREG;
+                    cmd->rsp->data.cereg = (WalterModemNetworkRegState)ceReg;
+                }
             } else {
                 ceReg = atoi(parsed.params[0]);
             }
@@ -1700,6 +1705,14 @@ void WalterModem::_processQueueRsp(
                 cmd->rsp->data.voltage.status = atoi(parsed.params[1]);
                 cmd->rsp->data.voltage.voltage = atoi(parsed.params[2]);
             }
+        }
+    }
+    else if (_buffStartsWith(buff, "+SQNSMQTTCONNECT")) 
+    {
+        ESP_LOGD("WalterModem", "Got mqtt connection reply!");
+        ParsedMessage parsed;
+        if (_parseMessage(buff->data, buff->size, &parsed)) {
+            ESP_LOGD("WalterModem", "MQTT connection config: %s", parsed.params[1]);
         }
     }
     else if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>"))
@@ -5500,6 +5513,11 @@ bool WalterModem::getBatteryVoltage(WalterModemRsp *rsp, walterModemCb cb, void 
 
 bool WalterModem::sendSMS(const char *number, const char *message, WalterModemRsp *rsp, walterModemCb cb, void *args) {
     _runCmd(arr("AT+SQNSMSSEND=", _atStr(number), ",", _atStr(message)), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::setReleaseAssistance(WalterModemRAT rat, uint8_t enabled, WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNRACFG=", _digitStr(rat), ",\"standard\",", _digitStr(enabled)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
