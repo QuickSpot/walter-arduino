@@ -4517,12 +4517,18 @@ class WalterModem
         static void offlineMotaUpgrade(uint8_t *otaBuffer);
 
         /**
-         * @brief
+         * @brief Get current CEREG state.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
          */
         static bool getCereg(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
 
         /**
-         * @brief
+         * @brief Set battery monitoring mode.
          * 
          * @param mode Battery monitoring mode.
          * @param threshold Threshold for low voltage - defaults to 25 (2.5V)
@@ -4640,21 +4646,31 @@ class WalterModem
 
         /**
          * @brief Add URC callbacks. These callbacks also includes returns from commands.
+         * 
+         * @param handle The handle of the callback to add.
          */
         static bool addCallback(QueueHandle_t handle);
 
         /**
-         * @brief
+         * @brief Remove a callback
+         * 
+         * @param handle The handle of the callback to remove.
          */
         static bool removeCallback(QueueHandle_t handle);
 
         /**
-         * @brief
+         * @brief Helper function send callback to queues
+         * 
+         * @param payload The payload to send to all subscribed queues.
          */
         static void _sendCallbackToQueues(WalterCallbackPayload *payload);
 
         /**
-         * @brief
+         * @brief Helper function to parse messages from the modem
+         * 
+         * @param buffer The buffer to parse.
+         * @param size The size of the buffer.
+         * @param parsed The parsed message.
          */
         static bool _parseMessage(unsigned char* buffer, uint16_t size, ParsedMessage* parsed);
 };
