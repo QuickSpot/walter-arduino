@@ -1686,6 +1686,24 @@ void WalterModem::_processQueueRsp(
             _sendCallbackToQueues(&payload);
         }
     }
+    else if (_buffStartsWith(buff, "+LPGNSSFIXPROG: "))
+    {
+        ParsedMessage parsed;
+        if (_parseMessage(buff->data, buff->size, &parsed)) {
+            ESP_LOGD("WalterModem", "Got GPS status data");
+
+            if (cmd != NULL) {
+                cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_GNSS_STATUS;
+                if (strcmp(parsed.params[0], "single") == 0) {
+                    ESP_LOGD("WalterModem", "Got GPS status data: single");
+                    cmd->rsp->data.gnssStatus = WALTER_MODEM_GNSS_STATUS_SINGLE;
+                } else if (strcmp(parsed.params[0], "stop") == 0) {
+                    ESP_LOGD("WalterModem", "Got GPS status data: stop");
+                    cmd->rsp->data.gnssStatus = WALTER_MODEM_GNSS_STATUS_STOPPED;
+                }
+            }
+        }
+    }
     else if (_buffStartsWith(buff, "+SQNVMON: "))
     {
         ParsedMessage parsed;
@@ -5439,6 +5457,7 @@ bool WalterModem::configGNSS(
     WalterModemGNSSSensMode sensMode,
     WalterModemGNSSAcqMode acqMode,
     WalterModemGNSSLocMode locMode,
+    WalterModemGNSSEarlyAbort earlyAbort,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args)
@@ -5448,7 +5467,8 @@ bool WalterModem::configGNSS(
         _digitStr(locMode),",",
         _digitStr(sensMode),
         ",2,,1,",
-        _digitStr(acqMode)), "OK", rsp, cb, args);
+        _digitStr(acqMode), ",",
+        _digitStr(earlyAbort)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
@@ -5496,6 +5516,15 @@ bool WalterModem::performGNSSAction(
     _returnAfterReply();
 }
 
+bool WalterModem::getGNSSStatus(
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args
+) {
+    _runCmd(arr("AT+LPGNSSFIXPROG?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
 bool WalterModem::getCereg(WalterModemRsp *rsp, walterModemCb cb, void *args) {
     _runCmd(arr("AT+CEREG?"), "OK", rsp, cb, args);
     _returnAfterReply();
@@ -5518,6 +5547,38 @@ bool WalterModem::sendSMS(const char *number, const char *message, WalterModemRs
 
 bool WalterModem::setReleaseAssistance(WalterModemRAT rat, uint8_t enabled, WalterModemRsp *rsp, walterModemCb cb, void *args) {
     _runCmd(arr("AT+SQNRACFG=", _digitStr(rat), ",\"standard\",", _digitStr(enabled)), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getPDPContexts(WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+CGDCONT?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::factoryReset(WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNSFACTORYRESET"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::setModemUARTPowerSavingMode(int8_t mode, WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNIPSCFG=", _atNum(mode), ",100"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::disableUART1(WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+SQNHWCFG=\"uart1\",\"enable\",\"rtscts\",\"921600\",\"8\",\"none\",\"1\",\"dcp\""), "OK", rsp, cb, args);
+    _returnAfterReply(); 
+}
+
+void WalterModem::hardReset() {
+    char *atCmd[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = { NULL };
+    atCmd[0] = "AT^RESET";
+    atCmd[1] = NULL;
+    _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
+}
+
+bool WalterModem::setGNSSTimeout(int timeout_sec, WalterModemRsp *rsp, walterModemCb cb, void *args) {
+    _runCmd(arr("AT+LPGNSSTIMEOUT=", _atNum(timeout_sec)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
