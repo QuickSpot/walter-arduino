@@ -5572,7 +5572,7 @@ bool WalterModem::disableUART1(WalterModemRsp *rsp, walterModemCb cb, void *args
 
 void WalterModem::hardReset() {
     char *atCmd[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = { NULL };
-    atCmd[0] = "AT^RESET";
+    atCmd[0] = (char *)"AT^RESET";
     atCmd[1] = NULL;
     _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 }
