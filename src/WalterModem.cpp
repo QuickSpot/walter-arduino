@@ -134,6 +134,12 @@
     memcmp(str, buff->data, _strLitLen(str)) == 0)
 
 /**
+ * @brief Check if a WalterModemBuffer starts with an ASCII digit [0-9].
+ */
+#define _buffStartsWithDigit(buff) ((buff->size > 0) && (\
+    buff->data[0] >= '0' && buff->data[0] <= '9'))
+
+/**
  * @brief 0-terminate a WalterModemBuffer.
  * This macro is meant to be used as an assignment
  * in the form of x = _buffStr(buff);
@@ -2787,6 +2793,21 @@ void WalterModem::_processQueueRsp(
             }
         }
     }
+    else if(_buffStartsWithDigit(buff))
+    {
+        if(cmd == NULL) {
+            buff->free = true;
+            return;
+        }
+
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SIM_CARD_IMSI;
+
+        int offset = 0;
+        for(int i = 0; i < buff->size && offset < 15; ++i) {
+            cmd->rsp->data.imsi[offset++] = buff->data[i];
+        }
+        cmd->rsp->data.imsi[offset++] = '\0';
+    }
 
 after_processing_logic:
     if(cmd == NULL ||
@@ -4842,6 +4863,15 @@ bool WalterModem::getSIMCardID(
     void *args)
 {
     _runCmd({"AT+SQNCCID"}, "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getSIMCardIMSI(
+    WalterModemRsp *rsp,
+    walterModemCb cb, 
+    void *args)
+{
+    _runCmd({"AT+CIMI"}, "OK", rsp, cb, args);
     _returnAfterReply();
 }
 

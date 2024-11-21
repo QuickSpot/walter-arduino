@@ -533,6 +533,7 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_CELL_INFO,
     WALTER_MODEM_RSP_DATA_TYPE_SIM_STATE,
     WALTER_MODEM_RSP_DATA_TYPE_SIM_CARD_ID,
+    WALTER_MODEM_RSP_DATA_TYPE_SIM_CARD_IMSI,
     WALTER_MODEM_RSP_DATA_TYPE_CME_ERROR,
     WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID,
     WALTER_MODEM_RSP_DATA_TYPE_BANDSET_CFG_SET,
@@ -1430,6 +1431,11 @@ union uWalterModemRspData {
      * @brief The ICCID and/or eUICCID of the SIM card.
      */
     WalterModemSIMCardID simCardID;
+
+    /**
+     * @brief The 0-terminated string representation of the active IMSI.
+     */
+    char imsi[16];
 
     /**
      * @brief The CME error received from the modem.
@@ -3928,7 +3934,7 @@ class WalterModem
          * The function will receive the ICCID (Integrated Circuit Card ID) and
          * eUICCID (embedded Universal Integrated Circuit Card ID) of the
          * installed SIM card. For this function to be able to actually read
-         * these numbers from the SIM the modem must be in the 
+         * these numbers from the SIM, the modem must be in the 
          * WALTER_MODEM_OPSTATE_FULL or WALTER_MODEM_OPSTATE_NO_RF operational
          * state.
          * 
@@ -3941,6 +3947,28 @@ class WalterModem
          * @return True on success, false otherwise.
          */
         static bool getSIMCardID(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL, 
+            void *args = NULL);
+
+        /**
+         * @brief Get the IMSI on the SIM card.
+         * 
+         * This function will receive the IMSI (International Mobile Subscriber
+         * Identity) number which is currently active on the SIM card.For this
+         * function to be able to actually read the IMSI from the SIM, the modem
+         * must be in the WALTER_MODEM_OPSTATE_FULL or 
+         * WALTER_MODEM_OPSTATE_NO_RF operational state.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool getSIMCardIMSI(
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL, 
             void *args = NULL);

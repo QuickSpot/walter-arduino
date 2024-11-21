@@ -468,6 +468,10 @@ void setup()
     Serial.printf(" -eUICCID: %s\r\n", rsp.data.simCardID.euiccid);
   }
 
+  if(modem.getSIMCardIMSI(&rsp)) {
+    Serial.printf("Active IMSI: %s\r\n", rsp.data.imsi);
+  }
+
   if(!modem.configGNSS()) {
     Serial.print("Could not configure the GNSS subsystem\r\n");
     delay(1000);
