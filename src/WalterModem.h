@@ -532,6 +532,7 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_SIGNAL_QUALITY,
     WALTER_MODEM_RSP_DATA_TYPE_CELL_INFO,
     WALTER_MODEM_RSP_DATA_TYPE_SIM_STATE,
+    WALTER_MODEM_RSP_DATA_TYPE_SIM_CARD_ID,
     WALTER_MODEM_RSP_DATA_TYPE_CME_ERROR,
     WALTER_MODEM_RSP_DATA_TYPE_PDP_CTX_ID,
     WALTER_MODEM_RSP_DATA_TYPE_BANDSET_CFG_SET,
@@ -539,6 +540,7 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID,
     WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA,
     WALTER_MODEM_RSP_DATA_TYPE_CLOCK,
+    WALTER_MODEM_RSP_DATA_TYPE_IDENTITY,
     WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
     WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
     WALTER_MODEM_RSP_DATA_TYPE_COAP,
@@ -1112,6 +1114,18 @@ typedef struct {
     WalterModemBandSelection config[WALTER_MODEM_MAX_BANDSEL_SETSIZE];
 } WalterModemBandSelectionConfigSet;
 
+typedef struct {
+    /**
+     * @brief A 0-terminated string representation of the SIM ICCID.
+     */
+    char iccid[23];
+    
+    /**
+     * @brief A 0-terminated string representation of the SIM eUICCID.
+     */
+    char euiccid[23];
+} WalterModemSIMCardID;
+
 /**
  * @brief This structure represents the two addresses that a certain PDP context
  * can have.
@@ -1132,6 +1146,27 @@ typedef struct {
      */
     const char *pdpAddress2;
 } WalterModemPDPAddressList;
+
+/**
+ * @brief This structure contains the IMEI, IMEISV and SVN identity of the
+ * modem.
+ */
+typedef struct {
+    /**
+     * @brief A 0-terminated string representation of the IMEI number.
+     */
+    char imei[16];
+
+    /**
+     * @brief A 0-terminated string representation of the IMEISV number.
+     */
+    char imeisv[17];
+
+    /**
+     * @brief A 0-terminated string representation of the SVN number.
+     */
+    char svn[3];
+} WalterModemIdentity;
 
 /**
  * @brief This structure contains one of possibly multiple BlueCherry messages
@@ -1392,6 +1427,11 @@ union uWalterModemRspData {
     WalterModemSIMState simState;
 
     /**
+     * @brief The ICCID and/or eUICCID of the SIM card.
+     */
+    WalterModemSIMCardID simCardID;
+
+    /**
      * @brief The CME error received from the modem.
      */
     WalterModemCMEError cmeError;
@@ -1412,8 +1452,7 @@ union uWalterModemRspData {
     int rssi;
 
     /**
-     * @brief 
-     * 
+     * @brief The current signal quality.
      */
     WalterModemSignalQuality signalQuality;
 
@@ -1446,6 +1485,11 @@ union uWalterModemRspData {
      * @brief Unix timestamp of the current time and date in the modem.
      */
     int64_t clock;
+
+    /**
+     * @brief The modem identity.
+     */
+    WalterModemIdentity identity;
 
     /**
      * @brief The BlueCherry data 
@@ -2808,7 +2852,22 @@ class WalterModem
          *
          * @return True if succeeded, false if not.
          */
-        static bool _tlsUploadKey(bool isPrivateKey, uint8_t slotIdx, const char *key);
+        static bool _tlsUploadKey(
+            bool isPrivateKey,
+            uint8_t slotIdx,
+            const char *key);
+
+        /**
+         * @brief Calculate the Luhn checksum for a 14-digit imei.
+         * 
+         * This function will return the Luhn checksum for a 14-digit IMEI
+         * number and return it as an ASCII character.
+         * 
+         * @param imei The 14-digit IMEI number
+         * 
+         * @return The Luhn checksum as an ASCII character.
+         */
+        static char _getLuhnChecksum(const char *imei);
 
     public:
         /**
@@ -3038,13 +3097,14 @@ class WalterModem
             walterModemCb cb = NULL,
             void *args = NULL);
 
-
         /**
          * @brief Get information on the serving and neighbouring cells.
          * 
          * This function returns information about the serving and
          * neighbouring cells such as operator, cell ID, RSSI, RSRP...
          * 
+         * @param type The type of cell information to retreive, defaults to
+         * the cell which is currently serving the connection.
          * @param rsp Pointer to a modem response structure to save the result
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -3054,11 +3114,29 @@ class WalterModem
          * @return True on success, false otherwise.
          */
         static bool getCellInformation(
-                WalterModemSQNMONIReportsType type =
-                    WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
-                WalterModemRsp *rsp = NULL,
-                walterModemCb cb = NULL,
-                void *args = NULL);       
+            WalterModemSQNMONIReportsType type =
+                WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Get the identity of the modem (IMEI, IMEISV, SVN).
+         * 
+         * This function retrieves the IMEI, IMEISV and SVN from the modem.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool getIdentity(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);     
 
         /**
          * @brief Disconnect mqtt connection.
@@ -3074,9 +3152,10 @@ class WalterModem
          * 
          * @return True on success, false otherwise.
          */
-        static bool mqttDisconnect(WalterModemRsp *rsp,
-                walterModemCb cb,
-                void *args);
+        static bool mqttDisconnect(
+            WalterModemRsp *rsp,
+            walterModemCb cb,
+            void *args);
 
         /**
          * @brief Initialize MQTT and establish connection in one call.
@@ -3839,6 +3918,29 @@ class WalterModem
          * @return True on success, false otherwise.
          */
         static bool getSIMState(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL, 
+            void *args = NULL);
+
+        /**
+         * @brief Get the SIM ICCID and/or eUICCID.
+         * 
+         * The function will receive the ICCID (Integrated Circuit Card ID) and
+         * eUICCID (embedded Universal Integrated Circuit Card ID) of the
+         * installed SIM card. For this function to be able to actually read
+         * these numbers from the SIM the modem must be in the 
+         * WALTER_MODEM_OPSTATE_FULL or WALTER_MODEM_OPSTATE_NO_RF operational
+         * state.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false otherwise.
+         */
+        static bool getSIMCardID(
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL, 
             void *args = NULL);

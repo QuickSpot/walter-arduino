@@ -1602,6 +1602,41 @@ void WalterModem::_processQueueRsp(
                 WALTER_MODEM_SIM_STATE_CORPORATE_PUK_REQUIRED;
         }
     }
+    else if(_buffStartsWith(buff, "+SQNCCID: ") && cmd != NULL)
+    {
+        if(cmd == NULL) {
+            buff->free = true;
+            return;
+        }
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SIM_CARD_ID;
+
+        bool inICCID = true;
+        size_t offset = 0;
+
+        for(int i = _strLitLen("+SQNCCID: \""); i < buff->size; ++i) {
+            if(inICCID) {
+                if(buff->data[i] == '"' || offset >= 22) {
+                    cmd->rsp->data.simCardID.iccid[offset] = '\0';
+                    i += 3;
+
+                    if(offset >= 22) { 
+                        break;
+                    } else {
+                        continue;
+                    }
+                }
+
+                cmd->rsp->data.simCardID.iccid[offset++] = buff->data[i];
+            } else {
+                if(buff->data[i] == '"' || offset >= 22) {
+                    cmd->rsp->data.simCardID.euiccid[offset] = '\0';
+                    break;
+                }
+
+                cmd->rsp->data.simCardID.euiccid[offset++] = buff->data[i];
+            }
+        }
+    }
     else if(_buffStartsWith(buff, "+CGPADDR: "))
     {
         uint16_t dataSize = buff->size - _strLitLen("+CGPADDR: ");
@@ -1788,6 +1823,33 @@ void WalterModem::_processQueueRsp(
                 }
             }
         }
+    }
+    else if(_buffStartsWith(buff, "+CGSN: "))
+    {
+        if(cmd == NULL || 
+           buff->size < _strLitLen("+CGSN: \"xxxxxxxxxxxxxxxx\""))
+        {
+            buff->free = true;
+            return;
+        }
+
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_IDENTITY;
+
+        /* Copy IMEISV number from the response */
+        memcpy(cmd->rsp->data.identity.imeisv, buff->data + 8, 16);
+        cmd->rsp->data.identity.imeisv[16] = '\0';
+
+        /* The last two digits from the IMEISV number are the SVN number */
+        cmd->rsp->data.identity.svn[0] = cmd->rsp->data.identity.imeisv[14];
+        cmd->rsp->data.identity.svn[1] = cmd->rsp->data.identity.imeisv[15];
+        cmd->rsp->data.identity.svn[3] = '\0';
+
+        /* Copy the 14-digit long IMEI number, and add the checksum */
+        memcpy(cmd->rsp->data.identity.imei, cmd->rsp->data.identity.imeisv,
+            14);
+        cmd->rsp->data.identity.imei[14] =
+            _getLuhnChecksum((const char*) cmd->rsp->data.identity.imei);
+        cmd->rsp->data.identity.imei[15] = '\0';
     }
     else if(_buffStartsWith(buff, "+SQNMODEACTIVE: "))
     {
@@ -3734,19 +3796,28 @@ bool WalterModem::getSignalQuality(
 }
 
 bool WalterModem::getCellInformation(
-        WalterModemSQNMONIReportsType type,
-        WalterModemRsp *rsp,
-        walterModemCb cb,
-        void *args)
+    WalterModemSQNMONIReportsType type,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
 {
     _runCmd(arr("AT+SQNMONI=", _digitStr(type)), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 
+bool WalterModem::getIdentity(
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    _runCmd(arr("AT+CGSN=2"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}   
+
 bool WalterModem::_mqttConfig(const char *clientId,
-        const char *userName,
-        const char *password,
-        uint8_t tlsProfileId)
+    const char *userName,
+    const char *password,
+    uint8_t tlsProfileId)
 {
     WalterModemRsp *rsp = NULL;
     walterModemCb cb = NULL;
@@ -3875,7 +3946,10 @@ bool WalterModem::tlsConfigProfile(
     _returnAfterReply();
 }
 
-bool WalterModem::_tlsUploadKey(bool isPrivateKey, uint8_t slotIdx, const char *key)
+bool WalterModem::_tlsUploadKey(
+    bool isPrivateKey,
+    uint8_t slotIdx,
+    const char *key)
 {
     WalterModemRsp *rsp = NULL;
     walterModemCb cb = NULL;
@@ -3889,6 +3963,27 @@ bool WalterModem::_tlsUploadKey(bool isPrivateKey, uint8_t slotIdx, const char *
             WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, (uint8_t *) key, strlen(key));
 
     _returnAfterReply();
+}
+
+char WalterModem::_getLuhnChecksum(const char *imei)
+{
+    int sum = 0;
+
+    for(int i = 13; i >= 0; --i) {
+        int digit = imei[i] - '0';
+
+        if((13 - i) % 2 == 0) {
+            int double_digit = digit * 2;
+            if (double_digit > 9) {
+                double_digit -= 9;
+            }
+            sum += double_digit;
+        } else {
+            sum += digit;
+        }
+    }
+
+    return (char) (((10 - (sum % 10)) % 10) + '0');
 }
 
 bool WalterModem::tlsProvisionKeys(
@@ -4738,6 +4833,15 @@ bool WalterModem::setRadioBands(
 bool WalterModem::getSIMState(WalterModemRsp *rsp, walterModemCb cb, void *args)
 {
     _runCmd({"AT+CPIN?"}, "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+
+bool WalterModem::getSIMCardID(
+    WalterModemRsp *rsp,
+    walterModemCb cb, 
+    void *args)
+{
+    _runCmd({"AT+SQNCCID"}, "OK", rsp, cb, args);
     _returnAfterReply();
 }
 

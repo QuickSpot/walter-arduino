@@ -430,14 +430,21 @@ void setup()
   }
 
   WalterModemRsp rsp = {};
-   if(modem.getRAT(&rsp)) {
-     if(rsp.data.rat != RADIO_TECHNOLOGY) {
-       modem.setRAT(RADIO_TECHNOLOGY);
-       Serial.println("Switched modem radio technology");
-     }
-   } else {
-     Serial.println("Could not retrieve radio access technology");
-   }
+  if(modem.getIdentity(&rsp)) {
+    Serial.print("Modem identity:\r\n");
+    Serial.printf(" -IMEI: %s\r\n", rsp.data.identity.imei);
+    Serial.printf(" -IMEISV: %s\r\n", rsp.data.identity.imeisv);
+    Serial.printf(" -SVN: %s\r\n", rsp.data.identity.svn);
+  }
+
+  if(modem.getRAT(&rsp)) {
+    if(rsp.data.rat != RADIO_TECHNOLOGY) {
+      modem.setRAT(RADIO_TECHNOLOGY);
+      Serial.println("Switched modem radio technology");
+    }
+  } else {
+    Serial.println("Could not retrieve radio access technology");
+  }
 
   if(!modem.createPDPContext("")) {
     Serial.println("Could not create PDP context");
@@ -446,14 +453,20 @@ void setup()
     return;
   }
 
-  if(!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.print("Could not set operational state to MINIMUM\r\n");
+  if(!modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
+    Serial.print("Could not set operational state to NO RF\r\n");
     delay(1000);
     ESP.restart();
     return;
   }
 
   delay(500);
+
+  if(modem.getSIMCardID(&rsp)) {
+    Serial.print("SIM card identity:\r\n");
+    Serial.printf(" -ICCID: %s\r\n", rsp.data.simCardID.iccid);
+    Serial.printf(" -eUICCID: %s\r\n", rsp.data.simCardID.euiccid);
+  }
 
   if(!modem.configGNSS()) {
     Serial.print("Could not configure the GNSS subsystem\r\n");
