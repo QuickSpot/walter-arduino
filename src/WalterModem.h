@@ -58,7 +58,8 @@
 #include <condition_variable>
 
 #include <esp_partition.h>
-#include <esp_spi_flash.h>
+//#include <esp_spi_flash.h>
+#include <spi_flash_mmap.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <freertos/semphr.h>
@@ -95,7 +96,8 @@
 /**
  * @brief The size of the stack of the command and response processing task.
  */
-#define WALTER_MODEM_TASK_STACK_SIZE 4096
+//#define WALTER_MODEM_TASK_STACK_SIZE 4096
+#define WALTER_MODEM_TASK_STACK_SIZE 6144
 
 /**
  * @brief The default number of attempts to execute a command.
@@ -228,6 +230,11 @@
  * @brief SPI flash erase block size - sec size defined through esp_partition.h?
  */
 #define SPI_FLASH_BLOCK_SIZE    (SPI_SECTORS_PER_BLOCK*SPI_FLASH_SEC_SIZE)
+
+/**
+ * @brief Max length of queue set for callbacks
+ */
+#define WALTER_CALLBACK_QUEUE_SET_LENGTH 10
 
 /**
  * @brief This enum groups status codes of functions and operational components
@@ -521,6 +528,14 @@ typedef enum {
     WALTER_MODEM_PDP_AUTH_PROTO_CHAP = 2
 } WalterModemPDPAuthProtocol;
 
+typedef enum {
+    WALTER_MODEM_BATTERT_MODE_DISABLED = 0,
+    WALTER_MODEM_BATTERY_MODE_ENABLED_ACTIVE = 1,
+    WALTER_MODEM_BATTERY_MODE_ENABLED_EMERGENCY_SHUTDOWN = 2,
+    WALTER_MODEM_BATTERY_MODE_ENABLES_DEEP_SLEEP = 3,
+    WALTER_MODEM_BATTERY_MODE_ENABLES_DEEP_SLEEP_ERMERGENCY_SHUTDOWN = 4
+} WalterModemBatteryMode;
+
 /**
  * @brief This enum represents the different implemented response types.
  */
@@ -542,7 +557,10 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
     WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE,
     WALTER_MODEM_RSP_DATA_TYPE_COAP,
-    WALTER_MODEM_RSP_DATA_TYPE_MQTT
+    WALTER_MODEM_RSP_DATA_TYPE_MQTT,
+    WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE,
+    WALTER_MODEM_RSP_DATA_TYPE_GNSS_STATUS,
+    WALTER_MODEM_RSP_DATA_TYPE_CEREG
 } WalterModemRspDataType;
 
 /**
@@ -691,6 +709,11 @@ typedef enum {
     WALTER_MODEM_GNSS_LOC_MODE_ON_DEVICE_LOCATION = 0
 } WalterModemGNSSLocMode;
 
+typedef enum {
+    WALTER_MODEM_GNSS_EARLY_ABORT_OFF = 0,
+    WALTER_MODEM_GNSS_EARLY_ABORT_ON = 1
+} WalterModemGNSSEarlyAbort;
+
 /**
  * @brief The possible sensitivity settings use by Walter's GNSS receiver. This
  * sets the amount of time that the receiver is actually on. More sensitivity
@@ -730,6 +753,11 @@ typedef enum {
     WALTER_MODEM_GNSS_FIX_STATUS_NO_RTC = 2,
     WALTER_MODEM_GNSS_FIX_STATUS_LTE_CONCURRENCY = 3
 } WalterModemGNSSFixStatus;
+
+typedef enum {
+    WALTER_MODEM_GNSS_STATUS_SINGLE = 0,
+    WALTER_MODEM_GNSS_STATUS_STOPPED = 1,
+} WalterModemGNSSStatus;
 
 /**
  * @brief The possible GNSS assistance types.
@@ -913,6 +941,18 @@ typedef enum {
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH = 7,
     WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8
 } WalterModemBlueCherryEventType;
+
+/**
+ * @brief Callbacks for the modem
+ */
+typedef enum {
+    WALTER_CALLBACK_CMD_CEREG = 0,
+    WALTER_CALLBACK_CMD_MQTT_MESSAGE,
+    WALTER_CALLBACK_CMD_CFUNC,
+    WALTER_CALLBACK_CMD_CMEERROR,
+    WALTER_CALLBACK_CMD_ERROR, 
+    WALTER_CALLBACK_CMD_CUSTOM
+} WalterCallbackCmd;
 
 /**
  * @brief This structure represents the 
@@ -1377,6 +1417,12 @@ typedef struct {
     uint8_t ceLevel;
 } WalterModemCellInformation;
 
+typedef struct {
+    WalterModemBatteryMode mode;
+    uint8_t status;
+    uint32_t voltage;
+} WalterModemVoltage;
+
 /**
  * @brief This union groups the response data of all different commands.
  */
@@ -1443,6 +1489,11 @@ union uWalterModemRspData {
     WalterModemGNSSAssistance gnssAssistance;
 
     /**
+     * @brief The GNSS status
+     */
+    WalterModemGNSSStatus gnssStatus;
+
+    /**
      * @brief Unix timestamp of the current time and date in the modem.
      */
     int64_t clock;
@@ -1466,6 +1517,16 @@ union uWalterModemRspData {
      * @brief MQTT response
      */
     WalterModemMqttResponse mqttResponse;
+
+    /**
+     * @brief Voltage response
+     */
+    WalterModemVoltage voltage;
+
+    /**
+     * @brief
+     */
+    WalterModemNetworkRegState cereg;
 };
 
 /**
@@ -2156,6 +2217,37 @@ struct WalterModemStpResponseTransferBlock
     uint16_t residue;
 };
 
+struct WalterCallbackMqttMessage {
+    char *topic;
+    uint16_t length;
+    uint8_t qos;
+    uint16_t id;
+};
+
+#define MAX_MESSAGE_SIZE 32
+#define MAX_PARAMS 10
+#define MAX_PARAM_SIZE 128
+
+struct WalterCallbackPayload {
+    WalterCallbackCmd cmd;
+    char at[MAX_MESSAGE_SIZE];
+    char params[MAX_PARAMS][MAX_PARAM_SIZE];
+    int num_params;
+
+    union {
+        WalterModemNetworkRegState regState;
+        WalterModemOpState opState;
+        WalterModemCMEError cmeError;
+        WalterCallbackMqttMessage mqtt_message;
+    } data;
+};
+
+typedef struct {
+    char message[MAX_MESSAGE_SIZE];
+    int num_params;
+    char params[MAX_PARAMS][MAX_PARAM_SIZE];
+} ParsedMessage;
+
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem
  * and positioning functionality.
@@ -2163,6 +2255,15 @@ struct WalterModemStpResponseTransferBlock
 class WalterModem
 {
     private:
+        /**
+         * @brief 
+         */
+        static inline QueueHandle_t _callback_queues[WALTER_CALLBACK_QUEUE_SET_LENGTH];
+        
+        static inline uint _callback_queue_current = 0;
+
+        static inline SemaphoreHandle_t _callback_list_mutex;
+
         /**
          * @brief This flag is set to true when the modem is initialized.
          */
@@ -3074,9 +3175,9 @@ class WalterModem
          * 
          * @return True on success, false otherwise.
          */
-        static bool mqttDisconnect(WalterModemRsp *rsp,
-                walterModemCb cb,
-                void *args);
+        static bool mqttDisconnect(WalterModemRsp *rsp = NULL,
+                walterModemCb cb = NULL,
+                void *args = NULL);
 
         /**
          * @brief Initialize MQTT and establish connection in one call.
@@ -4298,6 +4399,7 @@ class WalterModem
          * @param sensMode The sensitivity mode.
          * @param acqMode The acquisition mode.
          * @param locMode The GNSS location mode.
+         * @param earlyAbort Early abort mode.
          * @param rsp Pointer to a modem response structure to save the result 
          * of the command in. When NULL is given the result is ignored.
          * @param cb Optional callback argument, when not NULL this function
@@ -4313,6 +4415,8 @@ class WalterModem
                 WALTER_MODEM_GNSS_ACQ_MODE_COLD_WARM_START,
             WalterModemGNSSLocMode locMode =
                 WALTER_MODEM_GNSS_LOC_MODE_ON_DEVICE_LOCATION,
+            WalterModemGNSSEarlyAbort earlyAbort =
+                WALTER_MODEM_GNSS_EARLY_ABORT_OFF,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
@@ -4382,6 +4486,23 @@ class WalterModem
             void *args = NULL);
 
         /**
+         * @brief Get GNSS status
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         * 
+         * @return True on success, false on error.
+         */
+        static bool getGNSSStatus(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL
+        );
+
+        /**
          * @brief Offline update modem firmware from file on flash
          *
          * This function upgrades the modem firmware from a file called mota.dup
@@ -4395,6 +4516,164 @@ class WalterModem
          * expected to be at least SPI_FLASH_SEC_SIZE = 4K
          */
         static void offlineMotaUpgrade(uint8_t *otaBuffer);
+
+        /**
+         * @brief Get current CEREG state.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool getCereg(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Set battery monitoring mode.
+         * 
+         * @param mode Battery monitoring mode.
+         * @param threshold Threshold for low voltage - defaults to 25 (2.5V)
+         * @param period Time between voltage reads - defaults to 30 seconds
+         */
+        static bool setBatteryMonitoring(WalterModemBatteryMode mode, int8_t threshold = 25, int8_t period = 30, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Get the battery voltage.
+         * 
+         * Reads the battery voltage measurements if configured. Will provde the output in WalterModemRsp.data.voltage.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool getBatteryVoltage(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Send an SMS
+         * 
+         * @param number The number to send the SMS to.
+         * @param message The message to send.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool sendSMS(const char *number, const char *message, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Configure release assistance.
+         * 
+         * This will enable the modem to relase LTE connection when disconnected from network.
+         * 
+         * @param rat The RAT to enable release assistance for.
+         * @param enabled Whether to enable or disable release assistance.
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool setReleaseAssistance(WalterModemRAT rat, uint8_t enabled, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Lists all configured PDP contexts.
+         * 
+         * This command will not return anything! Use the debug mode to see output.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool getPDPContexts(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Factory reset the modem.
+         * 
+         * Keep in mind that changes to UART1 will be lost. You need to run disableUART1
+         * after a factory reset if you intend to use low power mode.
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool factoryReset(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Set UART power saving mode.
+         * 
+         * This can potentially be used instead of disableUART1
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool setModemUARTPowerSavingMode(int8_t mode, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Perform a hard reset of the modem.
+         * 
+         * This will reset the modem and all connected devices.
+         */
+        static void hardReset();
+
+        /**
+         * @brief Configure UART1 (unconnected UART) to not include URC.
+         * 
+         * This is to avoid buffering of messages and hence avoid sleep
+         * 
+         * @param rsp Pointer to a modem response structure to save the result 
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         */
+        static bool disableUART1(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Set GNSS timeout
+         * 
+         * @param timeout_sec Timeout in seconds
+         */
+        static bool setGNSSTimeout(int timeout_sec, WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+        /**
+         * @brief Add URC callbacks. These callbacks also includes returns from commands.
+         * 
+         * @param handle The handle of the callback to add.
+         */
+        static bool addCallback(QueueHandle_t handle);
+
+        /**
+         * @brief Remove a callback
+         * 
+         * @param handle The handle of the callback to remove.
+         */
+        static bool removeCallback(QueueHandle_t handle);
+
+        /**
+         * @brief Helper function send callback to queues
+         * 
+         * @param payload The payload to send to all subscribed queues.
+         */
+        static void _sendCallbackToQueues(WalterCallbackPayload *payload);
+
+        /**
+         * @brief Helper function to parse messages from the modem
+         * 
+         * @param buffer The buffer to parse.
+         * @param size The size of the buffer.
+         * @param parsed The parsed message.
+         */
+        static bool _parseMessage(unsigned char* buffer, uint16_t size, ParsedMessage* parsed);
 };
 
 #endif
