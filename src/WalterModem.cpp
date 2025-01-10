@@ -2447,7 +2447,8 @@ void WalterModem::_processQueueRsp(
             start = ++commaPos;
             commaPos = strchr(commaPos, ',');
 
-            if(atoi(profileIdStr) >= WALTER_MODEM_MAX_COAP_PROFILES) {
+            if(!_coapContextSet[atoi(profileIdStr)].connected ||
+               atoi(profileIdStr) >= WALTER_MODEM_MAX_COAP_PROFILES) {
                 /* TODO: return error if modem returns invalid profile id.
                  * problem: this message is an URC: the associated cmd
                  * may be any random command currently executing */
@@ -2597,6 +2598,8 @@ void WalterModem::_processQueueRsp(
 
         if(profileId < WALTER_MODEM_MAX_COAP_PROFILES) {
             _coapContextSet[profileId].connected = false;
+            /* Clear all pending rings on connection close */
+            memset(_coapContextSet[profileId].rings, 0, sizeof(_coapContextSet[profileId].rings));
 
             if(profileId == 0) {
                 /* our own coap profile for BlueCherry was just closed */
