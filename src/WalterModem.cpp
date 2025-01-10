@@ -4747,7 +4747,7 @@ bool WalterModem::coapSetOptions(
         action == WALTER_MODEM_COAP_OPT_EXTEND) {
          if(values && *values) {
             stringsBuffer->size += sprintf((char *) stringsBuffer->data,
-                    "AT+SQNCOAPOPT=%d,%d,%d,%s",
+                    "AT+SQNCOAPOPT=%d,%d,%d,\"%s\"",
                     profileId, action, code, values);
          } else {
             stringsBuffer->size += sprintf((char *) stringsBuffer->data,
