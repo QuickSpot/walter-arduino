@@ -52,9 +52,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#ifdef CORE_DEBUG_LEVEL
+
+#ifdef ARDUINO
 #include <Arduino.h>
 #endif
+
 #include <esp_task_wdt.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
@@ -263,7 +265,7 @@ return rspResult == WALTER_MODEM_STATE_OK;
  * @brief Transmit all elements of a command.
  */
 static bool endOfLine;
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
 #define _transmitCmd(type, atCmd) { \
     ESP_LOGD((endOfLine = false, "WalterModem"), \
             "TX: %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s", \
@@ -912,7 +914,7 @@ size_t WalterModem::_uartRead(uint8_t *buf, int readSize, bool tryHard)
 {
     size_t totalBytesRead = 0;
 
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
     do {
         totalBytesRead += _uart->readBytes(buf, readSize - totalBytesRead);
     } while(tryHard && totalBytesRead < readSize);
@@ -932,7 +934,7 @@ size_t WalterModem::_uartRead(uint8_t *buf, int readSize, bool tryHard)
 
 size_t WalterModem::_uartWrite(uint8_t *buf, int writeSize)
 {
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
     writeSize = _uart->write(buf, writeSize);
     _uart->flush();
 #else
@@ -944,7 +946,7 @@ size_t WalterModem::_uartWrite(uint8_t *buf, int writeSize)
 }
 
 //TODO: check if the modem response is not longer than the buffer size
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
 void WalterModem::_handleRxData(void)
 {
     if(_rxHandlerInterrupted) {
@@ -1517,7 +1519,7 @@ void WalterModem::_processQueueRsp(
            cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT &&
            cmd->data != NULL)
         {
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
             _uart->write(cmd->data, cmd->dataSize);
 #else
             uart_write_bytes(_uartNo, cmd->data, cmd->dataSize);
@@ -3585,7 +3587,7 @@ void WalterModem::offlineMotaUpgrade(uint8_t *otaBuffer)
     }
 }
 
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
 bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
 #else
 bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
@@ -3627,7 +3629,7 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
     gpio_set_pull_mode((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_FLOATING);
     gpio_deep_sleep_hold_en();
 
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
     _uart = uart;
     _uart->begin(
         WALTER_MODEM_BAUD,
@@ -3665,7 +3667,7 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
             _rxTaskStack, &_rxTaskBuf, 0);
 #endif
 
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
     _queueTask = xTaskCreateStaticPinnedToCore(_queueProcessingTask,
         "queueProcessingTask", WALTER_MODEM_TASK_STACK_SIZE, NULL,
         tskIDLE_PRIORITY, _queueTaskStack, &_queueTaskBuf, 1);
@@ -3768,11 +3770,41 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     _returnAfterReply();
 }
 
-void WalterModem::sleep(uint32_t sleepTime)
+void WalterModem::sleep(uint32_t sleepTime, bool lightSleep)
 {
-    _saveRTCPdpContextSet(_pdpCtxSetRTC);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_deep_sleep(sleepTime * 1000000);
+    if(lightSleep) {
+        /* Disable RTS (make it high) so the modem can go to sleep */
+#ifdef ARDUINO
+        _uart->setHwFlowCtrlMode(UART_HW_FLOWCTRL_DISABLE);
+        pinMode(WALTER_MODEM_PIN_RTS, OUTPUT);
+        digitalWrite(WALTER_MODEM_PIN_RTS, HIGH);
+#else
+        uart_set_hw_flow_ctrl(_uartNo, UART_HW_FLOWCTRL_DISABLE, 0);
+        gpio_set_direction(WALTER_MODEM_PIN_RTS, GPIO_MODE_OUTPUT);
+        gpio_set_level(WALTER_MODEM_PIN_RTS, 1);
+#endif
+
+        esp_sleep_enable_timer_wakeup(sleepTime * 1000000);
+        esp_light_sleep_start();
+
+        /* Re-enable RTS after waking up */
+#ifdef ARDUINO
+        _uart->setPins(
+            WALTER_MODEM_PIN_RX,
+            WALTER_MODEM_PIN_TX,
+            WALTER_MODEM_PIN_CTS,
+            WALTER_MODEM_PIN_RTS);
+        _uart->setHwFlowCtrlMode();
+#else
+        uart_set_pin(_uartNo, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_RX,
+            WALTER_MODEM_PIN_RTS, WALTER_MODEM_PIN_CTS);
+        uart_set_hw_flow_ctrl(_uartNo, UART_HW_FLOWCTRL_CTS_RTS, 122);
+#endif
+    } else {
+        _saveRTCPdpContextSet(_pdpCtxSetRTC);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_deep_sleep(sleepTime * 1000000);
+    }
 }
 
 bool WalterModem::checkComm(WalterModemRsp *rsp, walterModemCb cb, void *args)

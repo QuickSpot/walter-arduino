@@ -50,25 +50,25 @@ the VSCode plugins. You need to start by installing the ESP32 core for Arduino
 using the [official documentation](https://docs.espressif.com/projects/arduino-esp32/en/latest/installing.html#installing-using-arduino-ide).
 After installation of the most recent ESP32 core you must select the following
 settings in de IDE:
- - Board: ESP32S3 Dev Module
- - Upload Speed: 921600
- - USB Mode: Hardware CDC and JTAG
- - USB CDC On Boot: Enabled
- - USB Firmware MSC On Boot: Disabled
+ - Board: DPTechnics Walter
+ - Port: the serial port on which Walter is connected
+ - CPU Frequency: any frequency you like, the slower the lower power you consume
+ - Core Debug Level: set this to "Debug" if you want to see the modem AT commands 
  - USB DFU On Boot: Disabled
- - Upload Mode: UART0 / Hardware CDC
- - CPU Frequency: 240MHz (WiFi)
+ - Erase Asll Flash Before Sketch Upload: Enabled
+   (must be Enabled to make modem firmware updates possible)
+ - Events Run On: Core 1
  - Flash Mode: QIO 80MHz
  - Flash Size: 16MB (128Mb)
+ - JTAG Adapter: Disabled
+ - Arduino Runs On: Core 1
+ - USB Firmware MSC On Boot: Disabled
  - Partition Scheme: 16M Flash (2MB APP/12.5MB FATFS)
    (must be this partition scheme to make modem firmware updates possible)
- - Core Debug Level: Anything that goes for you
  - PSRAM: QSPI PSRAM
- - Arduino Runs On: Core 1
- - Events Run On: Core 1
- - Erase All Flash Before Sketch Upload: Enabled
- - JTAG Adapter: Integrated USB JTAG
- - Zigbee Mode: Disabled
+ - Upload Mode: UART0 / Hardware CDC
+ - Upload Speed: 921600
+ - USB Mode: Hardware CDC and JTAG
 
 Now you need to clone this repository in the `libraries` directory of your 
 Arduino IDE. The location of this folder depends on your OS and installation,

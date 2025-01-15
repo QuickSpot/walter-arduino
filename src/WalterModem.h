@@ -52,7 +52,7 @@
 #include <mutex>
 #include <bitset>
 #include <cstdint>
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
 #include <Arduino.h>
 #endif
 #include <condition_variable>
@@ -2226,7 +2226,7 @@ class WalterModem
         /**
          * @brief The hardware serial peripheral used to talk to the modem.
          */
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
         static inline HardwareSerial *_uart = NULL;
 #else
         static inline uint8_t _uartNo = 1;
@@ -2640,7 +2640,7 @@ class WalterModem
          *
          * @return None.
          */
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
         static void _handleRxData(void);
 #else
         static void _handleRxData(void *params);
@@ -2899,7 +2899,7 @@ class WalterModem
          * 
          * @return True on success, false on error.
          */
-#ifdef CORE_DEBUG_LEVEL
+#ifdef ARDUINO
         static bool begin(HardwareSerial *uart, uint8_t watchdogTimeout = 0);
 #else
         static bool begin(uint8_t uartNo, uint8_t watchdogTimeout = 0);
@@ -3000,23 +3000,28 @@ class WalterModem
             void *args = NULL);
 
         /**
-         * @brief Put the ESP32 in deep sleep.
+         * @brief Put Walter to deep or light sleep.
          * 
-         * This function will start deep sleep on the ESP32 for a given 
-         * duration, resulting in reduced current consumption. 
-         * Before sleeping, the active PDP context is saved in 
-         * RTC memory. The PDP context is therefor preserved during the
-         * sleep, and can be loaded in again when waking up. 
-         *
-         * Be aware that your sketch must expect to start again in
-         * setup after awaking from deep sleep, and hence any initialisation
-         * must be done again.
+         * This function will put Walter into deep sleep or light sleep for 
+         * a given duration. The typical power consumption in light sleep is 1mA
+         * and in deep sleep it is 9.5uA. 
+         * 
+         * This function will have an immediate effect on the ESP32-S3 but the 
+         * modem can be delayed or prevented to go to deep sleep. 
+         * 
+         * Deep sleep causes the ESP32 to restart program execution, the modem
+         * libraries therefore saves state (such as PDP context and socket state
+         * in RTC memory). This also means that any initialisation must be 
+         * repeated after waking up from deep sleep. Deep sleep is typically
+         * combined with PSM and/or eDRX.
          * 
          * @param sleepTime The duration of deep sleep in seconds.
+         * @param lightSleep When set to true Walter will only go to light
+         * sleep.
          * 
          * @return None.
          */
-        static void sleep(uint32_t sleepTime = 0);
+        static void sleep(uint32_t sleepTime = 0, bool lightSleep = false);
 
         /**
          * @brief Configure the CME error reports.
