@@ -44,6 +44,8 @@
  * @section DESCRIPTION
  * 
  * This file contains a sketch that updates the modem firmware.
+ * The current included fat.img contains release version LR8.2.1.0-61488.
+ * 
  * How to use?
  * 1) compile and upload sketch - use partition scheme 16M Flash (2MB APP/12.5MB FATFS)
  *    and also set option erase all flash before sketch upload to Enabled
