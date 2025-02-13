@@ -34,8 +34,7 @@ jobs:
 
       - name: Clone target repository
         run: |
-          git config --global user.password ${{ secrets.PR_SYNC_TOKEN }}
-          git clone -b staging https://git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
+          git clone -b staging https://username:${{ secrets.PR_SYNC_TOKEN }}@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
         env:
           PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
 
