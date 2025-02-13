@@ -32,9 +32,9 @@ jobs:
 
       - name: Clone target repository
         run: |
-          git clone https://$GITHUB_PR_SYNC_TOKEN@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
+          git clone https://$PR_SYNC_TOKEN@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
         env:
-          GITHUB_PR_SYNC_TOKEN: ${{ secrets.GITHUB_PR_SYNC_TOKEN }}
+          PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
 
       - name: Copy files
         run: |
@@ -45,6 +45,6 @@ jobs:
           cd target-repo
           git add .
           git commit -m "Sync from walter-modem-esp-idf on PR merge by ${{ env.commit_author }}"
-          git push https://$GITHUB_PR_SYNC_TOKEN@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git HEAD:main
+          git push https://$PR_SYNC_TOKEN@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git HEAD:main
         env:
-          GITHUB_PR_SYNC_TOKEN: ${{ secrets.GITHUB_PR_SYNC_TOKEN }}
+          GITHUB_PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
