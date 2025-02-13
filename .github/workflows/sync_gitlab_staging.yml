@@ -19,8 +19,8 @@ jobs:
 
       - name: Setup Git
         run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
+          git config user.name "GitHub Action"
+          git config user.email "action@github.com"
 
       - name: Install jq
         run: sudo apt-get install -y jq
@@ -34,7 +34,8 @@ jobs:
 
       - name: Clone target repository
         run: |
-          git clone -b staging https://${{ secrets.PR_SYNC_TOKEN }}@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
+          git config user.password ${{ secrets.PR_SYNC_TOKEN }}
+          git clone -b staging https://git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
         env:
           PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
 
@@ -47,6 +48,6 @@ jobs:
           cd target-repo
           git add .
           git commit -m "Sync from walter-modem-esp-idf on PR merge by ${{ env.commit_author }}"
-          git push https://${{ secrets.PR_SYNC_TOKEN }}@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git HEAD:main
+          git push --force
         env:
           GITHUB_PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
