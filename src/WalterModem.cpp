@@ -411,12 +411,12 @@ static bool endOfLine;
         if(atCmd[i] == NULL) { \
             break; \
         } \
-        uart_write_bytes(_uartNo, atCmd[i], strlen(atCmd[i])); \
+        uart_write_bytes((uart_port_t)_uartNo, atCmd[i], strlen(atCmd[i])); \
     } \
     if(type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT) \
-        uart_write_bytes(_uartNo, "\n", 1); \
+        uart_write_bytes((uart_port_t)_uartNo, "\n", 1); \
     else \
-        uart_write_bytes(_uartNo, "\r\n", 2); \
+        uart_write_bytes((uart_port_t)_uartNo, "\r\n", 2); \
 }
 #endif
 
@@ -920,7 +920,7 @@ size_t WalterModem::_uartRead(uint8_t *buf, int readSize, bool tryHard)
     } while(tryHard && totalBytesRead < readSize);
 #else
     do {
-       int bytesRead = uart_read_bytes(_uartNo, buf, readSize - totalBytesRead,
+       int bytesRead = uart_read_bytes((uart_port_t)_uartNo, buf, readSize - totalBytesRead,
             WALTER_MODEM_CMD_TIMEOUT_TICKS);
        if(bytesRead < 0) {
            break;
@@ -938,8 +938,8 @@ size_t WalterModem::_uartWrite(uint8_t *buf, int writeSize)
     writeSize = _uart->write(buf, writeSize);
     _uart->flush();
 #else
-    writeSize = uart_write_bytes(_uartNo, buf, writeSize);
-    uart_wait_tx_done(_uartNo, pdMS_TO_TICKS(10));
+    writeSize = uart_write_bytes((uart_port_t)_uartNo, buf, writeSize);
+    uart_wait_tx_done((uart_port_t)_uartNo, pdMS_TO_TICKS(10));
 #endif
 
     return writeSize;
@@ -1106,7 +1106,7 @@ void WalterModem::_handleRxData(void *params)
             continue;
         }
 
-        uart_get_buffered_data_len(_uartNo, (size_t *) &uartBufLen);
+        uart_get_buffered_data_len((uart_port_t)_uartNo, (size_t *) &uartBufLen);
         if(uartBufLen > UART_BUF_SIZE) {
             uartBufLen = UART_BUF_SIZE;
         }
@@ -1522,7 +1522,7 @@ void WalterModem::_processQueueRsp(
 #ifdef ARDUINO
             _uart->write(cmd->data, cmd->dataSize);
 #else
-            uart_write_bytes(_uartNo, cmd->data, cmd->dataSize);
+            uart_write_bytes((uart_port_t)_uartNo, cmd->data, cmd->dataSize);
 #endif
         }
     }
@@ -3106,7 +3106,7 @@ bool WalterModem::_processMotaChunkEvent(uint8_t *data, uint16_t len)
 
     blueCherry.otaProgress += len;
 
-    ESP_LOGD("WalterModem", "MOTA: appending new chunk of %d bytes to ESP32 flash; so far %d/%d bytes written", len, blueCherry.otaProgress, blueCherry.otaSize);
+    ESP_LOGD("WalterModem", "MOTA: appending new chunk of %d bytes to ESP32 flash; so far %"PRIu32"/%"PRIu32" bytes written", len, blueCherry.otaProgress, blueCherry.otaSize);
 
     return false;
 }
@@ -3193,7 +3193,7 @@ uint16_t WalterModem::_modemFirmwareUpgradeStart(void)
 
     bytesSent = _uartWrite((uint8_t *) &stpRequest, sizeof(stpRequest));
 
-    ESP_LOGD("WalterModem", "sent STP reset: sent=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "sent STP reset: sent=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesSent,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3205,7 +3205,7 @@ uint16_t WalterModem::_modemFirmwareUpgradeStart(void)
 
     bytesReceived = _uartRead((uint8_t *) &stpRequest, sizeof(stpRequest), true);
 
-    ESP_LOGD("WalterModem", "received STP reset ack: received=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "received STP reset ack: received=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesReceived,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3226,7 +3226,7 @@ uint16_t WalterModem::_modemFirmwareUpgradeStart(void)
 
     bytesSent = _uartWrite((uint8_t *) &stpRequest, sizeof(stpRequest));
 
-    ESP_LOGD("WalterModem", "sent STP open session: sent=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "sent STP open session: sent=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesSent,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3238,7 +3238,7 @@ uint16_t WalterModem::_modemFirmwareUpgradeStart(void)
 
     bytesReceived = _uartRead((uint8_t *) &stpRequest, sizeof(stpRequest), true);
 
-    ESP_LOGD("WalterModem", "received STP open session ack: received=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "received STP open session ack: received=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesReceived,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3286,7 +3286,7 @@ void WalterModem::_modemFirmwareUpgradeFinish(bool success)
 
     bytesSent = _uartWrite((uint8_t *) &stpRequest, sizeof(stpRequest));
 
-    ESP_LOGD("WalterModem", "sent STP reset: sent=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "sent STP reset: sent=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesSent,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3298,7 +3298,7 @@ void WalterModem::_modemFirmwareUpgradeFinish(bool success)
 
     bytesReceived = _uartRead((uint8_t *) &stpRequest, sizeof(stpRequest), true);
 
-    ESP_LOGD("WalterModem", "received STP reset ack: received=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "received STP reset ack: received=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesReceived,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3391,7 +3391,7 @@ void WalterModem::_modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transact
 
     bytesSent = _uartWrite((uint8_t *) &stpRequest, sizeof(stpRequest));
 
-    ESP_LOGD("WalterModem", "sent STP transfer block command: sent=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "sent STP transfer block command: sent=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesSent,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3409,7 +3409,7 @@ void WalterModem::_modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transact
 
     bytesReceived = _uartRead((uint8_t *) &stpRequest, sizeof(stpRequest), true);
 
-    ESP_LOGD("WalterModem", "received STP transfer block command ack: received=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "received STP transfer block command ack: received=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesReceived,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3431,7 +3431,7 @@ void WalterModem::_modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transact
 
     bytesSent = _uartWrite((uint8_t *) &stpRequest, sizeof(stpRequest));
 
-    ESP_LOGD("WalterModem", "sent STP transfer block: sent=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "sent STP transfer block: sent=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesSent,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3448,7 +3448,7 @@ void WalterModem::_modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transact
 
     bytesReceived = _uartRead((uint8_t *) &stpRequest, sizeof(stpRequest), true);
 
-    ESP_LOGD("WalterModem", "received STP transfer block ack: received=%d header: 0x%x 0x%x 0x%x %d 0x%d 0x%x 0x%x",
+    ESP_LOGD("WalterModem", "received STP transfer block ack: received=%d header: 0x%"PRIx32" 0x%x 0x%x %d %"PRIu32" 0x%x 0x%x",
             bytesReceived,
             _switchEndian32(stpRequest.signature),
             stpRequest.operation,
@@ -3500,7 +3500,7 @@ bool WalterModem::_processMotaFinishEvent(void)
 
         /* next block */
         bytesLeft -= bytesRead;
-        ESP_LOGD("WalterModem", "sent chunk of %d bytes from ESP flash to modem; so far %d/%d bytes sent", bytesRead, blueCherry.otaSize - bytesLeft, blueCherry.otaSize);
+        ESP_LOGD("WalterModem", "sent chunk of %d bytes from ESP flash to modem; so far %"PRIu32"/%"PRIu32" bytes sent", bytesRead, blueCherry.otaSize - bytesLeft, blueCherry.otaSize);
 
         tickleWatchdog();
     }
@@ -3641,7 +3641,7 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
         WALTER_MODEM_PIN_RX,
         WALTER_MODEM_PIN_TX,
         WALTER_MODEM_PIN_CTS,
-        WALTER_MODEM_PIN_RTS);
+        (gpio_num_t)WALTER_MODEM_PIN_RTS);
 
     _uart->setHwFlowCtrlMode();
     _uart->setRxTimeout(1);
@@ -3657,10 +3657,10 @@ bool WalterModem::begin(uint8_t uartNo, uint8_t watchdogTimeout)
         .source_clk = UART_SCLK_DEFAULT
     };
     _uartNo = uartNo;
-    uart_driver_install(uartNo, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
-    uart_param_config(uartNo, &uart_config);
-    uart_set_pin(uartNo, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_RX,
-            WALTER_MODEM_PIN_RTS, WALTER_MODEM_PIN_CTS);
+    uart_driver_install((uart_port_t)uartNo, UART_BUF_SIZE * 2, 0, 0, NULL, 0);
+    uart_param_config((uart_port_t)uartNo, &uart_config);
+    uart_set_pin((uart_port_t)uartNo, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_RX,
+            (gpio_num_t)WALTER_MODEM_PIN_RTS, WALTER_MODEM_PIN_CTS);
     //uart_set_rx_timeout(uartNo, 1);
     xTaskCreateStaticPinnedToCore(_handleRxData, "uart_rx_task",
             WALTER_MODEM_TASK_STACK_SIZE, NULL, tskIDLE_PRIORITY,
@@ -3776,12 +3776,12 @@ void WalterModem::sleep(uint32_t sleepTime, bool lightSleep)
         /* Disable RTS (make it high) so the modem can go to sleep */
 #ifdef ARDUINO
         _uart->setHwFlowCtrlMode(UART_HW_FLOWCTRL_DISABLE);
-        pinMode(WALTER_MODEM_PIN_RTS, OUTPUT);
-        digitalWrite(WALTER_MODEM_PIN_RTS, HIGH);
+        pinMode((gpio_num_t)WALTER_MODEM_PIN_RTS, OUTPUT);
+        digitalWrite((gpio_num_t)WALTER_MODEM_PIN_RTS, HIGH);
 #else
-        uart_set_hw_flow_ctrl(_uartNo, UART_HW_FLOWCTRL_DISABLE, 0);
-        gpio_set_direction(WALTER_MODEM_PIN_RTS, GPIO_MODE_OUTPUT);
-        gpio_set_level(WALTER_MODEM_PIN_RTS, 1);
+        uart_set_hw_flow_ctrl((uart_port_t)_uartNo, UART_HW_FLOWCTRL_DISABLE, 0);
+        gpio_set_direction((gpio_num_t)WALTER_MODEM_PIN_RTS, GPIO_MODE_OUTPUT);
+        gpio_set_level((gpio_num_t)WALTER_MODEM_PIN_RTS, 1);
 #endif
 
         esp_sleep_enable_timer_wakeup(sleepTime * 1000000);
@@ -3796,9 +3796,9 @@ void WalterModem::sleep(uint32_t sleepTime, bool lightSleep)
             WALTER_MODEM_PIN_RTS);
         _uart->setHwFlowCtrlMode();
 #else
-        uart_set_pin(_uartNo, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_RX,
+        uart_set_pin((uart_port_t)_uartNo, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_RX,
             WALTER_MODEM_PIN_RTS, WALTER_MODEM_PIN_CTS);
-        uart_set_hw_flow_ctrl(_uartNo, UART_HW_FLOWCTRL_CTS_RTS, 122);
+        uart_set_hw_flow_ctrl((uart_port_t)_uartNo, UART_HW_FLOWCTRL_CTS_RTS, 122);
 #endif
     } else {
         _saveRTCPdpContextSet(_pdpCtxSetRTC);
