@@ -19,8 +19,8 @@ jobs:
 
       - name: Setup Git
         run: |
-          git config user.name "GitHub Action"
-          git config user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
 
       - name: Install jq
         run: sudo apt-get install -y jq
