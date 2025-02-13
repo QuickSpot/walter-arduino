@@ -40,7 +40,7 @@ jobs:
 
       - name: Copy files
         run: |
-          cp -R walter-modem/src/* target-repo/
+          cp -R walter-modem/src/* target-repo/walter-modem/
 
       - name: Commit and push changes
         run: |
