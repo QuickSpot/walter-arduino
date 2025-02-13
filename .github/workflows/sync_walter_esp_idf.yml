@@ -34,7 +34,7 @@ jobs:
 
       - name: Clone target repository
         run: |
-          git clone -b main https://github.com/QuickSpot/walter-arduino target-repo
+          git clone -b main https://github.com/QuickSpot/walter-esp-idf target-repo
 
       - name: Copy files
         run: |
