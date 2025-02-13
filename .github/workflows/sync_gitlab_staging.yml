@@ -43,6 +43,7 @@ jobs:
           cp -R walter-modem/src/* target-repo/walter-modem/
 
       - name: Commit and push changes
+        continue-on-error: true
         run: |
           cd target-repo
           git add .
