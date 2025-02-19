@@ -1,4 +1,4 @@
-name: PR Merge Sync
+name: PR Merge Sync To Walter-Esp-Idf
 
 on:
   pull_request:
@@ -34,23 +34,16 @@ jobs:
 
       - name: Clone target repository
         run: |
-          git clone -b staging https://username:${{ secrets.PR_SYNC_TOKEN }}@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
-        env:
-          PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
+          git clone -b main https://github.com/QuickSpot/walter-esp-idf target-repo
 
       - name: Copy files
         run: |
-          rm -rf target-repo/walter-modem/
-          rm -rf target-repo/arduino/examples/
-          cp -R walter-modem/src/* target-repo/walter-modem/
-          cp -R walter-modem/examples/* target-repo/arduino/examples/
-          
+          cp -R walter-modem/src/* target-repo/walter-modem/src/
+
       - name: Commit and push changes
         continue-on-error: true
         run: |
           cd target-repo
           git add .
-          git commit -m "Sync from walter-modem-esp-idf on PR merge by ${{ env.commit_author }}"
+          git commit -m "Sync from walter-modem-arduino on PR merge by ${{ env.commit_author }}"
           git push --force
-        env:
-          GITHUB_PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
