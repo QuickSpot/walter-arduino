@@ -40,8 +40,11 @@ jobs:
 
       - name: Copy files
         run: |
+          rm -rf target-repo/walter-modem/
+          rm -rf target-repo/arduino/examples/
           cp -R walter-modem/src/* target-repo/walter-modem/
-
+          cp -R walter-modem/examples/* target-repo/arduino/examples/
+          
       - name: Commit and push changes
         continue-on-error: true
         run: |
