@@ -3731,6 +3731,12 @@ bool WalterModem::sendCmd(const char *cmd)
         WALTER_MODEM_CMD_TYPE_TX) != NULL;
 }
 
+bool WalterModem::softReset(WalterModemRsp *rsp, walterModemCb cb, void *args)
+{
+    _runCmd({"AT^RESET"}, "+SYSSTART", rsp, cb, args);
+    _returnAfterReply();
+}
+
 bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
 {
     _runCmd({}, "+SYSSTART", rsp, cb, args, NULL, NULL,

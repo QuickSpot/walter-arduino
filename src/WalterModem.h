@@ -58,7 +58,7 @@
 #include <condition_variable>
 
 #include <esp_partition.h>
-#include <esp_spi_flash.h>
+#include <spi_flash_mmap.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <freertos/semphr.h>
@@ -2961,7 +2961,25 @@ class WalterModem
          * @return True on success, false otherwise.
          */
         static bool sendCmd(const char *cmd);
-
+        
+        /**
+         * @brief Software reset the modem and wait for it to reset. 
+         * (required when switching RAT) 
+         * The function will fail when the modem doesn't reset.
+         *
+         * @param rsp Pointer to a modem response structure to save the result
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool softReset(
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+        
         /**
          * @brief Physically reset the modem and wait for it to start. All 
          * connections will be lost when this function is called. The function

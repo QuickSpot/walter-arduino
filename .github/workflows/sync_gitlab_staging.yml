@@ -42,6 +42,8 @@ jobs:
         run: |
           rm -rf target-repo/walter-modem/
           rm -rf target-repo/arduino/examples/
+          mkdir -p target-repo/walter-modem/ || true
+          mkdir -p target-repo/arduino/examples/ || true
           cp -R walter-modem/src/* target-repo/walter-modem/
           cp -R walter-modem/examples/* target-repo/arduino/examples/
           
