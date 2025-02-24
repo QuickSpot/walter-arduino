@@ -4045,6 +4045,31 @@ char WalterModem::_getLuhnChecksum(const char *imei)
     return (char) (((10 - (sum % 10)) % 10) + '0');
 }
 
+const uint8_t WalterModem::_convertDuration(const uint32_t *base_times, size_t base_times_len, uint32_t duration_seconds, uint32_t *actual_duration_seconds)
+{
+    uint32_t smallest_modulo = UINT32_MAX;
+    uint8_t final_base = 0;
+    uint8_t final_mult = 0;
+
+    for (uint8_t base = 0; base < base_times_len; ++base) {
+        uint32_t multiplier = duration_seconds / base_times[base];
+        if (multiplier == 0 || multiplier > 31) {
+            continue;
+        }
+
+        uint32_t modulo = duration_seconds % base_times[base];
+        if (modulo < smallest_modulo) {
+            final_base = base;
+            final_mult = multiplier;
+        }
+    }
+
+    if (actual_duration_seconds) {
+        *actual_duration_seconds = (uint32_t) final_base * (uint32_t) final_mult;
+    }
+
+    uint8_t result = (final_base << 5) | final_mult;
+}
 bool WalterModem::tlsProvisionKeys(
     const char *walterCertificate,
     const char *walterPrivateKey,
@@ -5419,4 +5444,27 @@ bool WalterModem::performGNSSAction(
         "AT+LPGNSSFIXPROG=\"",
         gnssActionStr(action),"\""), "OK", rsp, cb, args);
     _returnAfterReply();
+}
+
+const uint8_t WalterModem::durationToTAU(
+    uint32_t seconds,
+    uint32_t minutes,
+    uint32_t hours,
+    uint32_t *actual_duration_seconds)
+{
+    static const uint32_t base_times[] = { 600, 3600, 36000, 2, 30, 60, 1152000 };
+    uint32_t duration_seconds = seconds + (60 * minutes) + (60 * 60 * hours);
+
+    return _convertDuration(base_times,7,duration_seconds,actual_duration_seconds);
+}
+
+const uint8_t WalterModem::durationToActiveTime(
+    uint32_t seconds,
+    uint32_t minutes,
+    uint32_t *actual_duration_seconds) 
+{
+    static const uint32_t base_times[] = { 2, 60, 360 };
+    uint32_t duration_seconds = seconds + (60 * minutes);
+    
+    return _convertDuration(base_times,3, duration_seconds,actual_duration_seconds);
 }
