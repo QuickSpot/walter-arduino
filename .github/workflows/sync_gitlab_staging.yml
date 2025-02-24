@@ -1,0 +1,58 @@
+name: PR Merge Sync
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+
+jobs:
+  sync:
+    if: github.event.pull_request.merged == true || github.event_name == 'workflow_dispatch'    
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          path: walter-modem
+
+      - name: Setup Git
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Get the commit details
+        id: commit
+        run: |
+          commit_sha=$(jq -r '.pull_request.head.sha' $GITHUB_EVENT_PATH)
+          commit_author=$(curl -s https://api.github.com/repos/${{ github.repository }}/commits/$commit_sha | jq -r '.commit.author.name')
+          echo "commit_author=$commit_author" >> $GITHUB_ENV
+
+      - name: Clone target repository
+        run: |
+          git clone -b master https://username:${{ secrets.PR_SYNC_TOKEN }}@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
+        env:
+          PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
+
+      - name: Copy files
+        run: |
+          rm -rf target-repo/walter-modem/
+          rm -rf target-repo/arduino/examples/
+          mkdir -p target-repo/walter-modem/ || true
+          mkdir -p target-repo/arduino/examples/ || true
+          cp -R walter-modem/src/* target-repo/walter-modem/
+          cp -R walter-modem/examples/* target-repo/arduino/examples/
+          
+      - name: Commit and push changes
+        continue-on-error: true
+        run: |
+          cd target-repo
+          git add .
+          git commit -m "Sync from walter-modem-esp-idf on PR merge by ${{ env.commit_author }}"
+          git push --force
+        env:
+          GITHUB_PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
