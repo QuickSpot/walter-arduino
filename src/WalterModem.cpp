@@ -1497,6 +1497,7 @@ void WalterModem::_processQueueRsp(
     WalterModemBuffer *buff)
 {
     ESP_LOGD("WalterModem", "RX: %.*s", buff->size, buff->data);
+    _dispatchEvent(WALTER_MODEM_EVENT_TYPE_AT, buff->data, buff->size);
 
     WalterModemState result = WALTER_MODEM_STATE_OK;
 
@@ -1504,7 +1505,7 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         int ceReg = atoi(rspStr + _strLitLen("+CEREG: "));
         _regState = (WalterModemNetworkRegState) ceReg;
-        //TODO: call correct handlers
+        _dispatchEvent(WALTER_MODEM_EVENT_TYPE_REGISTRATION, _regState);
     }
     else if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>"))
     {
@@ -4059,6 +4060,37 @@ char WalterModem::_getLuhnChecksum(const char *imei)
     return (char) (((10 - (sum % 10)) % 10) + '0');
 }
 
+void WalterModem::_dispatchEvent(WalterModemEventType type, int subtype, void *data) {
+    WalterModemEventHandler *handler = _eventHandlers + type;
+
+    if(handler->handler == nullptr) {
+        return;
+    }
+    
+    _currentEventType = type;
+    _currentEventSubType = subtype;
+
+    switch(type) {
+        case WALTER_MODEM_EVENT_TYPE_REGISTRATION:
+            ((walterModemRegistrationEventHandler) handler->handler)
+                ((WalterModemNetworkRegState) subtype, handler->args);
+            break;
+
+        case WALTER_MODEM_EVENT_TYPE_SYSTEM:
+            ((walterModemSystemEventHandler) handler->handler)
+                ((WalterModemSystemEvent) subtype, handler->args);
+            break;
+
+        case WALTER_MODEM_EVENT_TYPE_AT:
+            ((walterModemATEventHandler) handler->handler)
+                (subtype,(const char*) data, handler->args);
+            break;
+        
+        case WALTER_MODEM_EVENT_TYPE_COUNT:
+            break;
+    }
+}
+
 bool WalterModem::tlsProvisionKeys(
     const char *walterCertificate,
     const char *walterPrivateKey,
@@ -5543,4 +5575,42 @@ const uint8_t WalterModem::durationToActiveTime(
     uint32_t duration_seconds = seconds + (60 * minutes);
     
     return _convertDuration(base_times,3, duration_seconds,actual_duration_seconds);
+}
+
+const uint8_t WalterModem::durationToTAU(
+    uint32_t seconds,
+    uint32_t minutes,
+    uint32_t hours,
+    uint32_t *actual_duration_seconds)
+{
+    static const uint32_t base_times[] = { 600, 3600, 36000, 2, 30, 60, 1152000 };
+    uint32_t duration_seconds = seconds + (60 * minutes) + (60 * 60 * hours);
+
+    return _convertDuration(base_times,7,duration_seconds,actual_duration_seconds);
+}
+
+const uint8_t WalterModem::durationToActiveTime(
+    uint32_t seconds,
+    uint32_t minutes,
+    uint32_t *actual_duration_seconds) 
+{
+    static const uint32_t base_times[] = { 2, 60, 360 };
+    uint32_t duration_seconds = seconds + (60 * minutes);
+    
+    return _convertDuration(base_times,3, duration_seconds,actual_duration_seconds);
+}
+
+void WalterModem::onRegistrationEvent(walterModemRegistrationEventHandler handler, void *args) {
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_REGISTRATION].handler = (void*) handler;
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_REGISTRATION].args = args;
+}
+
+void WalterModem::onSystemEvent(walterModemSystemEventHandler handler, void *args) {
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_SYSTEM].handler = (void*) handler;
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_SYSTEM].args = args;
+}
+
+void WalterModem::onATEvent(walterModemATEventHandler handler, void *args) {
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_AT].handler = (void *) handler;
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_AT].args = args;
 }

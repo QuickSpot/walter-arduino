@@ -931,7 +931,85 @@ typedef enum {
 } WalterModemBlueCherryEventType;
 
 /**
- * @brief This structure represents the 
+ * @brief The different types of events supported by the library.
+ */
+typedef enum {
+    /**
+     * @brief Network registration related events.
+     */
+    WALTER_MODEM_EVENT_TYPE_REGISTRATION = 0,
+
+    /**
+     * @brief System related events.
+     */
+    WALTER_MODEM_EVENT_TYPE_SYSTEM = 1,
+
+    /**
+     * @brief Incoming AT string events.
+     */
+    WALTER_MODEM_EVENT_TYPE_AT = 2,
+
+    /**
+     * @brief The number of event types supported by the library.
+     */
+    WALTER_MODEM_EVENT_TYPE_COUNT
+} WalterModemEventType;
+
+/**
+ * @brief This enumeration groups the different types of system events.
+ */
+typedef enum {
+  WALTER_MODEM_SYSTEM_EVENT_STARTED,
+} WalterModemSystemEvent;
+
+/**
+ * @brief Header of a network registration event handler.
+ * 
+ * @param ev The new network registration state.
+ * @param args Optional arguments set by the application layer.
+ * 
+ * @return None.
+ */
+typedef void (*walterModemRegistrationEventHandler)(WalterModemNetworkRegState ev, void *args);
+
+/**
+ * @brief Header of a system event handler.
+ * 
+ * @param ev The type of system event.
+ * @param args Optional arguments set by the application layer.
+ * 
+ * @return None.
+ */
+typedef void (*walterModemSystemEventHandler)(WalterModemSystemEvent ev, void *args);
+
+/**
+ * @brief Header of an AT event handler.
+ * 
+ * @param buff A buffer which contains the unparsed AT response data, not 0-terminated.
+ * @param len The number of valid bytes in the response buffer. 
+ * @param args Optional arguments set by the application layer.
+ * 
+ * @return None.
+ */
+typedef void (*walterModemATEventHandler)(const char *buff, size_t len, void *args);
+
+/**
+ * @brief This structure represents an event handler and it's metadata.
+ */
+typedef struct {
+  /**
+   * @brief Pointer to the handler function.
+   */
+  void *handler = nullptr;
+
+  /**
+   * @brief Pointer to arguments set by the application layer.
+   */
+  void *args = nullptr;
+} WalterModemEventHandler;
+
+/**
+ * @brief This structure represents a GNSS satellite.
  */
 typedef struct {
     /**
@@ -2441,12 +2519,16 @@ class WalterModem
          */
         static inline FILE *_mota_file_ptr = NULL;
 
-        /*
-         * @brief Flag to interrupt the rx interrupt handler
-         * during MOTA updates where we want to read the raw uart
-         * data directly
+        /**
+         * @brief Flag to interrupt the rx interrupt handler during MOTA updates where we want to
+         * read the raw UART data directly.
          */
         static inline bool _rxHandlerInterrupted = false;
+
+        /**
+         * @brief Array to keep track of external event handlers.
+         */
+        static inline WalterModemEventHandler _eventHandlers[WALTER_MODEM_EVENT_TYPE_COUNT] = {};
 
         /*
          * @brief Helper to boot modem to recovery modem and start upgrade
@@ -2915,6 +2997,20 @@ class WalterModem
         static char _getLuhnChecksum(const char *imei);
 
         /**
+         * @brief Dispatch an event to the registered event handler if there is one.
+         * 
+         * This function will dispatch an event to the registered event handler. If no event handler
+         * was registered for this specific event the function is a no-op.
+         * 
+         * @param type The type of event to dispatch.
+         * @param subtype The event subtype specific to the type of event which is dispatched.
+         * @param data Specific event data.
+         * 
+         * @return None.
+         */
+        static void _dispatchEvent(WalterModemEventType type, int subtype, void *data = nullptr);
+        
+        /**
          * @brief Save context data in RTC memory before ESP deep sleep.
          *
          * This function will save the necessary state and context sets
@@ -3055,7 +3151,7 @@ class WalterModem
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
-        
+
         /**
          * @brief Physically reset the modem and wait for it to start. All 
          * connections will be lost when this function is called. The function
@@ -4656,7 +4752,7 @@ class WalterModem
 
         /**
          * @brief Encode a TAU duration for use in PSM configuration.
-         * 
+         *
          * This function will encode a given duration into the nearest duration that can be encoded
          * according to  the 3GPP specification for use in timer T3412 (TAU)
          *
