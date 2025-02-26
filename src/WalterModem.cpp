@@ -183,7 +183,7 @@
  */
 #define _strncpy_s(dst, src, maxLen) \
     strncpy(dst, src == NULL ? "" : src, maxLen); \
-    dst[maxLen] = '\0';
+    dst[maxLen - 1] = '\0';
 
 /**
  * @brief Make an array of a list of arguments.
