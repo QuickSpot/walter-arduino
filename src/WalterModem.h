@@ -820,6 +820,30 @@ typedef enum {
 } WalterModemCoapOptValue;
 
 /**
+ * @brief Enum containing the mqtt response codes
+ */
+typedef enum {
+    WALTER_MODEM_MQTT_SUCCESS = 0,
+    WALTER_MODEM_MQTT_NOMEM = -1,
+    WALTER_MODEM_MQTT_PROTOCOL = -2,
+    WALTER_MODEM_MQTT_INVAL = -3,
+    WALTER_MODEM_MQTT_NO_CONN = -4,
+    WALTER_MODEM_MQTT_CONN_REFUSED = -5,
+    WALTER_MODEM_MQTT_NOT_FOUND = -6,
+    WALTER_MODEM_MQTT_CONN_LOST = -7,
+    WALTER_MODEM_MQTT_TLS = -8,
+    WALTER_MODEM_MQTT_PAYLOAD_SIZE = -9,
+    WALTER_MODEM_MQTT_NOT_SUPPORTED = -10,
+    WALTER_MODEM_MQTT_AUTH = -11,
+    WALTER_MODEM_MQTT_ACL_DENIED = -12,
+    WALTER_MODEM_MQTT_UNKNOWN = -13,
+    WALTER_MODEM_MQTT_ERRNO = -14,
+    WALTER_MODEM_MQTT_EAI = -15,
+    WALTER_MODEM_MQTT_PROXY = -16,
+    WALTER_MODEM_MQTT_UNAVAILABLE = -17
+} WalterModemMqttStatus;
+
+/**
  * @brief The possible option values for the COAP message.
  */
 typedef enum {
@@ -1394,8 +1418,9 @@ typedef struct {
     uint16_t length;
 
     /**
-     * topic not needed because mqttDidRing caller specifies desired topic
+     * @brief Contains the status return code received from the modem.
      */
+    WalterModemMqttStatus mqttStatus;
 } WalterModemMqttResponse;
 
 /**

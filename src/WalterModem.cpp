@@ -2674,6 +2674,8 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         int status = atoi(rspStr + _strLitLen("+SQNSMQTTONCONNECT:0,"));
 
+        cmd->rsp->data.mqttResponse.mqttStatus = status;
+
         if(status) {
             result = WALTER_MODEM_STATE_ERROR;
         }
@@ -2682,6 +2684,8 @@ void WalterModem::_processQueueRsp(
     {
         const char *rspStr = _buffStr(buff);
         int status = atoi(rspStr + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
+
+        cmd->rsp->data.mqttResponse.mqttStatus = status;
 
         if(status) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -2692,6 +2696,9 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         const char *pmid = rspStr + _strLitLen("+SQNSMQTTONPUBLISH:0,");
         const char *statusComma = strchr(pmid, ',');
+        int status = atoi(statusComma + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
+
+        cmd->rsp->data.mqttResponse.mqttStatus = status;
 
         if(statusComma == NULL) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -2706,6 +2713,9 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         const char *topic = rspStr + _strLitLen("+SQNSMQTTONSUBSCRIBE:0,");
         const char *statusComma = strchr(topic, ',');
+        int status = atoi(statusComma + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
+
+        cmd->rsp->data.mqttResponse.mqttStatus = status;
 
         if(statusComma == NULL) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -5552,29 +5562,6 @@ bool WalterModem::performGNSSAction(
         "AT+LPGNSSFIXPROG=\"",
         gnssActionStr(action),"\""), "OK", rsp, cb, args);
     _returnAfterReply();
-}
-
-const uint8_t WalterModem::durationToTAU(
-    uint32_t seconds,
-    uint32_t minutes,
-    uint32_t hours,
-    uint32_t *actual_duration_seconds)
-{
-    static const uint32_t base_times[] = { 600, 3600, 36000, 2, 30, 60, 1152000 };
-    uint32_t duration_seconds = seconds + (60 * minutes) + (60 * 60 * hours);
-
-    return _convertDuration(base_times,7,duration_seconds,actual_duration_seconds);
-}
-
-const uint8_t WalterModem::durationToActiveTime(
-    uint32_t seconds,
-    uint32_t minutes,
-    uint32_t *actual_duration_seconds) 
-{
-    static const uint32_t base_times[] = { 2, 60, 360 };
-    uint32_t duration_seconds = seconds + (60 * minutes);
-    
-    return _convertDuration(base_times,3, duration_seconds,actual_duration_seconds);
 }
 
 const uint8_t WalterModem::durationToTAU(
