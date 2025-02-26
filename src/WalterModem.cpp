@@ -4070,15 +4070,12 @@ char WalterModem::_getLuhnChecksum(const char *imei)
     return (char) (((10 - (sum % 10)) % 10) + '0');
 }
 
-void WalterModem::_dispatchEvent(WalterModemEventType type, int subtype, void *data) {
+void WalterModem::_dispatchEvent(WalterModemEventType type, void *data) {
     WalterModemEventHandler *handler = _eventHandlers + type;
 
     if(handler->handler == nullptr) {
         return;
     }
-    
-    _currentEventType = type;
-    _currentEventSubType = subtype;
 
     switch(type) {
         case WALTER_MODEM_EVENT_TYPE_REGISTRATION:

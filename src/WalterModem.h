@@ -3033,7 +3033,7 @@ class WalterModem
          * 
          * @return None.
          */
-        static void _dispatchEvent(WalterModemEventType type, int subtype, void *data = nullptr);
+        static void _dispatchEvent(WalterModemEventType type, void *data = nullptr);
         
         /**
          * @brief Save context data in RTC memory before ESP deep sleep.
