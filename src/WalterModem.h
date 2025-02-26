@@ -3033,7 +3033,7 @@ class WalterModem
          * 
          * @return None.
          */
-        static void _dispatchEvent(WalterModemEventType type, void *data = nullptr);
+        static void _dispatchEvent(WalterModemEventType type, int subtype, void *data = nullptr);
         
         /**
          * @brief Save context data in RTC memory before ESP deep sleep.
@@ -3514,6 +3514,34 @@ class WalterModem
             uint8_t caCertificateId = 0xff,
             uint8_t clientCertificateId = 0xff,
             uint8_t clientPrivKeyId = 0xff,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+
+        /**
+         * @brief Upload BlueCherry keys to the modem.
+         *
+         * Upload the Walter certificate and private key and the BlueCherry
+         * bridge server CA certificate to the modem.
+         *
+         * The key parameters are NULL terminated strings containing the
+         * PEM data with each line terminated by CRLF.
+         *
+         * @param walterCertificate Walter X.509 certificate as PEM string
+         * @param walterPrivateKey Walter private key as PEM string
+         * @param caCertificate BlueCherry CA certificate
+         * @param rsp Pointer to a modem response structure to save the result
+         * of the command in. When NULL is given the result is ignored.
+         * @param cb Optional callback argument, when not NULL this function
+         * will return immediately.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool tlsProvisionKeys(
+            const char *walterCertificate,
+            const char *walterPrivateKey,
+            const char *caCertificate,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
@@ -4807,6 +4835,48 @@ class WalterModem
          * @return The duration encoded into the 3GPP standard format.
          */
         static const uint8_t durationToActiveTime(uint32_t seconds = 0, uint32_t minutes = 0, uint32_t *actual_duration_seconds = nullptr);
+
+        /**
+         * @brief Register a network registration event handler.
+         *
+         * This function will register an application layer registration event handler. If you want
+         * to explicitly de-register the handler for this type of event you can pass a nullptr to
+         * this function.
+         *
+         * @param handler Pointer to the handler function or nullptr to de-register.
+         * @param args Optional application layer arguments.
+         *
+         * @return None.
+         */
+        static void onRegistrationEvent(walterModemRegistrationEventHandler handler = nullptr, void *args = nullptr);
+
+        /**
+         * @brief Register a system event handler.
+         *
+         * This function will register an application layer system event handler. If you want
+         * to explicitly de-register the handler for this type of event you can pass a nullptr to
+         * this function.
+         *
+         * @param handler Pointer to the handler function or nullptr to de-register.
+         * @param args Optional application layer arguments.
+         *
+         * @return None.
+         */
+        static void onSystemEvent(walterModemSystemEventHandler handler = nullptr, void *args = nullptr);
+
+        /**
+         * @brief Register an AT event handler.
+         *
+         * This function will register an application layer AT response event handler. If you want
+         * to explicitly de-register the handler for this type of event you can pass a nullptr to
+         * this function.
+         *
+         * @param handler Pointer to the handler function or nullptr to de-register.
+         * @param args Optional application layer arguments.
+         *
+         * @return None.
+         */
+        static void onATEvent(walterModemATEventHandler handler = nullptr, void *args = nullptr);
 };
 
 #endif

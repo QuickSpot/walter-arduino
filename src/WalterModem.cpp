@@ -1497,7 +1497,7 @@ void WalterModem::_processQueueRsp(
     WalterModemBuffer *buff)
 {
     ESP_LOGD("WalterModem", "RX: %.*s", buff->size, buff->data);
-    _dispatchEvent(WALTER_MODEM_EVENT_TYPE_AT, buff->data, buff->size);
+    _dispatchEvent(WALTER_MODEM_EVENT_TYPE_AT, buff->size, buff->data);
 
     WalterModemState result = WALTER_MODEM_STATE_OK;
 
@@ -2674,7 +2674,7 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         int status = atoi(rspStr + _strLitLen("+SQNSMQTTONCONNECT:0,"));
 
-        cmd->rsp->data.mqttResponse.mqttStatus = status;
+        cmd->rsp->data.mqttResponse.mqttStatus = (WalterModemMqttStatus) status;
 
         if(status) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -2685,7 +2685,7 @@ void WalterModem::_processQueueRsp(
         const char *rspStr = _buffStr(buff);
         int status = atoi(rspStr + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
 
-        cmd->rsp->data.mqttResponse.mqttStatus = status;
+        cmd->rsp->data.mqttResponse.mqttStatus = (WalterModemMqttStatus) status;
 
         if(status) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -2698,7 +2698,7 @@ void WalterModem::_processQueueRsp(
         const char *statusComma = strchr(pmid, ',');
         int status = atoi(statusComma + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
 
-        cmd->rsp->data.mqttResponse.mqttStatus = status;
+        cmd->rsp->data.mqttResponse.mqttStatus = (WalterModemMqttStatus) status;
 
         if(statusComma == NULL) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -2715,7 +2715,7 @@ void WalterModem::_processQueueRsp(
         const char *statusComma = strchr(topic, ',');
         int status = atoi(statusComma + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
 
-        cmd->rsp->data.mqttResponse.mqttStatus = status;
+        cmd->rsp->data.mqttResponse.mqttStatus = (WalterModemMqttStatus) status;
 
         if(statusComma == NULL) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -4070,7 +4070,8 @@ char WalterModem::_getLuhnChecksum(const char *imei)
     return (char) (((10 - (sum % 10)) % 10) + '0');
 }
 
-void WalterModem::_dispatchEvent(WalterModemEventType type, void *data) {
+void WalterModem::_dispatchEvent(WalterModemEventType type, int subtype, void *data)
+{
     WalterModemEventHandler *handler = _eventHandlers + type;
 
     if(handler->handler == nullptr) {
@@ -4089,8 +4090,8 @@ void WalterModem::_dispatchEvent(WalterModemEventType type, void *data) {
             break;
 
         case WALTER_MODEM_EVENT_TYPE_AT:
-            ((walterModemATEventHandler) handler->handler)
-                (subtype,(const char*) data, handler->args);
+            ((walterModemATEventHandler)handler->handler)
+                ((const char*) data, subtype, handler->args);
             break;
         
         case WALTER_MODEM_EVENT_TYPE_COUNT:
@@ -4109,19 +4110,19 @@ bool WalterModem::tlsProvisionKeys(
     WalterModemState result = WALTER_MODEM_STATE_OK;
 
     if(walterCertificate) {
-        if(!_tlsUploadKey(false, 5, walterCertificate)) {
+        if(!tlsWriteCredential(false, 5, walterCertificate)) {
             result = WALTER_MODEM_STATE_ERROR;
         }
     }
 
     if(walterPrivateKey) {
-        if(!_tlsUploadKey(true, 0, walterPrivateKey)) {
+        if (tlsWriteCredential(true, 0, walterPrivateKey)) {
             result = WALTER_MODEM_STATE_ERROR;
         }
     }
 
     if(caCertificate) {
-        if(!_tlsUploadKey(false, 6, caCertificate)) {
+        if(!tlsWriteCredential(false, 6, caCertificate)) {
             result = WALTER_MODEM_STATE_ERROR;
         }
     }
