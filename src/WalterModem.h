@@ -218,6 +218,16 @@
 #define WALTER_MODEM_MQTT_MAX_PENDING_RINGS 8
 
 /**
+ * @brief The recommended minimum for the mqtt keep alive time
+ */
+#define WALTER_MODEM_MQTT_MIN_PREF_KEEP_ALIVE 20
+
+/**
+ * @brief The maximum allowed mqtt topics to subscribe to.
+ */
+#define WALTER_MODEM_MQTT_MAX_TOPICS 4
+
+/**
  * @brief The maximum number of rings that can be pending for the CoAP protocol.
  */
 #define WALTER_MODEM_COAP_MAX_PENDING_RINGS 8
@@ -2266,8 +2276,29 @@ typedef struct {
      * @brief The length of the message.
      */
     uint16_t length;
+
+    /**
+     * @brief Is this ring free for usage.
+     */
+    bool free = true;
 } WalterModemMqttRing;
 
+typedef struct {
+    /**
+     * @brief is the topic in use/subscribed to.
+     */
+    bool free = true;
+
+    /**
+     * @brief Qos ofr the subscription.
+     */
+    uint8_t qos = 0;
+
+    /**
+     * @brief mqtt topic
+     */
+    char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE] = {0};
+} WalterModemMqttTopic;
 /**
  * @brief This structure represents the state of the BlueCherry connection.
  */
@@ -2493,6 +2524,15 @@ class WalterModem {
         static inline WalterModemMqttRing _mqttRings[WALTER_MODEM_MQTT_MAX_PENDING_RINGS];
 
         /**
+         * @brief MQTT subscribed topics
+         */
+        static inline WalterModemMqttTopic _mqttTopics[WALTER_MODEM_MQTT_MAX_TOPICS];
+
+        /**
+         * @brief The topic that is currently in use for the completeHandler.
+         */
+        static inline WalterModemMqttTopic* _currentTopic = NULL;
+        /**
          * @brief The task in which AT commands and responses are handled.
          */
         static inline TaskHandle_t _queueTask;
@@ -2593,6 +2633,10 @@ class WalterModem {
          */
         static inline WalterModemEventHandler _eventHandlers[WALTER_MODEM_EVENT_TYPE_COUNT] = {};
 
+        /**
+         * @brief The latest MQTT status code received from the modem.
+         */
+        static inline WalterModemMqttStatus _mqttStatus = WALTER_MODEM_MQTT_SUCCESS;
         /**
          * @brief Helper to boot modem to recovery modem and start upgrade.
          *
@@ -3050,24 +3094,6 @@ class WalterModem {
         static bool _processMotaFinishEvent(void);
 
         /**
-         * @brief Configure an MQTT client.
-         *
-         * This function configures an mqtt client, without connecting.
-         *
-         * @param clientId MQTT client id to be used
-         * @param userName Username for auth
-         * @param password Password for auth
-         * @param tlsProfileId TLS profile id to be used
-         *
-         * @return True if succeeded, false if not.
-         */
-        static bool _mqttConfig(
-            const char *clientId,
-            const char *userName,
-            const char *password,
-            uint8_t tlsProfileId);
-
-        /**
          * @brief Upload key or certificate to modem NVRAM.
          *
          * This function uploads a key or certificate to the modem NVRAM. It is recommended to save
@@ -3205,13 +3231,23 @@ class WalterModem {
          *
          * @return The duration encoded into the 3GPP standard format.
          */
-        static const uint8_t _convertDuration(
+        static uint8_t _convertDuration(
             const uint32_t *base_times,
             size_t base_times_len,
             uint32_t duration_seconds,
             uint32_t *actual_duration_seconds);
 
-    public :
+        /**
+         * @brief This function subscribes without saving the topic in _mqttTopics and runs async. 
+         * (same as mqttSubscribe)
+         */
+        static bool _mqttSubscribeRaw(
+            const char *topicString,
+            uint8_t qos,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
+    public:
 #ifdef ARDUINO
         /**
          * @brief Initialize the modem.
@@ -3446,7 +3482,30 @@ class WalterModem {
         static bool getIdentity(
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
-            void *args = NULL);     
+            void *args = NULL);
+
+        /**
+         * @brief returns the last received mqttStatus.
+         */
+        static WalterModemMqttStatus getMqttStatus();
+        
+        /**
+         * @brief Configure an MQTT client.
+         *
+         * This function configures an mqtt client, without connecting.
+         *
+         * @param clientId MQTT client id to be used
+         * @param userName Username for auth
+         * @param password Password for auth
+         * @param tlsProfileId TLS profile id to be used
+         *
+         * @return True if succeeded, false if not.
+         */
+        static bool mqttConfig(
+            const char *clientId = "walter-mqtt-client",
+            const char *userName = "",
+            const char *password = "",
+            uint8_t tlsProfileId = 0);
 
         /**
          * @brief Disconnect an MQTT connection.
@@ -3471,10 +3530,8 @@ class WalterModem {
          *
          * @param serverName MQTT broker hostname
          * @param port Port to connect to
-         * @param clientId Client id string to be used
-         * @param userName Username
-         * @param password Password
-         * @param tlsProfileId TLS profile id to be used (default 0=plaintext)
+         * @param keepAlive Maximum time (in Seconds) 
+         * allowed between communications with the broker.
          * @param rsp Optional modem response structure to save the result in.
          * @param cb Optional callback function, if set this function will not block.
          * @param args Optional argument to pass to the callback.
@@ -3484,10 +3541,7 @@ class WalterModem {
         static bool mqttConnect(
             const char *serverName,
             uint16_t port,
-            const char *clientId = "walter-mqtt-client",
-            const char *userName = "",
-            const char *password = "",
-            uint8_t tlsProfileId = 0,
+            uint16_t keepAlive = 60,
             WalterModemRsp *rsp = NULL,
             walterModemCb cb = NULL,
             void *args = NULL);
@@ -3543,6 +3597,8 @@ class WalterModem {
          *
          * Poll if the modem has reported any incoming MQTT messages received on topics that we are
          * subscribed on.
+         * @warning when a QoS 0 message was received it must be retrieved before the next message 
+         * on the same topic.
          *
          * @param topic Topic to poll
          * @param targetBuf Target buffer to write incoming mqtt data in
@@ -4326,11 +4382,11 @@ class WalterModem {
             const char *pdpAddress = NULL, 
             WalterModemPDPHeaderCompression headerComp = WALTER_MODEM_PDP_HCOMP_OFF, 
             WalterModemPDPDataCompression dataComp = WALTER_MODEM_PDP_DCOMP_OFF,
-            WalterModemPDPIPv4AddrAllocMethod ipv4AllocMethod = WALTER_MODEM_PDP_IPV4_ALLOC_DHCP,
+            WalterModemPDPIPv4AddrAllocMethod ipv4AllocMethod = WALTER_MODEM_PDP_IPV4_ALLOC_NAS,
             WalterModemPDPRequestType requestType = WALTER_MODEM_PDP_REQUEST_NEW_OR_HANDOVER,
             WalterModemPDPPCSCFDiscoveryMethod pcscfMethod = WALTER_MODEM_PDP_PCSCF_AUTO,
             bool forIMCN = false,
-            bool useNSLPI = true,
+            bool useNSLPI = false,
             bool useSecurePCO = false,
             bool useNASIPv4MTUDiscovery = false,
             bool useLocalAddrInd = false,
@@ -4684,7 +4740,7 @@ class WalterModem {
          *
          * @return The interval encoded into the 3GPP standard format.
          */
-        static const uint8_t durationToTAU(
+        static uint8_t durationToTAU(
             uint32_t seconds = 0,
             uint32_t minutes = 0,
             uint32_t hours = 0,
@@ -4705,7 +4761,7 @@ class WalterModem {
          *
          * @return The duration encoded into the 3GPP standard format.
          */
-        static const uint8_t durationToActiveTime(
+        static uint8_t durationToActiveTime(
             uint32_t seconds = 0,
             uint32_t minutes = 0,
             uint32_t *actual_duration_seconds = nullptr);
