@@ -2402,25 +2402,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             }
         }
     }
-    else if(cmd && cmd->atCmd[0] && !strcmp(cmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=0,") &&
-            cmd->rsp->type != WALTER_MODEM_RSP_DATA_TYPE_MQTT)
-    {
-        const char *rspStr = _buffStr(buff);
-        uint8_t ringIdx = (uint32_t) cmd->completeHandlerArg;
-
-        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
-        cmd->rsp->data.mqttResponse.messageId = _mqttRings[ringIdx].messageId;
-        cmd->rsp->data.mqttResponse.qos = _mqttRings[ringIdx].qos;
-        cmd->rsp->data.mqttResponse.length = cmd->dataSize;
-
-        /* free ring entry */
-        _mqttRings[ringIdx].messageId = 0;
-
-        if(cmd->data) {
-            /* skip leading \r\n */
-            memcpy(cmd->data, rspStr + 2, cmd->dataSize);
-        }
-    }
+    
     else if(_buffStartsWith(buff, "+SQNCOAPCONNECTED: "))
     {
         const char *rspStr = _buffStr(buff);
@@ -2638,7 +2620,11 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
             uint8_t ringIdx;
             for(ringIdx = 0; ringIdx < WALTER_MODEM_MQTT_MAX_PENDING_RINGS; ringIdx++) {
-                if(_mqttRings[ringIdx].free) {
+                if (qos == 0 && strncmp(topic, _mqttRings[ringIdx].topic, strlen(topic)) == 0 && _mqttRings[ringIdx].qos == 0){
+                    break;
+                }
+
+                if (_mqttRings[ringIdx].free){
                     break;
                 }
 
@@ -2663,6 +2649,25 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             }
 
             _dispatchEvent(WALTER_MODEM_MQTT_EVENT_RING, _mqttStatus);
+        }
+    }
+    else if (cmd && cmd->atCmd[0] && !strcmp(cmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=0,") &&
+             cmd->rsp->type != WALTER_MODEM_RSP_DATA_TYPE_MQTT)
+    {
+        const char *rspStr = _buffStr(buff);
+        uint8_t ringIdx = (uint32_t)cmd->completeHandlerArg;
+
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
+        cmd->rsp->data.mqttResponse.messageId = _mqttRings[ringIdx].messageId;
+        cmd->rsp->data.mqttResponse.qos = _mqttRings[ringIdx].qos;
+        cmd->rsp->data.mqttResponse.length = cmd->dataSize;
+
+        /* entry is freed at mqttDidRing */
+
+        if (cmd->data)
+        {
+            /* skip leading \r\n */
+            memcpy(cmd->data, rspStr + 2, cmd->dataSize);
         }
     }
     else if(_buffStartsWithDigit(buff))
