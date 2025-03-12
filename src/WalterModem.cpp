@@ -2521,6 +2521,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
         _mqttStatus = (WalterModemMqttStatus) status;
 
+        _dispatchEvent(WALTER_MODEM_MQTT_EVENT_CONNECTED, _mqttStatus);
 
         for(size_t i = 0; i < WALTER_MODEM_MQTT_MAX_TOPICS; i++) {
             if(!_mqttTopics[i].free) {
@@ -2543,6 +2544,8 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         int status = atoi(rspStr + _strLitLen("+SQNSMQTTONDISCONNECT:0,"));
 
         _mqttStatus = (WalterModemMqttStatus)status;
+
+        _dispatchEvent(WALTER_MODEM_MQTT_EVENT_DISCONNECTED, _mqttStatus);
 
         if(status < 0) {
             result = WALTER_MODEM_STATE_ERROR;
@@ -2658,6 +2661,8 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
                 _mqttRings[ringIdx].qos = qos;
                 _strncpy_s(_mqttRings[ringIdx].topic, topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
             }
+
+            _dispatchEvent(WALTER_MODEM_MQTT_EVENT_RING, _mqttStatus);
         }
     }
     else if(_buffStartsWithDigit(buff))
@@ -4031,6 +4036,18 @@ void WalterModem::_dispatchEvent(const WalterModemGNSSFix *fix)
 
     auto start = std::chrono::steady_clock::now();
     handler->gnssHandler(fix, handler->args);
+    _checkEventDuration(start);
+}
+
+void WalterModem::_dispatchEvent(WalterModemMQTTEvent event, WalterModemMqttStatus status)
+{
+    WalterModemEventHandler *handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_MQTT;
+    if (handler->mqttHandler == nullptr) {
+        return;
+    }
+
+    auto start = std::chrono::steady_clock::now();
+    handler->mqttHandler(event, status, handler->args);
     _checkEventDuration(start);
 }
 
@@ -5496,6 +5513,12 @@ void WalterModem::setATEventHandler(walterModemATEventHandler handler, void *arg
 
 void WalterModem::setGNSSEventHandler(walterModemGNSSEventHandler handler, void *args)
 {
-    _eventHandlers[WALTER_MODEM_EVENT_TYPE_AT].gnssHandler = handler;
-    _eventHandlers[WALTER_MODEM_EVENT_TYPE_AT].args = args;
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].gnssHandler = handler;
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].args = args;
+}
+
+void WalterModem::setMQTTEventHandler(walterModemMQTTEventHandler handler, void *args)
+{
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].mqttHandler = handler;
+    _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].args = args;
 }

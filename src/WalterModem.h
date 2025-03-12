@@ -1171,6 +1171,11 @@ typedef enum
     WALTER_MODEM_EVENT_TYPE_GNSS,
 
     /**
+     * @brief MQTT related events.
+     */
+    WALTER_MODEM_EVENT_TYPE_MQTT,
+
+    /**
      * @brief The number of event types supported by the library.
      */
     WALTER_MODEM_EVENT_TYPE_COUNT
@@ -1183,6 +1188,17 @@ typedef enum
 {
     WALTER_MODEM_SYSTEM_EVENT_STARTED,
 } WalterModemSystemEvent;
+
+
+/**
+ * @brief This enumeration groups the different types of MQTT events.
+ */
+typedef enum
+{
+    WALTER_MODEM_MQTT_EVENT_CONNECTED,
+    WALTER_MODEM_MQTT_EVENT_DISCONNECTED,
+    WALTER_MODEM_MQTT_EVENT_RING
+} WalterModemMQTTEvent;
 
 /**
  * @brief Header of a network registration event handler.
@@ -1226,6 +1242,16 @@ typedef void (*walterModemATEventHandler)(const char *buff, size_t len, void *ar
 typedef void (*walterModemGNSSEventHandler)(const WalterModemGNSSFix *fix, void *args);
 
 /**
+ * @brief Header of an MQTT event handler
+ *
+ * @param ev The type of MQTTEvent
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemMQTTEventHandler)(WalterModemMQTTEvent ev, WalterModemMqttStatus status, void *args);
+
+/**
  * @brief This structure represents an event handler and it's metadata.
  */
 typedef struct
@@ -1251,6 +1277,11 @@ typedef struct
          * @brief Pointer to the GNSS event handler.
          */
         walterModemGNSSEventHandler gnssHandler;
+
+        /**
+         * @brief Pointer to the MQTT event handler.
+         */
+        walterModemMQTTEventHandler mqttHandler;
     };
 
     /**
@@ -3196,6 +3227,18 @@ class WalterModem {
         static void _dispatchEvent(const WalterModemGNSSFix *fix);
 
         /**
+         * @brief Dispatch a MQTT event.
+         *
+         * This function will try to call a MQTT event handler. When no such handler is installed
+         * this function is a no-op
+         *
+         * @param event The type of MQTT event that has occurred.
+         * 
+         * @return None
+         */
+        static void _dispatchEvent(WalterModemMQTTEvent event, WalterModemMqttStatus status);
+
+        /**
          * @brief Save context data in RTC memory before ESP deep sleep.
          *
          * This function will save the necessary state and context sets in RTC memory to keep this
@@ -3519,9 +3562,9 @@ class WalterModem {
          * @return True on success, false otherwise.
          */
         static bool mqttDisconnect(
-            WalterModemRsp *rsp,
-            walterModemCb cb,
-            void *args);
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
 
         /**
          * @brief Initialize MQTT and establish connection.
@@ -4827,6 +4870,15 @@ class WalterModem {
          * @return None.
          */
         static void setGNSSEventHandler(walterModemGNSSEventHandler handler, void *args = NULL);
+
+        /**
+         * @brief Set the MQTT event handler.
+         *
+         * This function sets the handler that is called when an MQTT event is launched by the modem
+         * When this function is called multiple times, only the last handler will be set. To remove
+         * the MQTT event handler, this function must be called with a nullptr as the handler.
+         */
+        static void setMQTTEventHandler(walterModemMQTTEventHandler handler, void *args = NULL);
 };
 
 #endif
