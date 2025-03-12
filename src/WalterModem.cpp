@@ -2650,7 +2650,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
             if(ringIdx == WALTER_MODEM_MQTT_MAX_PENDING_RINGS) {
                 _mqttStatus = WALTER_MODEM_MQTT_NOMEM;
-                ESP_LOGD("WalterModem","mqtt message buffer was full!");
+                ESP_LOGW("WalterModem","mqtt message buffer was full!");
                 goto after_processing_logic;
             }
             
