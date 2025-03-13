@@ -2571,6 +2571,12 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             }
         }
     }
+    else if(_buffStartsWith(buff, "+SQNSMQTTMEMORYFULL:")) {
+        /* if the buffer MQTT buffer is full free all the rings */
+        for (uint8_t ringIdx = 0; ringIdx < WALTER_MODEM_MQTT_MAX_PENDING_RINGS; ringIdx++) {
+            _mqttRings[ringIdx].free = true;
+        }
+    }
     else if(_buffStartsWith(buff, "+SQNSMQTTONMESSAGE:0,"))
     {
         const char *rspStr = _buffStr(buff);
@@ -2628,8 +2634,9 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
                     break;
                 }
 
-                if (strncmp(topic, _mqttRings[ringIdx].topic, strlen(topic)) == 0 && _mqttRings[ringIdx].messageId == messageId && _mqttRings[ringIdx].qos == qos) {
-                    ESP_LOGD("WalterModem", "mqtt duplicate message!");
+                if (qos != 0 && _mqttRings [ringIdx].messageId == messageId && strncmp(topic, _mqttRings[ringIdx].topic, strlen(topic)) == 0)
+                {
+                    ESP_LOGW("WalterModem", "mqtt duplicate message!");
                     goto after_processing_logic;
                 }
             }
@@ -2641,12 +2648,12 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             }
             
             /* store ring in ring list for this mqtt context */
-            if (_mqttRings[ringIdx].free) {
-                _mqttRings[ringIdx].messageId = messageId;
-                _mqttRings[ringIdx].length = length;
-                _mqttRings[ringIdx].qos = qos;
-                _strncpy_s(_mqttRings[ringIdx].topic, topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
-            }
+            _mqttRings[ringIdx].free = false;
+            _mqttRings[ringIdx].messageId = messageId;
+            _mqttRings[ringIdx].length = length;
+            _mqttRings[ringIdx].qos = qos;
+            _strncpy_s(_mqttRings[ringIdx].topic, topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
+        
 
             _dispatchEvent(WALTER_MODEM_MQTT_EVENT_RING, _mqttStatus);
         }
@@ -2660,9 +2667,9 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
         cmd->rsp->data.mqttResponse.messageId = _mqttRings[ringIdx].messageId;
         cmd->rsp->data.mqttResponse.qos = _mqttRings[ringIdx].qos;
-        cmd->rsp->data.mqttResponse.length = cmd->dataSize;
+        cmd->rsp->data.mqttResponse.length = _mqttRings[ringIdx].length;
 
-        /* entry is freed at mqttDidRing */
+        _mqttRings[ringIdx].free = true;
 
         if (cmd->data)
         {
@@ -4363,8 +4370,7 @@ bool WalterModem::mqttDidRing(
 
     uint8_t idx;
     for(idx = 0; idx < WALTER_MODEM_MQTT_MAX_PENDING_RINGS; idx++) {
-        if(!strncmp(topic, _mqttRings[idx].topic, WALTER_MODEM_MQTT_TOPIC_MAX_SIZE) &&
-            _mqttRings[idx].messageId) {
+        if (!strncmp(topic, _mqttRings[idx].topic, strlen(topic)) && !_mqttRings[idx].free) {
             break;
         }
     }
@@ -4377,9 +4383,6 @@ bool WalterModem::mqttDidRing(
         _returnState(WALTER_MODEM_STATE_NO_MEMORY);
     }
 
-    targetBufSize = _mqttRings[idx].length;
-    _mqttRings[idx].free = true;
-
     if (_mqttRings[idx].qos == 0)
     {
         /* no msg id means qos 0 message */
@@ -4387,7 +4390,7 @@ bool WalterModem::mqttDidRing(
             "AT+SQNSMQTTRCVMESSAGE=0,",
             _atStr(topic)),
             "OK", rsp, cb, args, NULL, (void*) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf,
-            targetBufSize);
+            _mqttRings[idx].length);
 
         _returnAfterReply();
     }
@@ -4398,7 +4401,7 @@ bool WalterModem::mqttDidRing(
             _atStr(topic), ",",
             _atNum(_mqttRings[idx].messageId)),
             "OK", rsp, cb, args, NULL, (void*) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf,
-            targetBufSize);
+            _mqttRings[idx].length);
 
         _returnAfterReply();
     }
@@ -4944,7 +4947,7 @@ bool WalterModem::unlockSIM(WalterModemRsp *rsp, walterModemCb cb, void *args, c
     if(_simPIN == NULL) {
         return getSIMState(rsp, cb, args);
     }
-    
+
     _runCmd(arr("AT+CPIN=", _simPIN), "OK", rsp, cb, args);
     _returnAfterReply();
 }
@@ -4993,7 +4996,9 @@ bool WalterModem::configPSM(
             (const char*) stringsbuffer->data),
             "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsbuffer);
         _returnAfterReply();
-    } else {
+    }
+    else
+    {
         _runCmd(arr("AT+CPSMS=", _digitStr(mode)), "OK", rsp, cb, args);
         _returnAfterReply();
     }
@@ -5019,7 +5024,9 @@ bool WalterModem::configEDRX(
             (const char*) stringsbuffer->data),
             "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsbuffer);
         _returnAfterReply();
-    } else {
+    }
+    else
+    {
         _runCmd(arr("AT+SQNEDRX=", _digitStr(mode)), "OK", rsp, cb, args);
         _returnAfterReply();
     }
