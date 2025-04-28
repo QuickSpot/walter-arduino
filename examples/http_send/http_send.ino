@@ -1,13 +1,13 @@
 /**
- * @file SensorShield.ino
- * @author Daan Pape <daan@dptechnics.com>
- * @date 1 Mar 2023
+ * @file ModemHttpSendTest.ino
+ * @author Jonas Maes <jonas@dptechnics.com>
+ * @date 28 Apr 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2025, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,41 +43,18 @@
  *
  * @section DESCRIPTION
  *
- * This file contains a sketch which reads out environimental sensors and sends
- * a reading of these sensors to the Walter demo server every 60 seconds.
+ * This file contains a sketch which uses the modem in Walter to make a
+ * http post request and show the result.
  */
 
-#include <Adafruit_MPL3115A2.h>
 #include <HardwareSerial.h>
-#include <LTR329ALS01.h>
 #include <WalterModem.h>
 #include <esp_mac.h>
 
-
 /**
- * @brief The address of the server to upload the data to.
+ * @brief HTTP profile
  */
-#define SERV_ADDR "64.225.64.140"
-
-/**
- * @brief The UDP port on which the server is listening.
- */
-#define SERV_PORT 1999
-
-/**
- * @brief The I2C address of the Si7006-A20
- */
-#define SI7006_ADDR 0x40
-
-/**
- * @brief The SDA pin of the I2C bus.
- */
-#define I2C_SDA_PIN 9
-
-/**
- * @brief The SCL pin of the I2C bus.
- */
-#define I2C_SCL_PIN 8
+#define HTTP_PROFILE 1
 
 /**
  * @brief The modem instance.
@@ -85,25 +62,20 @@
 WalterModem modem;
 
 /**
- * @brief Response object containing command response information.
- */
-WalterModemRsp rsp;
-
-/**
- * @brief Lux sensor instance.
- */
-LTR329ALS01 ltr329(9, 8);
-
-/**
- * @brief Barometric pressure sensor instance.
- */
-Adafruit_MPL3115A2 mpl3115a2 = Adafruit_MPL3115A2();
-
-/**
  * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
  * the MAC address of the Walter this code is running on.
  */
-uint8_t dataBuf[14] = {0};
+uint8_t dataBuf[8] = {0};
+
+/**
+ * @brief Buffer for incoming HTTP response
+ */
+uint8_t incomingBuf[256] = {0};
+
+/**
+ * @brief The counter used in the ping packets.
+ */
+uint16_t counter = 0;
 
 /**
  * @brief This function checks if we are connected to the lte network
@@ -173,93 +145,19 @@ bool lteConnect() {
   return waitForNetwork();
 }
 
-/**
- * @brief Read out the relative humidity.
- *
- * This function reads the relative humidity from the Si7006 sensor.
- *
- * @return The resulting relative humidity.
- */
-float getRelHum() {
-  uint8_t data[2] = {0};
-
-  Wire.beginTransmission(SI7006_ADDR);
-  Wire.write(0xF5);
-  Wire.endTransmission();
-  delay(500);
-
-  Wire.requestFrom(SI7006_ADDR, 2);
-  if (Wire.available() == 2) {
-    data[0] = Wire.read();
-    data[1] = Wire.read();
-  }
-
-  float humidity = ((data[0] * 256.0) + data[1]);
-  humidity = ((125 * humidity) / 65536.0) - 6;
-  return humidity;
-}
-
-/**
- * @brief Read out the temperature.
- *
- * This function reads the temperature from the Si7006 sensor.
- *
- * @return The resulting temperature.
- */
-static float getTemp() {
-  uint8_t data[2] = {0};
-
-  Wire.beginTransmission(SI7006_ADDR);
-  Wire.write(0xF3);
-  Wire.endTransmission();
-  delay(500);
-
-  Wire.requestFrom(SI7006_ADDR, 2);
-  if (Wire.available() == 2) {
-    data[0] = Wire.read();
-    data[1] = Wire.read();
-  }
-
-  float temp = ((data[0] * 256.0) + data[1]);
-  float ctemp = ((175.72 * temp) / 65536.0) - 46.85;
-  return ctemp;
-}
-
-/**
- * @brief Set-up the system.
- *
- * This function will setup the system and initialize the communication buses.
- *
- * @return None.
- */
 void setup() {
   Serial.begin(115200);
   delay(5000);
 
-  Serial.println("Walter SensorShield v1.0.0");
+  Serial.println("Walter modem test v1.0.0");
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\n", dataBuf[0],
-                dataBuf[1], dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
+                dataBuf[0], dataBuf[1], dataBuf[2], dataBuf[3], dataBuf[4],
+                dataBuf[5]);
 
-  /* I2C bus initialisation */
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-
-  /* Lux sensor initialization */
-  ltr329.begin();
-  ltr329.writetControl(true, LTR329ALS01_ALS_GAIN_x8);
-  ltr329.writeMeasRate(LTR329ALS01_ALS_INT_100ms, LTR329ALS01_ALS_RATE_500ms);
-
-  /* Baromether initialization */
-  if (!mpl3115a2.begin()) {
-    while (1)
-      ;
-  }
-  mpl3115a2.setSeaPressure(1013.26);
-
-  /* Modem initialization */
-  if (modem.begin(&Serial2)) {
+  if (WalterModem::begin(&Serial2)) {
     Serial.println("Modem initialization OK");
   } else {
     Serial.println("Error: Modem initialization ERROR");
@@ -268,54 +166,53 @@ void setup() {
 
   /* Connect the modem to the lte network */
   if (!lteConnect()) {
-    ESP_LOGE(TAG, "Could Not Connect to LTE");
+    Serial.println("Error: Could Not Connect to LTE");
     return;
   }
 
-  /* Construct a socket */
-  if (!modem.createSocket(&rsp)) {
-    Serial.println("Error Could not create a new socket");
-    return;
-  }
-
-  /* Connect to the UDP test server */
-  if (modem.socketDial(SERV_ADDR, SERV_PORT)) {
-    Serial.printf("Connected to UDP server %s:%d\n", ip, port);
+  /* Configure http profile for a simple test */
+  if (modem.httpConfigProfile(HTTP_PROFILE, "coap.bluecherry.io", 80)) {
+    Serial.println("Successfully configured the http profile");
   } else {
-    Serial.println("Could not connect UDP socket");
-    return;
+    Serial.println("Error: Failed to configure HTTP profile");
   }
 }
 
 void loop() {
-  float hum = getRelHum();
-  float temp = getTemp();
-  float lux = ltr329.readLux();
-  float pressure = mpl3115a2.getPressure();
+  dataBuf[6] = counter >> 8;
+  dataBuf[7] = counter & 0xFF;
 
-  uint16_t rawHum = hum * 100;
-  uint16_t rawTemp = (temp + 50) * 100;
-  uint16_t rawLux = lux * 10;
-  uint16_t rawPressure = pressure * 10;
+  WalterModemRsp rsp = {};
 
-  uint16_t dataSize = 14;
-  dataBuf[6] = rawHum >> 8;
-  dataBuf[7] = rawHum & 0xFF;
-  dataBuf[8] = rawTemp >> 8;
-  dataBuf[9] = rawTemp & 0xFF;
-  dataBuf[10] = rawLux >> 8;
-  dataBuf[11] = rawLux & 0xFF;
-  dataBuf[12] = rawPressure >> 8;
-  dataBuf[13] = rawPressure & 0xFF;
+  /* HTTP test */
+  static short httpReceiveAttemptsLeft = 0;
+  static char ctbuf[32];
 
-  if (!modem.socketSend(dataBuf, dataSize)) {
-    Serial.println("Could not transmit data");
-    ESP.restart();
+  if (!httpReceiveAttemptsLeft) {
+    if (modem.httpSend(
+            HTTP_PROFILE, "/", dataBuf, 8, WALTER_MODEM_HTTP_SEND_CMD_POST,
+            WALTER_MODEM_HTTP_POST_PARAM_OCTET_STREAM, ctbuf, sizeof(ctbuf))) {
+      Serial.println("http query performed");
+      httpReceiveAttemptsLeft = 3;
+    } else {
+      Serial.println("Error: http query failed");
+      delay(1000);
+    }
+  } else {
+    httpReceiveAttemptsLeft--;
+
+    if (modem.httpDidRing(HTTP_PROFILE, incomingBuf, sizeof(incomingBuf),
+                          &rsp)) {
+      httpReceiveAttemptsLeft = 0;
+
+      Serial.printf("http status code: %d\r\n",
+                    rsp.data.httpResponse.httpStatus);
+      Serial.printf("content type: %s\r\n", ctbuf);
+      Serial.printf("[%s]\r\n", incomingBuf);
+    } else {
+      Serial.println("HTTP response not yet received");
+    }
   }
 
-  Serial.printf("Sent data %.01f %%, %.01f C, %.01f lux, %.01f hPa\n", hum,
-                temp, lux, pressure);
-
-  delay(60000);
-  ESP.restart();
+  delay(10000);
 }
