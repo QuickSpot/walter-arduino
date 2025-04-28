@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Walter Feels is an open source carrier board reference design for the Walter 
-module. This example is a demonstration that reads out the internal power 
-management and sensors. The data is than transmitted to the demo 
+Walter Feels is an open source carrier board reference design for the Walter
+module. This example is a demonstration that reads out the internal power
+management and sensors. The data is than transmitted to the demo
 [server](http://walterdemo.quickspot.io/) as fast as possible.
 
 ## Required hardware
