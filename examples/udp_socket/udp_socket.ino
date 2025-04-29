@@ -51,7 +51,6 @@
 #include <WalterModem.h>
 #include <esp_mac.h>
 
-
 /**
  * @brief The address of the server to upload the data to.
  */
@@ -173,6 +172,13 @@ void setup() {
   if (!lteConnect()) {
     Serial.println("Error: Could Not Connect to LTE");
     return;
+  }
+
+  /* configure the socket */
+  if (modem.socketConfig()) {
+    Serial.println("succesfully configured the socket");
+  } else {
+    Serial.println("Error: Could not connect the socket");
   }
 
   /* Connect to the UDP test server */
