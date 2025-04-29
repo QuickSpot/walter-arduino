@@ -118,7 +118,7 @@ bool lteConnect() {
   delay(500);
 
   // Create a PDP context with specified APN
-  if (!modem.definePDPContext(CELLULAR_APN)) {
+  if (!modem.definePDPContext(1, CELLULAR_APN)) {
     Serial.println("Could not create PDP context");
     return false;
   }
