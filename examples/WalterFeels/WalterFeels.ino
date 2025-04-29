@@ -231,7 +231,7 @@ bool updateGNSSAssistance() {
     return false;
   }
 
-  if (rsp.data.clock <= 0) {
+  if (rsp.data.clock.epochTime <= 0) {
     /*
      * Wait for the modem to synchronize time with the LTE network, try 5 times
      * with a delay of 500ms.
@@ -242,8 +242,8 @@ bool updateGNSSAssistance() {
         return false;
       }
 
-      if (rsp.data.clock > 0) {
-        Serial.printf("Got time from LTE: %" PRIi64 "\n", rsp.data.clock);
+      if (rsp.data.clock.epochTime > 0) {
+        Serial.printf("Got time from LTE: %" PRIi64 "\n", rsp.data.clock.epochTime);
         break;
       } else if (i == 4) {
         Serial.println("Error: Could not sync time with network");
@@ -464,7 +464,7 @@ void modem_setup() {
 }
 
 void modem_transmit() {
-  if (modem.configSocket()) {
+  if (modem.socketConfig()) {
     Serial.println("Created a new socket");
   } else {
     Serial.println("Error: Could not create a new socket");
@@ -484,7 +484,7 @@ void modem_transmit() {
     ESP.restart();
   }
 
-  if (modem.closeSocket()) {
+  if (modem.socketClose()) {
     Serial.println("Successfully closed the socket");
   } else {
     Serial.println("Error: Could not close the socket");
