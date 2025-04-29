@@ -163,16 +163,16 @@ void setup() {
   }
 
   // other public mqtt broker with web client: mqtthq.com
-  if (modem.mqttConnect("test.mosquitto.org", 8883, macString, "", "", 1)) {
+  if (modem.mqttConnect("test.mosquitto.org", 8883)) {
     Serial.println("MQTT connection succeeded");
-
-    if (modem.mqttSubscribe("walter-mqtt-test-topic")) {
-      Serial.println("MQTT subscribed to topic 'walter-mqtt-test-topic'");
-    } else {
-      Serial.println("Error: MQTT subscribe failed");
-    }
   } else {
     Serial.println("Error: MQTT connection failed");
+  }
+
+  if (modem.mqttSubscribe("walter-mqtt-test-topic")) {
+    Serial.println("MQTT subscribed to topic 'walter-mqtt-test-topic'");
+  } else {
+    Serial.println("Error: MQTT subscribe failed");
   }
 }
 
