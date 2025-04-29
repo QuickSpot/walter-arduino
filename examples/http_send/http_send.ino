@@ -1,5 +1,5 @@
 /**
- * @file ModemHttpSendTest.ino
+ * @file http_send.ino
  * @author Jonas Maes <jonas@dptechnics.com>
  * @date 28 Apr 2025
  * @copyright DPTechnics bv

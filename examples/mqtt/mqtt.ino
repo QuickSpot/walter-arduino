@@ -1,13 +1,13 @@
 /**
- * @file ModemMqttTest.ino
+ * @file mqtt.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date Jun 2023
+ * @date 28 Apr 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2025, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without

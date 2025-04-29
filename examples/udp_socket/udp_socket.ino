@@ -1,7 +1,7 @@
 /**
- * @file ModemSocketTest.ino
+ * @file udp_socket.ino
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Feb 2025
+ * @date 28 Apr 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This program sends and receives mqtt data using the DPTechnics BlueCherry cloud platform.
+This sketch sends and receives mqtt data using the DPTechnics BlueCherry cloud platform.
 It also supports OTA updates which are scheduled through the BlueCherry web interface.
 
 ## Required Hardware

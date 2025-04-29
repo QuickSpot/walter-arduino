@@ -1,13 +1,13 @@
 /**
- * @file ModemMota.ino
+ * @file mota.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 15 Apr 2024
+ * @date 28 Apr 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem offline OTA update
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2025, DPTechnics bv
  * All rights reserved.
  * 
  * Redistribution and use in source and binary forms, with or without

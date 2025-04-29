@@ -1,5 +1,5 @@
 /**
- * @file ModemPassthrough.ino
+ * @file passthrough.ino
  * @author Daan Pape <daan@dptechnics.com>
  * @date 21 Mar 2023
  * @copyright DPTechnics bv
