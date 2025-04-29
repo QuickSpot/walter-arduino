@@ -55,7 +55,7 @@
 /**
  * @brief The address of the server to upload the data to.
  */
-#define SERV_ADDR "64.225.64.140"
+#define SERV_ADDR "walterdemo.quickspot.io"
 
 /**
  * @brief The UDP port on which the server is listening.
@@ -175,22 +175,8 @@ void setup() {
     return;
   }
 
-  /* Construct a socket */
-  if (modem.socketDial(&rsp)) {
-    Serial.println("Created a new socket");
-  } else {
-    Serial.println("Error: Could not create a new socket");
-  }
-
-  /* Configure the socket */
-  if (modem.socketConfig()) {
-    Serial.println("Successfully configured the socket");
-  } else {
-    Serial.println("Error: Could not configure the socket");
-  }
-
   /* Connect to the UDP test server */
-  if (modem.connectSocket(SERV_ADDR, SERV_PORT)) {
+  if (modem.socketDial(SERV_ADDR, SERV_PORT)) {
     Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
   } else {
     Serial.println("Error: Could not connect UDP socket");
