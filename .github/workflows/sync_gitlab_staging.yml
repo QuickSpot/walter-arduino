@@ -37,12 +37,6 @@ jobs:
           commit_author=$(curl -s https://api.github.com/repos/${{ github.repository }}/commits/$commit_sha | jq -r '.commit.author.name')
           echo "commit_author=$commit_author" >> $GITHUB_ENV
 
-      - name: Clone target repository
-        run: |
-          git clone -b master https://oauth2:${{ secrets.PR_SYNC_TOKEN }}@git.dptechnics.com/quickspot/walter/walter-software/cpp/walter-cpp-modem-lib.git target-repo
-        env:
-          PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
-
       - name: Copy files
         run: |
           rm -rf target-repo/walter-modem/
