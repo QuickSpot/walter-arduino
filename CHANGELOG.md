@@ -6,7 +6,7 @@ This is the Changelog for WalterModem
 
 ### features
 
-- Added support for light sleeep.
+- Added support for light sleep.
 
 ### Bug Fixes
 
@@ -22,7 +22,6 @@ This is the Changelog for WalterModem
 ### Bug Fixes
 
 - Fixed compile errors for `ESP-IDF V5.4.0`
-
 
 ## [V1.2.0](https://github.com/QuickSpot/walter-esp-idf/releases/tag/v1.1.2)
 
@@ -40,20 +39,20 @@ This is the Changelog for WalterModem
 
 #### restructuring
 
-- Seperated Socket implementation (proto/WalterSocket.cpp)
-- Seperated MQTT implementation (proto/WalterMQTT.cpp)
-- Seperated HTTP implementation (proto/WalterHTTP.cpp)
-- Seperated GNSS implementation (proto/WalterGNSS.cpp)
-- Seperated BlueCherry implementation (proto/WalterBlueCherry.cpp)
+- Separated Socket implementation (proto/WalterSocket.cpp)
+- Separated MQTT implementation (proto/WalterMQTT.cpp)
+- Separated HTTP implementation (proto/WalterHTTP.cpp)
+- Separated GNSS implementation (proto/WalterGNSS.cpp)
+- Separated BlueCherry implementation (proto/WalterBlueCherry.cpp)
 
-- Regionised the Code Base for easier navigation.
+- Regionised the Code Base for easier navigation. (search by region)
 
-- Seperated Common Defines (WalterDefines.h)
+- Separated Common Defines (WalterDefines.h)
 
 #### CONFIG
 
 - added support for [`KCONFIG`](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/kconfig.html) (ESP-IDF)
-- added support for disabeling unused protocols (ESP-IDF,ARDUINO)
+- added support for disabling unused protocols (ESP-IDF,ARDUINO)
 - added CONFIG macro.
 
 #### Breaking changes
@@ -63,6 +62,6 @@ This is the Changelog for WalterModem
 3) socketCreate => socketConfig
 4) configSocket => socketConfigExtended
 5) connectSocket => socketDial
-6) clock is now a struct wich contains the `epochTime` and the `timeZoneOffset`
+6) clock is now a struct which contains the `epochTime` and the `timeZoneOffset`
 
 `all examples have been reworked.`
