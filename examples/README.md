@@ -6,37 +6,37 @@ directory are some sketches that are handy for diagnostic reasons. All examples
 are GPLv3 licensed.
 
 The included examples are:
- - [ModemPassthrough](ModemPassthrough/): by flashing this sketch onto Walter
+ - [passtrough](passthrough/): by flashing this sketch onto Walter
    you are able to talk directly to the Sequans Monarch 2 chipset using AT
    commands.
 
- - [ModemSocketTest](ModemSocketTest/): this sketch makes Walter connect to a network and
+ - [udp_socket](udp_socket/): this sketch makes Walter connect to a network and
    send out UDP messages to our testserver. This sketch is perfect to test a
    connection without having Walter connected to any shield.
 
- - [ModemCoapTest](ModemCoapTest/): this sketch makes Walter connect to a network and
+ - [coap](coap/): this sketch makes Walter connect to a network and
    send out COAP messages to a public COAP test server.
 
- - [ModemHttpTest](ModemHttpTest/): this sketch makes Walter connect to a network and
+ - [http_querry](http_querry/): this sketch makes Walter connect to a network and
    perform a HTTP GET to a test server.
 
- - [ModemHttpSendTest](ModemHttpSendTest/): this sketch makes Walter connect to a network and
+ - [http_send](http_send/): this sketch makes Walter connect to a network and
    perform a HTTP POST to a test server.
 
- - [ModemMqttTest](ModemMqttTest/): this sketch makes Walter connect to a network and
+ - [mqtt](mqtt/): this sketch makes Walter connect to a network and
    send and receive MQTT messages using the MQTT commands in the modem.
 
- - [ModemBlueCherryTest](ModemBlueCherryTest/): this sketch makes Walter connect to a network and
+ - [bluecherry](bluecherry/): this sketch makes Walter connect to a network and
    send and receive MQTT messages and an ota update using the DPTechnics COAP to MQTT bridge.
 
- - [SensorShield](SensorShield/): this sketch requires Walter to be placed onto
+ - [sensor_shield](sensor_shield/): this sketch requires Walter to be placed onto
    a board which contains various sensors. It will read out the sensors and
    transmit them to the demo server every 60 seconds.
 
- - [Positioning](Positioning/): this sketch requires Walter to be placed onto
+ - [positioning](positioning/): this sketch requires Walter to be placed onto
    a board which contains various sensors. It will read out the sensors and
    transmit them to the demo server every 60 seconds.
 
- - [ModemMota](ModemMota/): this sketch updates the modem firmware.
+ - [mota](mota/): this sketch updates the modem firmware.
    Please read the comments at the top for info on how to put the
    firmware image on the ESP32 flash before running the sketch.

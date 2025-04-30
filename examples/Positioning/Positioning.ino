@@ -246,7 +246,7 @@ bool updateGNSSAssistance()
     return false;
   }
 
-  if(rsp.data.clock <= 0) {
+  if(rsp.data.clock.epochTime <= 0) {
     /* The system clock is invalid, connect to LTE network to sync time */
     if(!lteConnect()) {
       Serial.print("Could not connect to LTE network\r\n");
@@ -265,9 +265,9 @@ bool updateGNSSAssistance()
         return false;
       }
 
-      if(rsp.data.clock > 0) {
+      if(rsp.data.clock.epochTime > 0) {
         Serial.printf("Synchronized clock with network: %"PRIi64"\r\n",
-          rsp.data.clock);
+          rsp.data.clock.epochTime);
         break;
       } else if(i == 4) {
         Serial.print("Could not sync time with network\r\n");
