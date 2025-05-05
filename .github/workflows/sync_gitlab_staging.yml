@@ -52,7 +52,7 @@ jobs:
         run: |
           cd target-repo
           git add .
-          git commit -m "Sync from walter-modem-esp-idf on PR merge by ${{ env.commit_author }}"
+          git commit -m "Sync from walter-modem-arduino on PR merge by ${{ env.commit_author }}"
           git push --force
         env:
           GITHUB_PR_SYNC_TOKEN: ${{ secrets.PR_SYNC_TOKEN }}
