@@ -2,7 +2,7 @@
 
 This is the Changelog for WalterModem
 
-## [V1.1.2](https://github.com/QuickSpot/walter-esp-idf/releases/tag/v1.1.2)
+## [V1.1.2](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.1.2)
 
 ### features
 
@@ -12,7 +12,7 @@ This is the Changelog for WalterModem
 
 - Changed the `CORE_DEBUG_LEVEL` macro to the `ARDUINO` macro to distinguish between ESP-IDF and Arduino.
 
-## [V1.1.3](https://github.com/QuickSpot/walter-esp-idf/releases/tag/v1.1.3)
+## [V1.1.3](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.1.3)
 
 ### Features
 
@@ -23,7 +23,7 @@ This is the Changelog for WalterModem
 
 - Fixed compile errors for `ESP-IDF V5.4.0`
 
-## [V1.2.0](https://github.com/QuickSpot/walter-esp-idf/releases/tag/v1.1.2)
+## [V1.2.0](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.1.2)
 
 ### Features
 
@@ -65,3 +65,11 @@ This is the Changelog for WalterModem
 6) clock is now a struct which contains the `epochTime` and the `timeZoneOffset`
 
 `all examples have been reworked.`
+
+## [v1.2.1](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.2.0)
+
+### Bug Fixes
+
+- fixed mqttConfig wrong defaults ([#47](https://github.com/QuickSpot/walter-esp-idf/issues/47))
+- fixed `out of bounds` compile error in release mode ([#46](https://github.com/QuickSpot/walter-esp-idf/issues/46))
+- fixed arduino mqtt.ino example did not contain mqttConfig ([#30](https://github.com/QuickSpot/walter-arduino/issues/30))
