@@ -162,8 +162,16 @@ void setup() {
     return;
   }
 
-  // other public mqtt broker with web client: mqtthq.com
-  if (modem.mqttConnect("test.mosquitto.org", 8883)) {
+  /* configure the mqtt client */
+  if (modem.mqttConfig("walter-mqtt-test-topic")) {
+    Serial.println("MQTT configuration succeeded");
+  } else {
+    Serial.println("Error: MQTT configuration failed");
+    return;
+  }
+
+  /* other public mqtt broker with web client: mqtthq.com */
+  if (modem.mqttConnect("test.mosquitto.org", 1883)) {
     Serial.println("MQTT connection succeeded");
   } else {
     Serial.println("Error: MQTT connection failed");
