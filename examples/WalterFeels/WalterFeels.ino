@@ -1,18 +1,15 @@
-#include <Arduino.h>
-#include <HardwareSerial.h>
-#include <WalterModem.h>
 #include <Wire.h>
+#include <Arduino.h>
+#include <WalterModem.h>
+#include <HardwareSerial.h>
 
-
-#include "esp_mac.h"
-#include "hdc1080.h"
-#include "lps22hb.h"
 #include "scd30.h"
+#include "esp_mac.h"
+#include "lps22hb.h"
+#include "hdc1080.h"
 
-
-#include "LTC4015Registers.h"
 #include "WalterFeels.h"
-
+#include "LTC4015Registers.h"
 
 /**
  * @brief Pin definitions
@@ -43,6 +40,7 @@
 #define CO2_SDA_PIN 12
 #define CO2_SCL_PIN 11
 
+
 /**
  * @brief The address of the server to upload the data to.
  */
@@ -64,7 +62,7 @@
 #define MAX_GNSS_CONFIDENCE 200.0
 
 /**
- * @brief The first RAT to try to connect to.
+ * @brief The first RAT to try to connect to. 
  */
 #define PREFERRED_RAT WALTER_MODEM_RAT_LTEM
 
@@ -120,8 +118,7 @@ HardwareSerial ModemSerial(1);
 HardwareSerial SensorSerial(2);
 
 /**
- * @brief Time duration in seconds indicating how long the ESP should stay in
- * deep-sleep.
+ * @brief Time duration in seconds indicating how long the ESP should stay in deep-sleep.
  */
 const uint32_t SLEEP_DURATION = 300;
 
@@ -133,80 +130,94 @@ const char *edrxPTW = "0000";
 
 /**
  * @brief The binary configuration settings for PSM.
- * These can be calculated using e.g.
- * https://www.soracom.io/psm-calculation-tool/
+ * These can be calculated using e.g. https://www.soracom.io/psm-calculation-tool/
  */
 const char *psmActive = "00000001";
 const char *psmTAU = "00000110";
 
 /**
  * @brief This function is called when a fix attempt finished.
- *
+ * 
  * This function is called by Walter's modem library as soon as a fix attempt
  * has finished. This function should be handled as an interrupt and should be
  * as short as possible as it is called within the modem data thread.
- *
+ * 
  * @param fix The fix data.
  * @param args Optional arguments, a NULL pointer in this case.
- *
+ * 
  * @return None.
  */
 
-void fixHandler(const WalterModemGNSSFix *fix, void *args) {
+void fixHandler(const WalterModemGNSSFix *fix, void *args)
+{
   memcpy(&posFix, fix, sizeof(WalterModemGNSSFix));
   fixRcvd = true;
 }
 
 /**
  * @brief Check the assistance data in the modem response.
- *
- * This function checks the availability of assistance data in the modem's
+ * 
+ * This function checks the availability of assistance data in the modem's 
  * response. This function also sets a flag if any of the assistance databases
  * should be updated.
- *
+ * 
  * @param rsp The modem response to check.
  * @param updateAlmanac Pointer to the flag to set when the almanac should be
- * updated.
+ * updated. 
  * @param updateEphemeris Pointer to the flag to set when ephemeris should be
  * updated.
- *
+ * 
  * @return None.
  */
-void checkAssistanceData(WalterModemRsp *rsp, bool *updateAlmanac = NULL,
-                         bool *updateEphemeris = NULL) {
-  if (updateAlmanac != NULL) {
+void checkAssistanceData(
+    WalterModemRsp *rsp,
+    bool *updateAlmanac = NULL,
+    bool *updateEphemeris = NULL)
+{
+  if (updateAlmanac != NULL)
+  {
     *updateAlmanac = false;
   }
 
-  if (updateEphemeris != NULL) {
+  if (updateEphemeris != NULL)
+  {
     *updateEphemeris = false;
   }
 
   Serial.print("Almanac data is ");
-  if (rsp->data.gnssAssistance.almanac.available) {
+  if (rsp->data.gnssAssistance.almanac.available)
+  {
     Serial.printf("available and should be updated within %ds\n",
                   rsp->data.gnssAssistance.almanac.timeToUpdate);
-    if (updateAlmanac != NULL) {
+    if (updateAlmanac != NULL)
+    {
       *updateAlmanac = rsp->data.gnssAssistance.almanac.timeToUpdate <= 0;
     }
-  } else {
-    Serial.println("not available.");
-    if (updateAlmanac != NULL) {
+  }
+  else
+  {
+    Serial.print("not available.\n");
+    if (updateAlmanac != NULL)
+    {
       *updateAlmanac = true;
     }
   }
 
   Serial.print("Real-time ephemeris data is ");
-  if (rsp->data.gnssAssistance.realtimeEphemeris.available) {
+  if (rsp->data.gnssAssistance.realtimeEphemeris.available)
+  {
     Serial.printf("available and should be updated within %ds\n",
                   rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate);
-    if (updateEphemeris != NULL) {
-      *updateEphemeris =
-          rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate <= 0;
+    if (updateEphemeris != NULL)
+    {
+      *updateEphemeris = rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate <= 0;
     }
-  } else {
-    Serial.println("not available.\n");
-    if (updateEphemeris != NULL) {
+  }
+  else
+  {
+    Serial.print("not available.\n");
+    if (updateEphemeris != NULL)
+    {
       *updateEphemeris = true;
     }
   }
@@ -214,39 +225,40 @@ void checkAssistanceData(WalterModemRsp *rsp, bool *updateAlmanac = NULL,
 
 /**
  * @brief This function will update GNSS assistance data when needed.
- *
+ * 
  * This function will check if the current real-time ephemeris data is good
- * enough to get a fast GNSS fix. If not the function will attach to the LTE
+ * enough to get a fast GNSS fix. If not the function will attach to the LTE 
  * network to download newer assistance data.
- *
+ * 
  * @return True on success, false on error.
  */
-bool updateGNSSAssistance() {
+bool updateGNSSAssistance()
+{
   Serial.println("Updating GNSS assistance data...");
   WalterModemRsp rsp = {};
 
   /* Even with valid assistance data the system clock could be invalid */
-  if (!modem.getClock(&rsp)) {
-    Serial.println("Error: Could not check the modem time");
+  if(!modem.getClock(&rsp)) {
+    Serial.println("Could not check the modem time");
     return false;
   }
 
-  if (rsp.data.clock.epochTime <= 0) {
+  if(rsp.data.clock.epochTime <= 0) {
     /*
      * Wait for the modem to synchronize time with the LTE network, try 5 times
      * with a delay of 500ms.
      */
-    for (int i = 0; i < 5; ++i) {
+    for(int i = 0; i < 5; ++i) {
       if (!modem.getClock(&rsp)) {
-        Serial.println("Error: Could not check the modem time");
+        Serial.print("Could not check the modem time\n");
         return false;
       }
 
       if (rsp.data.clock.epochTime > 0) {
-        Serial.printf("Got time from LTE: %" PRIi64 "\n", rsp.data.clock.epochTime);
+        Serial.printf("Got time from LTE: %"PRIi64"\n", rsp.data.clock.epochTime);
         break;
       } else if (i == 4) {
-        Serial.println("Error: Could not sync time with network");
+        Serial.print("Could not sync time with network\n");
         return false;
       }
 
@@ -255,9 +267,10 @@ bool updateGNSSAssistance() {
   }
 
   /* Check the availability of assistance data */
-  if (!modem.getGNSSAssistanceStatus(&rsp) ||
-      rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
-    Serial.println("Error: Could not request GNSS assistance status");
+  if(!modem.gnssGetAssistanceStatus(&rsp) ||
+     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
+  {
+    Serial.println("Could not request GNSS assistance status");
     return false;
   }
 
@@ -265,30 +278,32 @@ bool updateGNSSAssistance() {
   bool updateEphemeris = false;
   checkAssistanceData(&rsp, &updateAlmanac, &updateEphemeris);
 
-  if (!(updateAlmanac || updateEphemeris)) {
+  if(!(updateAlmanac || updateEphemeris)) {
     Serial.println("GNSS assistance data is still up-to-date");
     return true;
   }
 
-  if (updateAlmanac) {
-    if (!modem.updateGNSSAssistance(
-            WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
-      Serial.println("Error: Could not update almanac data");
+  if(updateAlmanac) {
+    if (!modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC))
+    {
+      Serial.print("Could not update almanac data\n");
       return false;
     }
   }
 
-  if (updateEphemeris) {
-    if (!modem.updateGNSSAssistance(
-            WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS)) {
-      Serial.println("Error: Could not update real-time ephemeris data");
+  if(updateEphemeris) {
+    if (!modem.gnssUpdateAssistance(
+            WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS))
+    {
+      Serial.print("Could not update real-time ephemeris data\n");
       return false;
     }
   }
 
-  if (!modem.getGNSSAssistanceStatus(&rsp) ||
-      rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
-    Serial.println("Error: Could not request GNSS assistance status");
+  if (!modem.gnssGetAssistanceStatus(&rsp) ||
+      rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
+  {
+    Serial.print("Could not request GNSS assistance status\n");
     return false;
   }
 
@@ -300,24 +315,25 @@ bool updateGNSSAssistance() {
 /**
  * @brief Setting up the modem communication.
  */
-void modem_setup() {
+void modem_setup()
+{
   WalterModemRAT rat = WALTER_MODEM_RAT_UNKNOWN;
 
   WalterModemRsp rsp = {};
-  if (modem.getRAT(&rsp)) {
+  if(modem.getRAT(&rsp)) {
     rat = rsp.data.rat;
   } else {
-    Serial.println("Error: Could not retrieve radio access technology");
+    Serial.println("Could not retrieve radio access technology");
     delay(1000);
     ESP.restart();
     return;
   }
 
-  if (rat != PREFERRED_RAT) {
-    rat = rat == WALTER_MODEM_RAT_LTEM ? WALTER_MODEM_RAT_NBIOT
-                                       : WALTER_MODEM_RAT_LTEM;
+  if(rat != PREFERRED_RAT) {
+    rat = rat == WALTER_MODEM_RAT_LTEM ?
+      WALTER_MODEM_RAT_NBIOT: WALTER_MODEM_RAT_LTEM;
 
-    if (!modem.setRAT(rat)) {
+    if(!modem.setRAT(rat)) {
       Serial.println("Could not switch radio access technology");
       delay(1000);
       ESP.restart();
@@ -327,76 +343,58 @@ void modem_setup() {
   }
 
   /* Set operational state to MINIMUM */
-  if (modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.println("Successfully set operational state to MINIMUM\r\n");
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+    Serial.print("Successfully set operational state to MINIMUM\r\n");
   } else {
-    Serial.println("Could not set operational state to MINIMUM\r\n");
+    Serial.print("Could not set operational state to MINIMUM\r\n");
     return;
   }
 
-  if (!modem.configGNSS()) {
-    Serial.println("Could not configure the GNSS subsystem\n");
+  if(!modem.gnssConfig()) {
+    Serial.print("Could not configure the GNSS subsystem\n");
     delay(1000);
     ESP.restart();
     return;
   }
 
-  /* Create PDP context */
-  if (modem.definePDPContext()) {
-    Serial.println("Created PDP context");
-  } else {
-    Serial.println("Error: Could not create PDP context");
-    return;
-  }
-
   /* Enable / disable PSM */
-  if (modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive)) {
-    Serial.println("Configured PSM");
+  if(modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive)) {
+    Serial.print("Configured PSM\r\n");
   } else {
-    Serial.println("Error: Could not configure PSM");
+    Serial.print("Could not configure PSM\r\n");
     return;
   }
 
-  if (modem.configCEREGReports(
-          WALTER_MODEM_CEREG_REPORTS_ENABLED_UE_PSM_WITH_LOCATION_EMM_CAUSE)) {
-    Serial.println(
-        "Configured CEREG to receive PSM result allocated by the network \r\n");
+  if(modem.configCEREGReports(WALTER_MODEM_CEREG_REPORTS_ENABLED_UE_PSM_WITH_LOCATION_EMM_CAUSE)) {
+    Serial.print("Configured CEREG to receive PSM result allocated by the network \r\n");
   } else {
-    Serial.println("Error: Could not configure CEREG to receive PSM result "
-                   "allocated by the network");
+    Serial.print("Could not configure CEREG to receive PSM result allocated by the network\r\n");
   }
 
   /* Enable /disable eDRX */
-  if (modem.configEDRX(WALTER_MODEM_EDRX_DISABLE)) {
-    Serial.println("Configured eDRX");
+  if(modem.configEDRX(WALTER_MODEM_EDRX_DISABLE)) {
+    Serial.print("Configured eDRX\r\n");
   } else {
-    Serial.println("Error: Could not configure eDRX");
+    Serial.print("Could not configure eDRX\r\n");
   }
 
-  if (modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
-    Serial.println("Successfully set operational state to FULL");
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
+    Serial.print("Successfully set operational state to FULL\r\n");
   } else {
-    Serial.println("Error: Could not set operational state to FULL");
-    return;
-  }
-
-  /* Set the network operator selection to automatic */
-  if (!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println(
-        "Error: Could not set the network selection mode to automatic");
+    Serial.print("Could not set operational state to FULL\r\n");
     return;
   }
 
   Serial.printf("Connecting to the %s network\n",
-                rat == WALTER_MODEM_RAT_LTEM ? "LTE-M" : "NB-IoT");
+    rat == WALTER_MODEM_RAT_LTEM ? "LTE-M" : "NB-IoT");
 
   int count = 0;
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
-  while (!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
-           regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING)) {
+  while(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
+          regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
+  {
     if (count >= 1800) {
-      Serial.println(
-          "Error: Could not connect to the network, going to to try other RAT");
+      Serial.println("Could not connect to the network, going to to try other RAT");
       break;
     }
 
@@ -405,50 +403,51 @@ void modem_setup() {
     regState = modem.getNetworkRegState();
   }
 
-  if (!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
-        regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING)) {
+  if(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
+          regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
+  {
     /* Set the operational state to minimum */
-    if (!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-      Serial.println("Error: Could not set operational state to MINIMUM");
+    if(!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+      Serial.print("Could not set operational state to MINIMUM\n");
       return;
     }
 
     delay(1000);
 
-    rat = rat == WALTER_MODEM_RAT_LTEM ? WALTER_MODEM_RAT_NBIOT
-                                       : WALTER_MODEM_RAT_LTEM;
+    rat = rat == WALTER_MODEM_RAT_LTEM ?
+      WALTER_MODEM_RAT_NBIOT: WALTER_MODEM_RAT_LTEM;
 
-    if (!modem.setRAT(rat)) {
-      Serial.println("Error: Could not switch radio access technology");
-      delay(1000);
-      ESP.restart();
+    if(!modem.setRAT(rat)) {
+    Serial.println("Could not switch radio access technology");
+    delay(1000);
+    ESP.restart();
       return;
     }
     Serial.println("Switched modem radio technology");
 
     /* Set the operational state to full */
-    if (!modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
-      Serial.println("Error: Could not set operational state to FULL");
+    if(!modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
+      Serial.print("Could not set operational state to FULL\n");
       return;
     }
 
     /* Set the network operator selection to automatic */
-    if (!modem.setNetworkSelectionMode(
-            WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-      Serial.println("Error: Could not set the network selection mode to automatic");
+    if(!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
+      Serial.print("Could not set the network selection mode to automatic\n");
       return;
     }
 
     Serial.printf("Connecting to %s network\n",
-                  rat == WALTER_MODEM_RAT_LTEM ? "LTE-M" : "NB-IoT");
+      rat == WALTER_MODEM_RAT_LTEM ? "LTE-M" : "NB-IoT");
 
     /* Wait for the network to become available (max 30 minutes) */
     count = 0;
     regState = modem.getNetworkRegState();
-    while (!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
-             regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING)) {
-      if (count >= 1800) {
-        Serial.println("Error: Could not connect to the network, going to reboot");
+    while(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
+            regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
+    {
+      if(count >= 1800) {
+        Serial.println("Could not connect to the network, going to reboot");
         delay(1000);
         ESP.restart();
         return;
@@ -460,38 +459,52 @@ void modem_setup() {
     }
   }
 
-  Serial.println("Error: Connected to the network");
+  Serial.print("Connected to the network\r\n");
 }
 
-void modem_transmit() {
-  if (modem.socketConfig()) {
-    Serial.println("Created a new socket");
-  } else {
-    Serial.println("Error: Could not create a new socket");
+void modem_transmit()
+{
+  if (modem.socketConfig())
+  {
+    Serial.print("Successfully configured the socket\r\n");
+  }
+  else
+  {
+    Serial.print("Could not configure the socket\r\n");
   }
 
-  if (modem.socketDial(SERV_ADDR, SERV_PORT)) {
+  if (modem.socketDial(SERV_ADDR, SERV_PORT, SERV_PORT))
+  {
     Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
-  } else {
-    Serial.println("Error: Could not connect UDP socket");
+  }
+  else
+  {
+    Serial.print("Could not connect UDP socket\r\n");
   }
 
-  if (modem.socketSend(dataBuf, PACKET_SIZE)) {
+  if (modem.socketSend(dataBuf, PACKET_SIZE))
+  {
     Serial.printf("Transmitted data");
-  } else {
-    Serial.println("Error: Could not transmit data");
+  }
+  else
+  {
+    Serial.print("Could not transmit data\r\n");
     delay(1000);
     ESP.restart();
   }
 
-  if (modem.socketClose()) {
-    Serial.println("Successfully closed the socket");
-  } else {
-    Serial.println("Error: Could not close the socket");
+  if (modem.socketClose())
+  {
+    Serial.print("Successfully closed the socket\r\n");
+  }
+  else
+  {
+    Serial.print("Could not close the socket\r\n");
   }
 }
 
-void setup_charger() {
+void setup_charger()
+{
   charger.initialize();
   charger.suspend_charging();
   charger.enable_force_telemetry();
@@ -502,36 +515,37 @@ void setup_charger() {
 }
 
 /**
- * @brief Configure the debug serial port.
- *
+ * @brief Configure the debug serial port. 
+ * 
  * This function will initialize the serial debug port at 115200 baud. The
  * function will block up to 5 seconds, waiting for the USB Serial to be opened.
  * If the port is not opened, the function will continue.
  */
-void setup_serial() {
+void setup_serial()
+{
   Serial.begin(115200);
 
   unsigned long startMillis = millis();
-  while (!Serial && (millis() - startMillis < 5000)) {
-  }
+  while (!Serial && (millis() - startMillis < 5000)) {}
 }
 
-void setup() {
+void setup()
+{
   setup_serial();
-  Serial.println("Walter feels demo firmware V2.2");
+  Serial.println("Walter feels demo firmware V2.1");
 
   /* Disable output holds */
-  gpio_hold_dis((gpio_num_t)PWR_3V3_EN_PIN);
-  gpio_hold_dis((gpio_num_t)PWR_12V_EN_PIN);
-  gpio_hold_dis((gpio_num_t)I2C_BUS_PWR_EN_PIN);
-  gpio_hold_dis((gpio_num_t)CAN_EN_PIN);
-  gpio_hold_dis((gpio_num_t)SDI12_TX_EN_PIN);
-  gpio_hold_dis((gpio_num_t)SDI12_RX_EN_PIN);
-  gpio_hold_dis((gpio_num_t)RS232_TX_EN_PIN);
-  gpio_hold_dis((gpio_num_t)RS232_RX_EN_PIN);
-  gpio_hold_dis((gpio_num_t)RS485_TX_EN_PIN);
-  gpio_hold_dis((gpio_num_t)RS485_RX_EN_PIN);
-  gpio_hold_dis((gpio_num_t)CO2_EN_PIN);
+  gpio_hold_dis((gpio_num_t) PWR_3V3_EN_PIN);
+  gpio_hold_dis((gpio_num_t) PWR_12V_EN_PIN);
+  gpio_hold_dis((gpio_num_t) I2C_BUS_PWR_EN_PIN);
+  gpio_hold_dis((gpio_num_t) CAN_EN_PIN);
+  gpio_hold_dis((gpio_num_t) SDI12_TX_EN_PIN);
+  gpio_hold_dis((gpio_num_t) SDI12_RX_EN_PIN);
+  gpio_hold_dis((gpio_num_t) RS232_TX_EN_PIN);
+  gpio_hold_dis((gpio_num_t) RS232_RX_EN_PIN);
+  gpio_hold_dis((gpio_num_t) RS485_TX_EN_PIN);
+  gpio_hold_dis((gpio_num_t) RS485_RX_EN_PIN);
+  gpio_hold_dis((gpio_num_t) CO2_EN_PIN);
 
   /* Configure IO pins */
   pinMode(PWR_3V3_EN_PIN, OUTPUT);
@@ -573,10 +587,10 @@ void setup() {
   digitalWrite(CO2_EN_PIN, HIGH);
 
   /* Initialize the LTE modem library */
-  if (WalterModem::begin(&ModemSerial)) {
+  if(WalterModem::begin(&ModemSerial)) {
     Serial.println("Modem initialization success");
   } else {
-    Serial.println("Error: Modem initialization fault");
+    Serial.println("Modem initialization fault");
     delay(1000);
     ESP.restart();
     return;
@@ -584,20 +598,22 @@ void setup() {
 
   /* Initialize I2C masters */
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-
+  
   /* Initialize CO2 sensor if installed */
   digitalWrite(PWR_3V3_EN_PIN, LOW);
   digitalWrite(CO2_EN_PIN, LOW);
   Wire1.begin(CO2_SDA_PIN, CO2_SCL_PIN);
   Serial.println("Waiting for CO2 sensor to boot");
-
+  delay(100);
+  
   bool co2_sensor_installed = scd30.begin(Wire1);
-  for (int i = 0; i < 10 && !co2_sensor_installed; ++i) {
+  for(int i = 0; i < 10 && !co2_sensor_installed; ++i) {
     delay(500);
     co2_sensor_installed = scd30.begin(Wire1);
+    
   }
 
-  if (!co2_sensor_installed) {
+  if(!co2_sensor_installed) {
     digitalWrite(CO2_EN_PIN, HIGH);
     Serial.println("No CO2 sensor is installed");
   } else {
@@ -605,7 +621,7 @@ void setup() {
   }
 
   /* Init modem and charger on initial boot */
-  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
+  if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
     digitalWrite(I2C_BUS_PWR_EN_PIN, HIGH);
     charger.initialize();
     charger.enable_coulomb_counter();
@@ -615,19 +631,19 @@ void setup() {
   }
 
   /* Check clock and assistance data, update if required */
-  if (!updateGNSSAssistance()) {
-    Serial.println("Error: Could not update GNSS assistance data.");
+  if(!updateGNSSAssistance()) {
+    Serial.println("Could not update GNSS assistance data");
     delay(1000);
     ESP.restart();
     return;
   }
 
   /* Perform GNSS positioning */
-  modem.setGNSSEventHandler(fixHandler);
+  modem.gnssSetEventHandler(fixHandler);
   fixRcvd = false;
   bool gnssSearching = false;
-  for (int i = 0; i < 5; ++i) {
-    if (modem.performGNSSAction()) {
+  for(int i = 0; i < 5; ++i) {
+    if(modem.gnssPerformAction()) {
       gnssSearching = true;
       break;
     }
@@ -636,14 +652,16 @@ void setup() {
     delay(5000);
   }
 
-  if (gnssSearching) {
+  if(gnssSearching) {
     Serial.println("Started GNSS fix");
 
     int j = 0;
-    while (!fixRcvd) {
-      Serial.println(".");
-      if (j >= 240) {
-        Serial.println("Error: Timed out while waiting for GNSS fix");
+    while(!fixRcvd) {
+      Serial.print(".");
+      if (j >= 240)
+      {
+        Serial.println("");
+        Serial.println("Timed out while waiting for GNSS fix");
         delay(1000);
         ESP.restart();
         break;
@@ -651,11 +669,14 @@ void setup() {
       j++;
       delay(500);
     }
+    Serial.println("");
   }
 
   uint8_t aboveThreshold = 0;
-  for (int i = 0; i < posFix.satCount; ++i) {
-    if (posFix.sats[i].signalStrength >= 30) {
+  for (int i = 0; i < posFix.satCount; ++i)
+  {
+    if (posFix.sats[i].signalStrength >= 30)
+    {
       aboveThreshold += 1;
     }
   }
@@ -667,16 +688,19 @@ void setup() {
     posFix.satCount = 0xFF;
     lat = 0.0;
     lon = 0.0;
-    Serial.println("Error: Could not get a valid fix");
+    Serial.println("Could not get a valid fix");
   } else {
     Serial.printf("GNSS fix attempt finished:\n"
-                  "  Confidence: %.02f\n"
-                  "  Latitude: %.06f\n"
-                  "  Longitude: %.06f\n"
-                  "  Satcount: %d\n"
-                  "  Good sats: %d\n",
-                  posFix.estimatedConfidence, posFix.latitude, posFix.longitude,
-                  posFix.satCount, aboveThreshold);
+                "  Confidence: %.02f\n"
+                "  Latitude: %.06f\n"
+                "  Longitude: %.06f\n"
+                "  Satcount: %d\n"
+                "  Good sats: %d\n",
+                posFix.estimatedConfidence,
+                posFix.latitude,
+                posFix.longitude,
+                posFix.satCount,
+                aboveThreshold);
   }
 
   /* Enable 3.3V and I2C bus power, wait for sensors to boot */
@@ -694,9 +718,11 @@ void setup() {
   float pressure = lps22hb.readPressure();
   uint16_t co2ppm = co2_sensor_installed ? scd30.getCO2() : 0;
 
-  Serial.printf(
-      "Sensor data, temp: %.02fC, hum: %.02f%%, press: %.02fhPa, co2: %d\r\n",
-      temp, hum, pressure, co2ppm);
+  Serial.printf("Sensor data, temp: %.02fC, hum: %.02f%%, press: %.02fhPa, co2: %d\r\n",
+    temp,
+    hum,
+    pressure,
+    co2ppm);
 
   uint16_t chargeStatus = charger.read_word(CHARGE_STATUS);
   uint16_t chargerState = charger.read_word(CHARGER_STATE);
@@ -720,8 +746,13 @@ void setup() {
 
   /* Construct a Walter Feels packet */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\n", dataBuf[0],
-                dataBuf[1], dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\n",
+                dataBuf[0],
+                dataBuf[1],
+                dataBuf[2],
+                dataBuf[3],
+                dataBuf[4],
+                dataBuf[5]);
 
   dataBuf[6] = rawTemperature >> 8;
   dataBuf[7] = rawTemperature & 0xFF;
@@ -768,17 +799,17 @@ void setup() {
   digitalWrite(CO2_EN_PIN, HIGH);
 
   /* Configure PIN holding states for low power deep sleep */
-  gpio_hold_en((gpio_num_t)PWR_3V3_EN_PIN);
-  gpio_hold_en((gpio_num_t)PWR_12V_EN_PIN);
-  gpio_hold_en((gpio_num_t)I2C_BUS_PWR_EN_PIN);
-  gpio_hold_en((gpio_num_t)CAN_EN_PIN);
-  gpio_hold_en((gpio_num_t)SDI12_TX_EN_PIN);
-  gpio_hold_en((gpio_num_t)SDI12_RX_EN_PIN);
-  gpio_hold_en((gpio_num_t)RS232_TX_EN_PIN);
-  gpio_hold_en((gpio_num_t)RS232_RX_EN_PIN);
-  gpio_hold_en((gpio_num_t)RS485_TX_EN_PIN);
-  gpio_hold_en((gpio_num_t)RS485_RX_EN_PIN);
-  gpio_hold_en((gpio_num_t)CO2_EN_PIN);
+  gpio_hold_en((gpio_num_t) PWR_3V3_EN_PIN);
+  gpio_hold_en((gpio_num_t) PWR_12V_EN_PIN);
+  gpio_hold_en((gpio_num_t) I2C_BUS_PWR_EN_PIN);
+  gpio_hold_en((gpio_num_t) CAN_EN_PIN);
+  gpio_hold_en((gpio_num_t) SDI12_TX_EN_PIN);
+  gpio_hold_en((gpio_num_t) SDI12_RX_EN_PIN);
+  gpio_hold_en((gpio_num_t) RS232_TX_EN_PIN);
+  gpio_hold_en((gpio_num_t) RS232_RX_EN_PIN);
+  gpio_hold_en((gpio_num_t) RS485_TX_EN_PIN);
+  gpio_hold_en((gpio_num_t) RS485_RX_EN_PIN);
+  gpio_hold_en((gpio_num_t) CO2_EN_PIN);
   gpio_deep_sleep_hold_en();
 
   Serial.println("I'm tired, I'm going to deep sleep now for 300 seconds");
@@ -786,6 +817,7 @@ void setup() {
   modem.sleep(SLEEP_DURATION);
 }
 
-void loop() {
+void loop()
+{
   // Never reaches here
 }
