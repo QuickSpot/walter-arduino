@@ -104,7 +104,7 @@ bool WalterModem::mqttConfig(
         stringsBuffer->size += sprintf((char *)stringsBuffer->data + stringsBuffer->size, ",,");
     }
 
-    if (tlsProfileId) {
+    if (tlsProfileId > 0) {
         stringsBuffer->size +=
             sprintf((char *)stringsBuffer->data + stringsBuffer->size, ",%u", tlsProfileId);
     }

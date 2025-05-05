@@ -4001,8 +4001,8 @@ public:
      */
     static bool mqttConfig(
         const char *clientId = "walter-mqtt-client",
-        const char *userName = "",
-        const char *password = "",
+        const char *userName = NULL,
+        const char *password = NULL,
         uint8_t tlsProfileId = 0);
 
     /**
