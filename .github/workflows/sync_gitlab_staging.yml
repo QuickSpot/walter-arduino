@@ -45,6 +45,7 @@ jobs:
           mkdir -p target-repo/arduino/examples/ || true
           cp -R walter-modem/src/* target-repo/walter-modem/
           cp -R walter-modem/examples/* target-repo/arduino/examples/
+          find walter-modem/ -maxdepth 1 -type f -exec cp {} target-repo/arduino/ \;
           
       - name: Commit and push changes
         continue-on-error: true
