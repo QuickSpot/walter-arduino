@@ -1799,7 +1799,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         /* The last two digits from the IMEISV number are the SVN number */
         cmd->rsp->data.identity.svn[0] = cmd->rsp->data.identity.imeisv[14];
         cmd->rsp->data.identity.svn[1] = cmd->rsp->data.identity.imeisv[15];
-        cmd->rsp->data.identity.svn[3] = '\0';
+        cmd->rsp->data.identity.svn[2] = '\0';
 
         /* Copy the 14-digit long IMEI number, and add the checksum */
         memcpy(cmd->rsp->data.identity.imei, cmd->rsp->data.identity.imeisv, 14);
