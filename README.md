@@ -1,6 +1,6 @@
 # Walter modem library for Arduino
 
-[![Component Registry](https://components.espressif.com/components/dptechnics/walter-modem/badge.svg)](https://components.espressif.com/components/dptechnics/walter-modem)
+[![arduino-library-badge](https://www.ardu-badge.com/badge/WalterModem.svg?)](https://www.ardu-badge.com/WalterModem)
 
 
 ## Introduction
