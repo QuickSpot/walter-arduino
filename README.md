@@ -1,5 +1,8 @@
 # Walter modem library for Arduino
 
+[![Component Registry](https://components.espressif.com/components/dptechnics/walter-modem/badge.svg)](https://components.espressif.com/components/dptechnics/walter-modem)
+
+
 ## Introduction
 
 Walter is a board designed by [DPTechnics](https://www.dptechnics.com) which 
