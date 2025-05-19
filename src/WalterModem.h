@@ -5144,14 +5144,12 @@ public:
 
 #pragma region PDP_CONTEXT
     /**
-     * @brief Create a new packet data protocol (PDP) context.
+     * @brief define a new packet data protocol (PDP) context.
      *
-     * This function will create a new packet data protocol with the lowest free context id.
+     * This function will define a new packet data protocol with the the primary contextID(1).
      *
+     * @param ctxId The context id to store the defenition in.
      * @param apn The access point name.
-     * @param authProto The used authentication protocol.
-     * @param authUser Optional user to use for authentication.
-     * @param authPass Optional password to use for authentication.
      * @param rsp Optional modem response structure to save the result in.
      * @param cb Optional callback function, if set this function will not block.
      * @param args Optional argument to pass to the callback.
