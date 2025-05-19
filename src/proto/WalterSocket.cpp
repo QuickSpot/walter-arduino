@@ -273,7 +273,7 @@ bool WalterModem::socketClose(WalterModemRsp *rsp, walterModemCb cb, void *args,
 
 bool WalterModem::socketSend(
     uint8_t *data,
-    uint32_t dataSize,
+    uint16_t dataSize,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args,
@@ -330,7 +330,6 @@ bool WalterModem::socketListen(
     walterModemCb cb,
     void *args,
     int socketId,
-    WalterModemSocketProto protocol,
     WalterModemSocketListenState listenState,
     int socketListenPort)
 {
@@ -338,7 +337,7 @@ bool WalterModem::socketListen(
     if (sock == NULL) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
-    sock->protocol = protocol;
+
     if (sock->protocol == WALTER_MODEM_SOCKET_PROTO_TCP) {
         _runCmd(
             arr("AT+SQNSL=",
@@ -346,7 +345,7 @@ bool WalterModem::socketListen(
                 ",",
                 _digitStr(listenState),
                 ",",
-                _atNum(socketListenPort)),
+                _digitStr(socketListenPort)),
             "OK",
             rsp,
             cb,
@@ -362,7 +361,7 @@ bool WalterModem::socketListen(
                 ",",
                 _digitStr(listenState),
                 ",",
-                _atNum(socketListenPort)),
+                _digitStr(socketListenPort)),
             "OK",
             rsp,
             cb,
@@ -415,8 +414,8 @@ bool WalterModem::socketReceive(
     }
 
     _runCmd(
-        arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(targetBufSize)),
-        "OK",
+        arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _digitStr(targetBufSize)),
+        "ok",
         rsp,
         NULL,
         NULL,

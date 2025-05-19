@@ -2587,7 +2587,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
     if (_buffStartsWith(buff, "+SQNSRING: ")) {
         const char *rspStr = _buffStr(buff);
-        char *start = (char *)rspStr + _strLitLen("+SQNSRING: ");
+        char *start = (char *)rspStr + _strLitLen("+SQNSH: ");
         int sockId = atoi(start);
 
         WalterModemSocket *sock = _socketGet(sockId);
@@ -2598,8 +2598,8 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         char *commaPos = strchr(start, ',');
         if (commaPos) {
             *commaPos = '\0';
-            start = ++commaPos;
             sock->dataReceived = atoi(commaPos);
+            start = ++commaPos;
             commaPos = strchr(commaPos, ',');
         }
 
@@ -3498,19 +3498,19 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         "uart_rx_task",
         WALTER_MODEM_TASK_STACK_SIZE,
         NULL,
-        2,
+        tskIDLE_PRIORITY,
         _rxTaskStack,
         &_rxTaskBuf,
         0);
 #endif
-/* the queueProcessingTask cannot be on the same level as the UART task otherwise a modem freeze can occur */
+
 #ifdef ARDUINO
     _queueTask = xTaskCreateStaticPinnedToCore(
         _queueProcessingTask,
         "queueProcessingTask",
         WALTER_MODEM_TASK_STACK_SIZE,
         NULL,
-        1,
+        tskIDLE_PRIORITY,
         _queueTaskStack,
         &_queueTaskBuf,
         1);
@@ -3520,7 +3520,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         "queueProcessingTask",
         WALTER_MODEM_TASK_STACK_SIZE,
         NULL,
-        1,
+        tskIDLE_PRIORITY,
         _queueTaskStack,
         &_queueTaskBuf,
         0);

@@ -4669,7 +4669,7 @@ public:
      */
     static bool socketSend(
         uint8_t *data,
-        uint32_t dataSize,
+        uint16_t dataSize,
         WalterModemRsp *rsp = NULL,
         walterModemCb cb = NULL,
         void *args = NULL,
@@ -4726,7 +4726,6 @@ public:
      * @param cb Optional callback function, if set this function will not block.
      * @param args Optional argument to pass to the callback.
      * @param socketId The id of the socket to listen or -1 to re-use the last one.
-     * @param protocol The protocol of the listening socket.
      * @param listenState The state to listen on.
      * @param socketListenPort The port to listen on.
      *
@@ -4737,7 +4736,6 @@ public:
         walterModemCb cb = NULL,
         void *args = NULL,
         int socketId = -1,
-        WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_TCP,
         WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
         int socketListenPort = 0);
 
@@ -5144,12 +5142,14 @@ public:
 
 #pragma region PDP_CONTEXT
     /**
-     * @brief define a new packet data protocol (PDP) context.
+     * @brief Create a new packet data protocol (PDP) context.
      *
-     * This function will define a new packet data protocol with the the primary contextID(1).
+     * This function will create a new packet data protocol with the lowest free context id.
      *
-     * @param ctxId The context id to store the defenition in.
      * @param apn The access point name.
+     * @param authProto The used authentication protocol.
+     * @param authUser Optional user to use for authentication.
+     * @param authPass Optional password to use for authentication.
      * @param rsp Optional modem response structure to save the result in.
      * @param cb Optional callback function, if set this function will not block.
      * @param args Optional argument to pass to the callback.
