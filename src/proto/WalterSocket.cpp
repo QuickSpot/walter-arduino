@@ -273,7 +273,7 @@ bool WalterModem::socketClose(WalterModemRsp *rsp, walterModemCb cb, void *args,
 
 bool WalterModem::socketSend(
     uint8_t *data,
-    uint16_t dataSize,
+    uint32_t dataSize,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args,
@@ -415,8 +415,8 @@ bool WalterModem::socketReceive(
     }
 
     _runCmd(
-        arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _digitStr(targetBufSize)),
-        "ok",
+        arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(targetBufSize)),
+        "OK",
         rsp,
         NULL,
         NULL,

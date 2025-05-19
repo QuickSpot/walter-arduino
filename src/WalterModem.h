@@ -4669,7 +4669,7 @@ public:
      */
     static bool socketSend(
         uint8_t *data,
-        uint16_t dataSize,
+        uint32_t dataSize,
         WalterModemRsp *rsp = NULL,
         walterModemCb cb = NULL,
         void *args = NULL,
