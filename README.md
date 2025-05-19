@@ -1,8 +1,5 @@
 # Walter modem library for Arduino
 
-[![arduino-library-badge](https://www.ardu-badge.com/badge/WalterModem.svg?)](https://www.ardu-badge.com/WalterModem)
-
-
 ## Introduction
 
 Walter is a board designed by [DPTechnics](https://www.dptechnics.com) which 
