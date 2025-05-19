@@ -70,6 +70,16 @@ This is the Changelog for WalterModem
 
 ### Bug Fixes
 
-- fixed mqttConfig wrong defaults ([#47](https://github.com/QuickSpot/walter-esp-idf/issues/47))
 - fixed `out of bounds` compile error in release mode ([#46](https://github.com/QuickSpot/walter-esp-idf/issues/46))
-- fixed arduino mqtt.ino example did not contain mqttConfig ([#30](https://github.com/QuickSpot/walter-arduino/issues/30))
+- fixed mqttConfig wrong defaults ([#47](https://github.com/QuickSpot/walter-esp-idf/issues/47))
+- fixed bug in socketConfig where there was a redundant _pdpContextGet ([#51](https://github.com/QuickSpot/walter-esp-idf/issues/51))
+- fixed bug where numbers where not converted correctly in socketListen ([#52](https://github.com/QuickSpot/walter-esp-idf/issues/52))
+- fixed bug where the queueProcessingTask could get stuck due to having the same task priority (IDLE) ([#53](https://github.com/QuickSpot/walter-esp-idf/issues/53))
+- fixed issue where socketListen did not have the option to pass the protocol ([#54](https://github.com/QuickSpot/walter-esp-idf/issues/54))
+- fixed bug where the socketRing handler has the wrong starting offset ([#55](https://github.com/QuickSpot/walter-esp-idf/issues/55))
+- fixed bug where numbers where not converted correctly in socketReceive ([#56](https://github.com/QuickSpot/walter-esp-idf/issues/56))
+- fixed bug where tlsWriteCredential is private ([#66](https://github.com/QuickSpot/walter-esp-idf/issues/66))
+
+### Docs
+
+- updated documentation for definePDPContext([#50](https://github.com/QuickSpot/walter-esp-idf/issues/50))
