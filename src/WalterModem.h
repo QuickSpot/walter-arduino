@@ -4726,6 +4726,7 @@ public:
      * @param cb Optional callback function, if set this function will not block.
      * @param args Optional argument to pass to the callback.
      * @param socketId The id of the socket to listen or -1 to re-use the last one.
+     * @param protocol The protocol of the listening socket.
      * @param listenState The state to listen on.
      * @param socketListenPort The port to listen on.
      *
@@ -4736,6 +4737,7 @@ public:
         walterModemCb cb = NULL,
         void *args = NULL,
         int socketId = -1,
+        WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_TCP,
         WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
         int socketListenPort = 0);
 

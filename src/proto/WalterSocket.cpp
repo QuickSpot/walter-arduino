@@ -330,6 +330,7 @@ bool WalterModem::socketListen(
     walterModemCb cb,
     void *args,
     int socketId,
+    WalterModemSocketProto protocol,
     WalterModemSocketListenState listenState,
     int socketListenPort)
 {
@@ -337,7 +338,7 @@ bool WalterModem::socketListen(
     if (sock == NULL) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
-
+    sock->protocol = protocol;
     if (sock->protocol == WALTER_MODEM_SOCKET_PROTO_TCP) {
         _runCmd(
             arr("AT+SQNSL=",
