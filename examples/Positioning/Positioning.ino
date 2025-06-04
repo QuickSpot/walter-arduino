@@ -279,7 +279,7 @@ bool updateGNSSAssistance()
   }
 
   /* Check the availability of assistance data */
-  if(!modem.getGNSSAssistanceStatus(&rsp) ||
+  if(!modem.gnssGetAssistanceStatus(&rsp) ||
      rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
   {
     Serial.print("Could not request GNSS assistance status\r\n");
@@ -309,14 +309,14 @@ bool updateGNSSAssistance()
   }
 
   if(updateAlmanac) {
-    if(!modem.updateGNSSAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
+    if(!modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
       Serial.print("Could not update almanac data\r\n");
       return false;
     }
   }
 
   if(updateEphemeris) {
-    if(!modem.updateGNSSAssistance(
+    if(!modem.gnssUpdateAssistance(
       WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS))
     {
       Serial.print("Could not update real-time ephemeris data\r\n");
@@ -324,7 +324,7 @@ bool updateGNSSAssistance()
     }
   }
 
-  if(!modem.getGNSSAssistanceStatus(&rsp) ||
+  if(!modem.gnssGetAssistanceStatus(&rsp) ||
     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
   {
     Serial.print("Could not request GNSS assistance status\r\n");
@@ -355,19 +355,13 @@ bool updateGNSSAssistance()
 bool socketConnect(const char *ip, uint16_t port)
 {
   /* Construct a socket */
-  if(!modem.createSocket()) {
+  if(!modem.socketConfig()) {
     Serial.print("Could not create a new socket\r\n");
     return false;
   }
 
-  /* Configure the socket */
-  if(!modem.configSocket()) {
-    Serial.print("Could not configure the socket\r\n");
-    return false;
-  }
-
   /* Connect to the UDP test server */
-  if(modem.connectSocket(ip, port, port)) {
+  if(modem.socketDial(ip, port)) {
     Serial.printf("Connected to UDP server %s:%d\r\n", ip, port);
   } else {
     Serial.print("Could not connect UDP socket\r\n");
@@ -446,7 +440,7 @@ void setup()
     Serial.println("Could not retrieve radio access technology");
   }
 
-  if(!modem.createPDPContext("")) {
+  if(!modem.definePDPContext()) {
     Serial.println("Could not create PDP context");
     delay(1000);
     ESP.restart();
@@ -472,14 +466,14 @@ void setup()
     Serial.printf("Active IMSI: %s\r\n", rsp.data.imsi);
   }
 
-  if(!modem.configGNSS()) {
-    Serial.print("Could not configure the GNSS subsystem\r\n");
+  if(!modem.gnssConfig()) {
+    Serial.println("Could not configure the GNSS subsystem");
     delay(1000);
     ESP.restart();
     return;
   }
 
-  modem.setGNSSfixHandler(fixHandler);
+  modem.gnssSetEventHandler(fixHandler);
 }
 
 void loop()
@@ -497,7 +491,7 @@ void loop()
   /* Try up to 5 times to get a good fix */
   for(int i = 0; i < 5; ++i) {
     fixRcvd = false;
-    if(!modem.performGNSSAction()) {
+    if(!modem.gnssPerformAction()) {
       Serial.print("Could not request GNSS fix\r\n");
       delay(1000);
       ESP.restart();
@@ -616,7 +610,7 @@ void loop()
 
   delay(5000);
 
-  if(!modem.closeSocket()) {
+  if(!modem.socketClose()) {
     Serial.print("Could not close the socket\r\n");
     delay(1000);
     ESP.restart();
