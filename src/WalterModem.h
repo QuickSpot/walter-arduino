@@ -4176,6 +4176,7 @@ public:
      * @param useBasicAuth Set true to use basic auth and send username/pw.
      * @param authUser Username.
      * @param authPass Password.
+     * @param maxTimeout maximum data transfer time-out in seconds.
      * @param rsp Optional modem response structure to save the result in.
      * @param cb Optional callback function, if set this function will not block.
      * @param args Optional argument to pass to the callback.
@@ -4190,6 +4191,9 @@ public:
         bool useBasicAuth = false,
         const char *authUser = "",
         const char *authPass = "",
+        uint16_t maxTimeout = 120,
+        uint16_t cnxTimeout = 60,
+        uint8_t inactivityTimeout = 15,
         WalterModemRsp *rsp = NULL,
         walterModemCb cb = NULL,
         void *args = NULL);
