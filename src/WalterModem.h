@@ -2715,7 +2715,7 @@ typedef struct {
     /**
      * @brief In raw data chunk parser state, we remember nr expected bytes
      */
-    uint16_t rawChunkSize = 0;
+    size_t rawChunkSize = 0;
 } WalterModemATParserData;
 
 /**
@@ -2830,6 +2830,21 @@ private:
      */
     static inline bool _initialized = false;
 
+    /**
+     * @brief boolean for when we are doing a hardware reset.
+     */
+    static inline bool _hardwareReset = false;
+
+    /**
+     * @brief boolean for when we are doing a hardware reset.
+     */
+    static inline bool _receiving = false;
+
+    static inline bool _foundCRLF = false;
+
+    static inline size_t currentCRLF = 0;
+
+    static inline size_t _receiveExpected = true;
     /**
      * @brief We remember the configured watchdog timeout.
      */
@@ -3211,12 +3226,18 @@ private:
 
 #pragma region CMD_PROCESSING
     /**
-     * @brief Test if the new buffer line starts a raw data chunk
+     * @brief this function extracts the expected payloadSize.
      *
-     * @return Size of the expected raw data chunk
+     * @return Size of the expected payload
      */
-    static uint16_t _extractRawBufferChunkSize();
+    static size_t _extractPayloadSize();
 
+    /**
+     * @brief this function extracts the current payloadSize in the _parserData buffer.
+     * 
+     * @return currentSize fo the payload already received.
+     */
+    static size_t _getCurrentPayloadSize();
     /**
      * @brief Get a free buffer from the buffer pool.
      *
@@ -3238,6 +3259,19 @@ private:
     static void _addATByteToBuffer(char data, bool raw);
 
     /**
+     * @brief Handle an AT data byte.
+     *
+     * This function is used by the AT data parser to add a databyte to the buffer currently in
+     * use or to reserve a new buffer to add a byte to.
+     *
+     * @param data The data byte to handle.
+     * @param lenght The lenght of the data to add.
+     *
+     * @return None.
+     */
+    static void _addATBytesToBuffer(const char *data, size_t length);
+
+    /**
      * @brief Copy the currently received data buffer into the task queue.
      *
      * This function will copy the current modem receive buffer into the task queue. When the
@@ -3248,6 +3282,13 @@ private:
     static void _queueRxBuffer();
 
     /**
+     * @brief returns the CRLF position
+     *
+     * @param data The incoming data buffer.
+     * @param len The number of bytes in the rxData buffer.
+     */
+    static size_t _getCRLFPosition(const char *rxData, size_t len);
+    /**
      * @brief Parse incoming modem data.
      *
      * @param rxData The incoming data buffer.
@@ -3256,30 +3297,39 @@ private:
      * @return None.
      */
     static void _parseRxData(char *rxData, size_t len);
+
+    /**
+     * @brief This function resets the payload receiving flags.
+     */
+    static void _resetParseRxFlags();
+    /**
+     * @brief This function checks if a full payload was received, if so it queues it and sends the appropriate return RX command.
+     */
+    static bool _checkPayloadComplete();
 #ifdef ARDUINO
-    /**
-     * @brief Handle and parse modem RX data.
-     *
-     * This function is called when the modem placed data in the UART RX buffer. The context is
-     * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
-     * immediately parses the incoming data into a free pool buffer.
-     *
-     * @return None.
-     */
-    static void _handleRxData(void);
+        /**
+         * @brief Handle and parse modem RX data.
+         *
+         * This function is called when the modem placed data in the UART RX buffer. The context is
+         * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
+         * immediately parses the incoming data into a free pool buffer.
+         *
+         * @return None.
+         */
+        static void _handleRxData(void);
 #else
-    /**
-     * @brief Handle and parse modem RX data.
-     *
-     * This function is called when the modem placed data in the UART RX buffer. The context is
-     * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
-     * immediately parses the incoming data into a free pool buffer.
-     *
-     * @param params Incoming params for this FreeRTOS task handler.
-     *
-     * @return None.
-     */
-    static void _handleRxData(void *params);
+        /**
+         * @brief Handle and parse modem RX data.
+         *
+         * This function is called when the modem placed data in the UART RX buffer. The context is
+         * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
+         * immediately parses the incoming data into a free pool buffer.
+         *
+         * @param params Incoming params for this FreeRTOS task handler.
+         *
+         * @return None.
+         */
+        static void _handleRxData(void *params);
 #endif
     /**
      * @brief This is the entrypoint of the queue processing task.
@@ -4397,37 +4447,53 @@ public:
      */
     static bool blueCherryClose(
         WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
+
+    /**
+     * @brief This function returns the current OTA progress.
+     */
+    static size_t blueCherryGetOtaProgressPercentage();
+
+    /**
+     * @brief This function returns the current OTA progress in bytes.
+     */
+    static size_t blueCherryGetOtaProgressBytes();
+
+    /**
+     * @brief This function returns the total OTA size.
+     */
+    static size_t blueCherryGetOtaSize();
 #endif
 #pragma endregion
 
 #pragma region COAP
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
-    /**
-     * @brief Create a CoAP context.
-     *
-     * This function will create a CoAP context if it was not open yet. This needs to be done
-     * before you can set headers or options or send or receive data.
-     *
-     * @param profileId CoAP profile id (0 is used by BlueCherry)
-     * @param serverName The server name to connect to.
-     * @param port The port of the server to connect to.
-     * @param tlsProfileId If not 0, DTLS is used with the given profile (1-6).
-     * @param localPort The local port to use (default 0=random).
-     * @param rsp Optional modem response structure to save the result in.
-     * @param cb Optional callback function, if set this function will not block.
-     * @param args Optional argument to pass to the callback.
-     *
-     * @return True on success, false otherwise.
-     */
-    static bool coapCreateContext(
-        uint8_t profileId,
-        const char *serverName,
-        int port,
-        uint8_t tlsProfileId = 0,
-        int localPort = -1,
-        WalterModemRsp *rsp = NULL,
-        walterModemCb cb = NULL,
-        void *args = NULL);
+        /**
+         * @brief Create a CoAP context.
+         *
+         * This function will create a CoAP context if it was not open yet. This needs to be done
+         * before you can set headers or options or send or receive data.
+         *
+         * @param profileId CoAP profile id (0 is used by BlueCherry)
+         * @param serverName The server name to connect to.
+         * @param port The port of the server to connect to.
+         * @param tlsProfileId If not 0, DTLS is used with the given profile (1-6).
+         * @param localPort The local port to use (default 0=random).
+         * @param rsp Optional modem response structure to save the result in.
+         * @param cb Optional callback function, if set this function will not block.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false otherwise.
+         */
+        static bool
+        coapCreateContext(
+            uint8_t profileId,
+            const char *serverName,
+            int port,
+            uint8_t tlsProfileId = 0,
+            int localPort = -1,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
 
     /**
      * @brief Close a CoAP context.

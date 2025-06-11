@@ -923,52 +923,6 @@ void WalterModem::_loadRTCPdpContextSet(WalterModemPDPContext *_pdpCtxSetRTC)
 
 #pragma region CMD_PROCESSING
 
-uint16_t WalterModem::_extractRawBufferChunkSize()
-{
-    if (_parserData.buf == NULL || !_parserData.buf->size) {
-        return 0;
-    }
-
-    // TODO: add cases to parse SQNSRING length
-
-    /* parse +SQNCOAPRCV raw data chunk size */
-    if (_parserData.buf->size > _strLitLen("+SQNCOAPRCV: ") && _parserData.buf->data[0] == '+' &&
-        _parserData.buf->data[1] == 'S' && 
-        _parserData.buf->data[2] == 'Q' &&
-        _parserData.buf->data[3] == 'N' && 
-        _parserData.buf->data[4] == 'C' &&
-        _parserData.buf->data[5] == 'O' &&
-        _parserData.buf->data[6] == 'A' &&
-        _parserData.buf->data[7] == 'P' &&
-        _parserData.buf->data[8] == 'R' &&
-        _parserData.buf->data[9] == 'C' && 
-        _parserData.buf->data[10] == 'V' &&
-        _parserData.buf->data[11] == ':' &&
-        _parserData.buf->data[12] == ' ') {
-        uint8_t nrCommasSeen = 0;
-        short i = _strLitLen("+SQNCOAPRCV: ");
-        for (; i < _parserData.buf->size && nrCommasSeen < 6; i++) {
-            if (_parserData.buf->data[i] == ',') {
-                nrCommasSeen++;
-            }
-        }
-
-        if (nrCommasSeen == 6) {
-            uint16_t chunkSize = 0;
-            for (; i < _parserData.buf->size; i++) {
-                chunkSize *= 10;
-                chunkSize += (_parserData.buf->data[i] - '0');
-            }
-
-            return chunkSize + _strLitLen("\r\nOK\r\n") + (chunkSize ? _strLitLen("\r\n") : 0);
-        } else {
-            return _strLitLen("\r\nOK\r\n");
-        }
-    }
-
-    return 0;
-}
-
 WalterModemBuffer *WalterModem::_getFreeBuffer(void)
 {
     WalterModemBuffer *chosenBuf = NULL;
@@ -1009,13 +963,31 @@ void WalterModem::_addATByteToBuffer(char data, bool raw)
     }
 }
 
+void WalterModem::_addATBytesToBuffer(const char *data, size_t length)
+{
+    /* Try to get a free buffer if not already set */
+    if (_parserData.buf == NULL) {
+        _parserData.buf = _getFreeBuffer();
+    }
+
+    /* If still NULL, drop data silently */
+    if (_parserData.buf == NULL) {
+        return;
+    }
+
+  
+    memcpy(&_parserData.buf->data[_parserData.buf->size], data, length);
+    _parserData.buf->size += length;
+
+}
+
 void WalterModem::_queueRxBuffer()
 {
     if (_parserData.buf != NULL) {
         if (_parserData.buf->size > 0) {
             WalterModemTaskQueueItem qItem = {};
             qItem.rsp = _parserData.buf;
-
+            ESP_LOGV("WalterParser", "Queued the buffer (size: %u bytes)", _parserData.buf->size);
             if (xQueueSend(_taskQueue.handle, &qItem, 0) != pdTRUE) {
                 /*
                  * When we can not send the buffer to the queue we release it immediately and thus
@@ -1023,6 +995,7 @@ void WalterModem::_queueRxBuffer()
                  * consumer.
                  */
                 _parserData.buf->free = true;
+                ESP_LOGW("WalterParser","unable to queue the buffer");
             }
         }
 
@@ -1030,130 +1003,132 @@ void WalterModem::_queueRxBuffer()
     }
 }
 
+size_t WalterModem::_getCRLFPosition(const char *rxData, size_t len) 
+{
+    const char *lfPtr = (const char *)memchr(rxData, '\n', len);
+
+    if (lfPtr != NULL && lfPtr > rxData) {
+        return (size_t)(lfPtr - rxData);
+    }
+
+    return 0;
+}
+
+bool WalterModem::_checkPayloadComplete()
+{
+#pragma region OK
+    char *resultPos = (char *)memmem(
+        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nOK\r\n", 6);
+
+    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        _parserData.buf->size -= 6;
+        _queueRxBuffer();
+        _resetParseRxFlags();
+        _parseRxData("\r\nOK\r\n", 6);
+        return true;
+    }
+#pragma endregion
+
+#pragma region ERROR
+    resultPos = (char *)memmem(
+        &_parserData.buf->data[_receiveExpected],
+        _parserData.buf->size,
+        "\r\nERROR\r\n",
+        9);
+
+    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        _parserData.buf->size -= 9;
+        _resetParseRxFlags();
+        _queueRxBuffer();
+        _parseRxData("\r\nERROR\r\n", 9);
+        return true;
+    }
+#pragma endregion
+
+#pragma region CME_ERROR
+    resultPos = (char *)memmem(
+        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\n+CME ERROR:", 13);
+
+    if (resultPos && _parserData.buf->size >= _receiveExpected){
+        uint16_t size = (uint16_t)((uint8_t*)resultPos - _parserData.buf->data);
+        _parserData.buf->size -= size;
+        _queueRxBuffer();
+        _resetParseRxFlags();
+        _parseRxData(resultPos,size);
+        return true;
+    }
+#pragma endregion
+
+    return false;
+}
+
+void WalterModem::_resetParseRxFlags()
+{
+    _receiving = false;
+    _foundCRLF = false;
+    _receiveExpected = 0;
+}
+
 void WalterModem::_parseRxData(char *rxData, size_t len)
 {
-    for (size_t i = 0; i < len; ++i) {
-        char data = rxData[i];
+    if (len <= 0 || _hardwareReset)
+        return;
+    char* dataStart = rxData;
+    size_t dataLen = len;
+    /* remove the leading CRLF*/
+    if (_parserData.buf == NULL)
+    {
+        if (dataStart[0] == '\r') {
+            /* remove the leading \r */
+            dataLen--;
+            dataStart++;
+        }
+        if (dataStart[0] == '\n') {
+            /* remove the leading \n */
+            dataLen--;
+            dataStart++;
+        }
+    }
 
-        switch (_parserData.state) {
-        case WALTER_MODEM_RSP_PARSER_START_CR:
-            if (data == '\r') {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_START_LF;
-            } else if (data == '+') {
-                /* This is the start of a new line in a multiline response */
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-                _addATByteToBuffer(data, false);
-            }
-            break;
+    /* we have the possebility to receive 'ghost' data from the UART in that case ignore it */
+    if (dataLen <= 0 || dataLen > UART_BUF_SIZE)
+        return;
 
-        case WALTER_MODEM_RSP_PARSER_START_LF:
-            if (data == '\n') {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-            }
-            break;
+    ESP_LOGV("WalterParser", "rxData (%u bytes): \r\n '%.*s'", dataLen, dataLen, dataStart);
 
-        case WALTER_MODEM_RSP_PARSER_DATA:
-            if (data == '>') {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_PROMPT;
-            } else if (data == '<') {
-#if CONFIG_WALTER_MODEM_ENABLE_HTTP
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_HTTP_START1;
-#endif
-            }
-            _addATByteToBuffer(data, false);
-            break;
+    size_t CRLFPos = _getCRLFPosition(dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
+    bool hasTripleChevron = memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
 
-        case WALTER_MODEM_RSP_PARSER_DATA_PROMPT:
-            _addATByteToBuffer(data, false);
-            if (data == ' ') {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
-                _queueRxBuffer();
-            } else if (data == '>') {
-#if CONFIG_WALTER_MODEM_ENABLE_HTTP
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP;
-#endif
-            } else {
-                /* state might have changed after detecting end \r */
-                if (_parserData.state == WALTER_MODEM_RSP_PARSER_DATA_PROMPT) {
-                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-                }
-            }
-            break;
-#if CONFIG_WALTER_MODEM_ENABLE_HTTP
-        case WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP:
-            _addATByteToBuffer(data, false);
-            if (data == '>') {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
-                _queueRxBuffer();
-            } else {
-                /* state might have changed after detecting end \r */
-                if (_parserData.state == WALTER_MODEM_RSP_PARSER_DATA_PROMPT_HTTP) {
-                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-                }
-            }
-            break;
+    if (_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
+        if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {
+            _receiveExpected += CRLFPos;
+            /* we need to keep append the CRLFPos for correct _receivExpected usage*/
+        }
+        _foundCRLF = true;
+        if (_receiving) {
+            /* We are receiving payload data*/
+            _addATBytesToBuffer(dataStart, dataLen);
+            _checkPayloadComplete();
+        } else {
+            /* We have received a full message!*/
 
-        case WALTER_MODEM_RSP_PARSER_DATA_HTTP_START1:
-            if (data == '<') {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA_HTTP_START2;
-            } else {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-            }
-            _addATByteToBuffer(data, false);
-            break;
+            _addATBytesToBuffer(dataStart, CRLFPos);
+            /* a full message has been found so queue it an*/
+            _queueRxBuffer();
+            _resetParseRxFlags();
+            _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
+        }
+    } else if (dataLen > 0) {
+        /* We are receiving a partial message or a data PROMPT*/
+        bool dataPrompt = dataStart[0] == '>';
+        bool httpPrompt = dataLen >= 3
+            ? dataStart[0] == '>' && dataStart[1] == '>' && dataStart[2] == '>'
+            : false;
+        
+        _addATBytesToBuffer(dataStart, dataLen);
 
-        case WALTER_MODEM_RSP_PARSER_DATA_HTTP_START2:
-            if (data == '<' && _httpCurrentProfile < WALTER_MODEM_MAX_HTTP_PROFILES) {
-                /* FIXME:
-                 * - modem might block longer than cmd timeout,
-                 *   will lead to retry, error etc - fix properly
-                 * - no buffer size checking!
-                 */
-                _parserData.rawChunkSize =
-                    _httpContextSet[_httpCurrentProfile].contentLength + _strLitLen("\r\nOK\r\n");
-                _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
-            } else {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-            }
-            _addATByteToBuffer(data, false);
-            break;
-#endif
-
-        case WALTER_MODEM_RSP_PARSER_END_LF:
-            if (data == '\n') {
-                uint16_t chunkSize = _extractRawBufferChunkSize();
-                if (chunkSize) {
-                    _parserData.rawChunkSize = chunkSize;
-                    _parserData.buf->data[_parserData.buf->size++] = '\r';
-                    _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
-                } else {
-                    _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
-                    _queueRxBuffer();
-                }
-            } else {
-                /* only now we know the \r was thrown away for no good reason */
-                _parserData.buf->data[_parserData.buf->size++] = '\r';
-
-                /* next byte gets the same treatment; since we really are
-                 * back in semi DATA state, as we now know
-                 * (but > will not lead to data prompt mode)
-                 */
-                _addATByteToBuffer(data, false);
-                if (data != '\r') {
-                    _parserData.state = WALTER_MODEM_RSP_PARSER_DATA;
-                }
-            }
-            break;
-
-        case WALTER_MODEM_RSP_PARSER_RAW:
-            _addATByteToBuffer(data, true);
-            _parserData.rawChunkSize--;
-
-            if (_parserData.rawChunkSize == 0) {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_START_CR;
-                _queueRxBuffer();
-            }
-            break;
+        if (dataPrompt || httpPrompt) {
+            _queueRxBuffer();
         }
     }
 }
@@ -1396,15 +1371,6 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
     case WALTER_MODEM_CMD_TYPE_TX_WAIT:
     case WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT:
         if (cmd->state == WALTER_MODEM_CMD_STATE_NEW) {
-            /* hack for handling AT+SQNSMQTTRCVMESSAGE response */
-#if CONFIG_WALTER_MODEM_ENABLE_MQTT
-            if (cmd->type == WALTER_MODEM_CMD_TYPE_TX_WAIT &&
-                !strcmp(cmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=0,")) {
-                _parserData.state = WALTER_MODEM_RSP_PARSER_RAW;
-                /* add 4 bytes for prepending and trailing \r\n */
-                _parserData.rawChunkSize = cmd->dataSize + 4;
-            }
-#endif
             _transmitCmd(cmd->type, cmd->atCmd);
             cmd->attempt = 1;
             cmd->attemptStart = xTaskGetTickCount();
@@ -2193,6 +2159,9 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         cmd->rsp->data.httpResponse.httpStatus = _httpContextSet[_httpCurrentProfile].httpStatus;
         if (_httpContextSet[_httpCurrentProfile].contentLength > cmd->dataSize - 1) {
             cmd->rsp->data.httpResponse.contentLength = cmd->dataSize - 1;
+        } else if (_httpContextSet[_httpCurrentProfile].contentLength == 0) {
+            /* content lenght 0 equals chunked encoding */
+            cmd->rsp->data.httpResponse.contentLength = buff->size - 3;
         } else {
             cmd->rsp->data.httpResponse.contentLength =
                 _httpContextSet[_httpCurrentProfile].contentLength;
@@ -2202,9 +2171,12 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
          * If data and dataSize are null, we cannot store the result. We can only hope the user is
          * using a callback which has access to the raw buffer.
          */
-        if (cmd->data) {
-            memcpy(cmd->data, buff->data + 3, cmd->rsp->data.httpResponse.contentLength);
-            cmd->data[cmd->rsp->data.httpResponse.contentLength] = '\0';
+        if (cmd->data && cmd->dataSize >= buff->size - 2) {
+            memcpy(cmd->data, buff->data + 3, buff->size - 3);
+            cmd->data[buff->size - 2] = '\0';
+        } else {
+            ESP_LOGW("WalterModem", "Unable to store HTTP payload (buffer to small)");
+            result = WALTER_MODEM_STATE_NO_MEMORY;
         }
     } else if (_buffStartsWith(buff, "+SQNHTTPRING: ")) {
         const char *rspStr = _buffStr(buff);
@@ -2315,11 +2287,10 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
     if (_buffStartsWith(buff, "+SQNCOAPRCV: ")) {
         const char *rspStr = _buffStr(buff);
-        char *payload = strchr(rspStr, '\r');
-        if (payload != 0) {
-            payload++;
+        char *payload = strstr(rspStr, "\r\n");
+        if(payload) {
+            payload += 2;
         }
-
         char *commaPos = strchr(rspStr, ',');
         char *start = (char *)rspStr + _strLitLen("+SQNCOAPRCV: ");
         uint8_t profileId = 0;
@@ -2482,10 +2453,11 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
                         lengthStr);
                     const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] =
                         arr((const char *)stringsBuffer->data);
-
+                    _receiving = true;
+                    _receiveExpected  = length;
                     _addQueueCmd(
                         _cmdArr,
-                        "+SQNCOAPRCV: ",
+                        "OK",
                         NULL,
                         coapReceivedFromBlueCherry,
                         &blueCherry,
@@ -2613,7 +2585,14 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
     if(_buffStartsWith(buff, "+SQNSRECV: "))
     {
         const char *rspStr = _buffStr(buff);
+
+        char *payload = strstr(rspStr, "\r\n");
+        if (payload) {
+            payload += 2;
+        }
+
         char *start = (char *)rspStr + _strLitLen("+SQNSRECV: ");
+        
         int sockId = atoi(start);
 
         WalterModemSocket *sock = _socketGet(sockId);
@@ -2624,19 +2603,16 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         char *commaPos = strchr(start, ',');
         if (commaPos) {
             *commaPos = '\0';
-            sock->dataReceived = atoi(commaPos);
             start = ++commaPos;
-            commaPos = strchr(commaPos, ',');
+            sock->dataReceived = atoi(start);
         }
-
-        char *data = strchr(rspStr, '\r');
 
         /*
          * If data and dataSize are null, we cannot store the result. We can only hope the user
          * is using a callback which has access to the raw buffer.
          */
-        if (cmd->data) {
-            memcpy(cmd->data, data, sock->dataReceived);
+        if (cmd->data != nullptr) {
+            memcpy(cmd->data, payload, sock->dataReceived);
         }
     }
 #endif
@@ -2809,7 +2785,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
         if (cmd->data) {
             /* skip leading \r\n */
-            memcpy(cmd->data, rspStr + 2, cmd->dataSize);
+            memcpy(cmd->data, rspStr, cmd->rsp->data.mqttResponse.length);
         }
     }
 #endif
@@ -3287,7 +3263,7 @@ bool WalterModem::_tlsIsCredentialPresent(bool isPrivateKey, uint8_t slotIdx)
     void *args = NULL;
 
     const char *keyType = isPrivateKey ? "privatekey" : "certificate";
-
+    _receiving = true;
     _runCmd(arr("AT+SQNSNVR=", _atStr(keyType), ",", _atNum(slotIdx)), "+SQNSNVR: ", rsp, cb, args);
     _returnAfterReply();
 }
@@ -3498,7 +3474,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         "uart_rx_task",
         WALTER_MODEM_TASK_STACK_SIZE,
         NULL,
-        2,
+        3,
         _rxTaskStack,
         &_rxTaskBuf,
         0);
@@ -3510,7 +3486,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         "queueProcessingTask",
         WALTER_MODEM_TASK_STACK_SIZE,
         NULL,
-        1,
+        2,
         _queueTaskStack,
         &_queueTaskBuf,
         1);
@@ -3520,7 +3496,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         "queueProcessingTask",
         WALTER_MODEM_TASK_STACK_SIZE,
         NULL,
-        1,
+        2,
         _queueTaskStack,
         &_queueTaskBuf,
         0);
@@ -3614,6 +3590,7 @@ bool WalterModem::softReset(WalterModemRsp *rsp, walterModemCb cb, void *args)
 
 bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
 {
+    _hardwareReset = true;
     _runCmd({}, "+SYSSTART", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_WAIT);
 
     gpio_hold_dis((gpio_num_t)WALTER_MODEM_PIN_RESET);
@@ -3621,6 +3598,7 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level((gpio_num_t)WALTER_MODEM_PIN_RESET, 1);
     gpio_hold_en((gpio_num_t)WALTER_MODEM_PIN_RESET);
+    _hardwareReset = false;
 
     /* Also (re)initialize internal modem related library state */
     _regState = WALTER_MODEM_NETWORK_REG_NOT_SEARCHING;

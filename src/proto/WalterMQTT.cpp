@@ -230,6 +230,7 @@ bool WalterModem::mqttDidRing(
     if (targetBufSize < _mqttRings[idx].length) {
         _returnState(WALTER_MODEM_STATE_NO_MEMORY);
     }
+    _receiving = true;
 
     if (_mqttRings[idx].qos == 0) {
         /* no msg id means qos 0 message */

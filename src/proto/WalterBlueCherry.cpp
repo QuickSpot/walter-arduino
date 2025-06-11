@@ -319,6 +319,25 @@ bool WalterModem::blueCherryClose(WalterModemRsp *rsp, walterModemCb cb, void *a
     _returnAfterReply();
 }
 
+
+size_t WalterModem::blueCherryGetOtaProgressPercentage()
+{
+    if (blueCherry.otaSize == 0) {
+        return 0; /* NO deviding by ZERO*/
+    }
+    return (blueCherry.otaProgress * 100) / blueCherry.otaSize;
+}
+
+
+size_t WalterModem::blueCherryGetOtaProgressBytes() 
+{
+    return blueCherry.otaProgress;
+}
+size_t WalterModem::blueCherryGetOtaSize()
+{
+    return blueCherry.otaSize;
+}
+
     #pragma endregion
 
 #endif
