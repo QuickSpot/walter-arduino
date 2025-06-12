@@ -694,6 +694,7 @@ typedef enum {
     WALTER_MODEM_RSP_DATA_TYPE_PDP_ADDR,
     WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID,
     WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA,
+    WALTER_MODEM_RSP_DATA_TYPE_GNSS_UTC_TIME,
     WALTER_MODEM_RSP_DATA_TYPE_CLOCK,
     WALTER_MODEM_RSP_DATA_TYPE_IDENTITY,
     WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
@@ -3234,7 +3235,7 @@ private:
 
     /**
      * @brief this function extracts the current payloadSize in the _parserData buffer.
-     * 
+     *
      * @return currentSize fo the payload already received.
      */
     static size_t _getCurrentPayloadSize();
@@ -3303,33 +3304,34 @@ private:
      */
     static void _resetParseRxFlags();
     /**
-     * @brief This function checks if a full payload was received, if so it queues it and sends the appropriate return RX command.
+     * @brief This function checks if a full payload was received, if so it queues it and sends the
+     * appropriate return RX command.
      */
     static bool _checkPayloadComplete();
 #ifdef ARDUINO
-        /**
-         * @brief Handle and parse modem RX data.
-         *
-         * This function is called when the modem placed data in the UART RX buffer. The context is
-         * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
-         * immediately parses the incoming data into a free pool buffer.
-         *
-         * @return None.
-         */
-        static void _handleRxData(void);
+    /**
+     * @brief Handle and parse modem RX data.
+     *
+     * This function is called when the modem placed data in the UART RX buffer. The context is
+     * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
+     * immediately parses the incoming data into a free pool buffer.
+     *
+     * @return None.
+     */
+    static void _handleRxData(void);
 #else
-        /**
-         * @brief Handle and parse modem RX data.
-         *
-         * This function is called when the modem placed data in the UART RX buffer. The context is
-         * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
-         * immediately parses the incoming data into a free pool buffer.
-         *
-         * @param params Incoming params for this FreeRTOS task handler.
-         *
-         * @return None.
-         */
-        static void _handleRxData(void *params);
+    /**
+     * @brief Handle and parse modem RX data.
+     *
+     * This function is called when the modem placed data in the UART RX buffer. The context is
+     * a vTask in the ESP32 Arduino core framework and not an ISR, therefore this function also
+     * immediately parses the incoming data into a free pool buffer.
+     *
+     * @param params Incoming params for this FreeRTOS task handler.
+     *
+     * @return None.
+     */
+    static void _handleRxData(void *params);
 #endif
     /**
      * @brief This is the entrypoint of the queue processing task.
@@ -4471,33 +4473,32 @@ public:
 
 #pragma region COAP
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
-        /**
-         * @brief Create a CoAP context.
-         *
-         * This function will create a CoAP context if it was not open yet. This needs to be done
-         * before you can set headers or options or send or receive data.
-         *
-         * @param profileId CoAP profile id (0 is used by BlueCherry)
-         * @param serverName The server name to connect to.
-         * @param port The port of the server to connect to.
-         * @param tlsProfileId If not 0, DTLS is used with the given profile (1-6).
-         * @param localPort The local port to use (default 0=random).
-         * @param rsp Optional modem response structure to save the result in.
-         * @param cb Optional callback function, if set this function will not block.
-         * @param args Optional argument to pass to the callback.
-         *
-         * @return True on success, false otherwise.
-         */
-        static bool
-        coapCreateContext(
-            uint8_t profileId,
-            const char *serverName,
-            int port,
-            uint8_t tlsProfileId = 0,
-            int localPort = -1,
-            WalterModemRsp *rsp = NULL,
-            walterModemCb cb = NULL,
-            void *args = NULL);
+    /**
+     * @brief Create a CoAP context.
+     *
+     * This function will create a CoAP context if it was not open yet. This needs to be done
+     * before you can set headers or options or send or receive data.
+     *
+     * @param profileId CoAP profile id (0 is used by BlueCherry)
+     * @param serverName The server name to connect to.
+     * @param port The port of the server to connect to.
+     * @param tlsProfileId If not 0, DTLS is used with the given profile (1-6).
+     * @param localPort The local port to use (default 0=random).
+     * @param rsp Optional modem response structure to save the result in.
+     * @param cb Optional callback function, if set this function will not block.
+     * @param args Optional argument to pass to the callback.
+     *
+     * @return True on success, false otherwise.
+     */
+    static bool coapCreateContext(
+        uint8_t profileId,
+        const char *serverName,
+        int port,
+        uint8_t tlsProfileId = 0,
+        int localPort = -1,
+        WalterModemRsp *rsp = NULL,
+        walterModemCb cb = NULL,
+        void *args = NULL);
 
     /**
      * @brief Close a CoAP context.
@@ -4734,7 +4735,7 @@ public:
      * @param socketId The id of the socket to close or -1 to re-use the last one.
      *
      * @return True on success, false otherwise.
-     * 
+     *
      * @warning The modem internally chunks the data!
      */
     static bool socketSend(
@@ -4779,7 +4780,7 @@ public:
      * @param cb Optional callback function, if set this function will not block.
      * @param args Optional argument to pass to the callback.
      * @param socketId The id of the socket to close or -1 to re-use the last one.
-     * 
+     *
      * @warning This function must be preceded by a call to socketListen.
      */
     static bool socketAccept(
@@ -4920,20 +4921,48 @@ public:
         WalterModemRsp *rsp = NULL,
         walterModemCb cb = NULL,
         void *args = NULL);
+    /**
+     * @brief sets the UTC time for gnss usage
+     *
+     * @param epochTime (unix timestap, see getClock)
+     * @param rsp Optional modem response structure to save the result in.
+     * @param cb Optional callback function, if set this function will not block.
+     * @param args Optional argument to pass to the callback.
+     *
+     * @return True on success, false on error.
+     */
+    static bool gnssSetUTCTime(
+        uint64_t epochTime,
+        WalterModemRsp *rsp = NULL,
+        walterModemCb cb = NULL, void *args = NULL);
+
+    /**
+     * @brief gets the UTC time for gnss usage
+     *
+     * @param rsp Optional modem response structure to save the result in.
+     * @param cb Optional callback function, if set this function will not block.
+     * @param args Optional argument to pass to the callback.
+     *
+     * @return True on success, false on error.
+     * 
+     * @warning
+     * the utc time can be found in the clock portion of the rspData.
+     */
+    static bool gnssGetUTCTime(WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL); 
 #endif
 #pragma endregion
 #pragma endregion
 
 #pragma region MODEM_STATE
-    /**
-     * @brief Get the network registration state.
-     *
-     * This function returns the current network registration state. This is buffered by the
-     * library and thus instantly available.
-     *
-     * @return The current modem registration state.
-     */
-    static WalterModemNetworkRegState getNetworkRegState();
+        /**
+         * @brief Get the network registration state.
+         *
+         * This function returns the current network registration state. This is buffered by the
+         * library and thus instantly available.
+         *
+         * @return The current modem registration state.
+         */
+        static WalterModemNetworkRegState getNetworkRegState();
 
     /**
      * @brief Get the operational state of the modem.

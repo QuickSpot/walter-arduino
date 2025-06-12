@@ -91,6 +91,20 @@ const char *_pdpTypeStr(WalterModemPDPType type);
 int64_t strTotime(const char *timeStr, const char *format);
 
 /**
+ * @brief Convert a unix timestamp to a formatted time string.
+ *
+ * The time string is in UTC (no time zone offset applied).
+ *
+ * @param timestamp The unix timestamp to convert.
+ * @param buffer The output buffer to hold the formatted string.
+ * @param buffer_len The length of the output buffer.
+ * @param format The time format to use (default: "%Y-%m-%dT%H:%M:%S").
+ *
+ * @return true on success, false on error.
+ */
+bool timeToStr(uint64_t timestamp, char *buffer, size_t buffer_len, const char *format = "%Y-%m-%dT%H:%M:%S");
+
+/**
  * @brief Convert a string into an unsigned 32-bit integer.
  *
  * @param str The null-terminated string.

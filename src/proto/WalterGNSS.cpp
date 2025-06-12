@@ -113,7 +113,20 @@ bool WalterModem::gnssPerformAction(
     _runCmd(arr("AT+LPGNSSFIXPROG=\"", gnssActionStr(action), "\""), "OK", rsp, cb, args);
     _returnAfterReply();
 }
+bool WalterModem::gnssSetUTCTime(uint64_t epochTime, WalterModemRsp *rsp, walterModemCb cb, void *args){
+    char utcTimeStr[32] = {0};
 
+    if (!timeToStr(epochTime, utcTimeStr, sizeof(utcTimeStr))) {
+        return false; // conversion failed
+    }
+
+    _runCmd(arr("AT+LPGNSSUTCTIME=",_atStr(utcTimeStr)), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
+bool WalterModem::gnssGetUTCTime(WalterModemRsp *rsp, walterModemCb cb, void *args){
+    _runCmd(arr("AT+LPGNSSUTCTIME?"), "OK", rsp, cb, args);
+    _returnAfterReply();
+}
 void WalterModem::gnssSetEventHandler(walterModemGNSSEventHandler handler, void *args)
 {
     _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].gnssHandler = handler;
