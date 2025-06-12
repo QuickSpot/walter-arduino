@@ -241,12 +241,9 @@ bool updateGNSSAssistance()
   lteDisconnect();
 
   /* Even with valid assistance data the system clock could be invalid */
-  if(!modem.getClock(&rsp)) {
-    Serial.print("Could not check the modem time\r\n");
-    return false;
-  }
+  modem.gnssGetUTCTime(&rsp);
 
-  if(rsp.data.clock.epochTime <= 0) {
+  if(rsp.data.clock.epochTime <= 4) {
     /* The system clock is invalid, connect to LTE network to sync time */
     if(!lteConnect()) {
       Serial.print("Could not connect to LTE network\r\n");
@@ -260,12 +257,9 @@ bool updateGNSSAssistance()
      * with a delay of 500ms.
      */
     for(int i = 0; i < 5; ++i) {
-      if(!modem.getClock(&rsp)) {
-        Serial.print("Could not check the modem time\r\n");
-        return false;
-      }
+      modem.gnssGetUTCTime(&rsp);
 
-      if(rsp.data.clock.epochTime > 0) {
+      if(rsp.data.clock.epochTime > 4) {
         Serial.printf("Synchronized clock with network: %"PRIi64"\r\n",
           rsp.data.clock.epochTime);
         break;
