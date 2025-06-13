@@ -2181,11 +2181,11 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         uint8_t *data = buff->data + _strLitLen("+LPGNSSUTCTIME: ");
 
         char *start = (char *)data;
-        if (strstr(start + 1, "NO_CLOCK_DEFINED") != nullptr) {
+        if (strstr(start, "NO_CLOCK_DEFINED") != nullptr) {
             cmd->rsp->data.clock.epochTime = 0;
             result = WALTER_MODEM_STATE_NO_DATA;
         } else {
-            cmd->rsp->data.clock.epochTime = strTotime(start + 1);
+            cmd->rsp->data.clock.epochTime = strTotime(start);
             result = WALTER_MODEM_STATE_OK;
         }
     }
