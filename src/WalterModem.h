@@ -3557,6 +3557,7 @@ private:
 #pragma endregion
 
 #pragma region TLS
+public:
     /**
      * @brief Upload key or certificate to modem NVRAM.
      *
@@ -3572,6 +3573,7 @@ private:
      */
     static bool tlsWriteCredential(bool isPrivateKey, uint8_t slotIdx, const char *credential);
 
+private:
     /**
      * @brief Check if a key or certificate is present in modem's NVRAM.
      *
