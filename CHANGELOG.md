@@ -66,7 +66,7 @@ This is the Changelog for WalterModem
 
 `all examples have been reworked.`
 
-## [v1.2.1](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.2.0)
+## [v1.2.1](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.2.1)
 
 ### Bug Fixes
 
@@ -83,3 +83,17 @@ This is the Changelog for WalterModem
 ### Docs
 
 - updated documentation for definePDPContext([#50](https://github.com/QuickSpot/walter-esp-idf/issues/50))
+
+## [v1.3.0](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.3.0)
+
+### Features
+
+- completely reworked the parsing logic from scratch to make the parser more streamlined and performant ([#60](https://github.com/QuickSpot/walter-esp-idf/commit/96cf8a11f4b11a48cdcb1ac65b50a8466612b610))
+
+
+### Bug Fixes
+
+- fixed bug in the positioning example where the modem clock could have been set but not the gnss clock which would cause the example to crash ([#40](https://github.com/QuickSpot/walter-arduino/commit/1186de955351ab41da8b128c8cec31d735bc385d)).
+- fixed issues with socketReceive ([#60](https://github.com/QuickSpot/walter-esp-idf/commit/96cf8a11f4b11a48cdcb1ac65b50a8466612b610)).
+- fixed httpConfigProfile timeout bug which would cause crashes in some cases ([#20](https://github.com/QuickSpot/walter-esp-idf/commit/d3a7da0e66fbaf555d4ab2940043ca290a0c9177)).
+- added delay to BlueCherry example, as it would otherwise continuously poll the server ([#72](https://github.com/QuickSpot/walter-esp-idf/commit/3d0f4e5ca57c1aac28dbc922682d8ec83f39f4f9)).
