@@ -4836,7 +4836,7 @@ public:
      * WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW in socketConfigExtended.
      */
     static bool socketDidRing(
-        int socketId = -1, uint8_t targetBUfSize = 0, uint8_t *targetBuf = nullptr);
+        int socketId = -1, uint8_t* dataReceived = nullptr,uint8_t targetBUfSize = 0, uint8_t *targetBuf = nullptr);
 
     /**
      * @brief Receive data from an incomming socket connection

@@ -306,7 +306,8 @@ bool WalterModem::socketSend(
     return socketSend((uint8_t *)str, strlen(str), rsp, cb, args, rai, socketId);
 }
 
-bool WalterModem::socketAccept(WalterModemRsp *rsp, walterModemCb cb, void *args, int socketId, bool commandMode)
+bool WalterModem::socketAccept(
+    WalterModemRsp *rsp, walterModemCb cb, void *args, int socketId, bool commandMode)
 {
     WalterModemSocket *sock = _socketGet(socketId);
     if (sock == NULL) {
@@ -374,7 +375,8 @@ bool WalterModem::socketListen(
     }
 }
 
-bool WalterModem::socketDidRing(int socketId, uint8_t targetBufSize, uint8_t *targetBuf)
+bool WalterModem::socketDidRing(
+    int socketId, uint8_t *dataReceived, uint8_t targetBufSize, uint8_t *targetBuf)
 {
     WalterModemRsp *rsp = NULL;
     walterModemCb cb = NULL;
@@ -386,6 +388,10 @@ bool WalterModem::socketDidRing(int socketId, uint8_t targetBufSize, uint8_t *ta
     }
 
     if (sock->didRing) {
+        if (dataReceived != nullptr) {
+            *dataReceived = sock->dataReceived;
+        }
+
         if (targetBuf != nullptr && targetBufSize != 0) {
             memcpy(targetBuf, sock->data, targetBufSize);
             return true;
