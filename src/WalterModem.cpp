@@ -2636,7 +2636,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         }
 
         if (commaPos) {
-            memcpy(sock->data, commaPos, sock->dataReceived);
+            memcpy(sock->data, ++commaPos, sock->dataReceived);
         }
 
         _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, sock->id, sock->dataReceived, sock->data);
