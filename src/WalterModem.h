@@ -302,16 +302,18 @@ CONFIG_UINT8(WALTER_MODEM_MQTT_MIN_PREF_KEEP_ALIVE, 20)
 CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
 #endif
 
+//The following variables are fixed by bluecherry
+#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
 /**
  * @brief The maximum size of an incoming protocol message payload.
  */
-#define WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN 1220
+constexpr uint16_t WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN = 1220;
 
 /**
  * @brief The maximum size of an outgoing message payload.
  */
-#define WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN 1024
-
+constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024
+#endif
 /**
  * @brief Encrypted block size within flash.
  */
