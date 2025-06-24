@@ -238,7 +238,7 @@ bool WalterModem::mqttDidRing(
             cb,
             args,
             NULL,
-            (void *)idx,
+            (void *)(uintptr_t)idx,
             WALTER_MODEM_CMD_TYPE_TX_WAIT,
             targetBuf,
             _mqttRings[idx].length);
@@ -252,7 +252,7 @@ bool WalterModem::mqttDidRing(
             cb,
             args,
             NULL,
-            (void *)idx,
+            (void *)(uintptr_t)idx,
             WALTER_MODEM_CMD_TYPE_TX_WAIT,
             targetBuf,
             _mqttRings[idx].length);

@@ -286,7 +286,7 @@ bool strToFloat(const char *str, int len, float *result);
 /**
  * @brief Transmit all elements of a command.
  */
-static bool endOfLine;
+static bool endOfLine DISABLE_USED_WARNING;
 #ifdef ARDUINO
     #define _transmitCmd(type, atCmd)                                                  \
         {                                                                              \
@@ -370,7 +370,7 @@ static bool endOfLine;
         {                                                                        \
             ESP_LOGD(                                                            \
                 (endOfLine = false, "WalterModem"),                              \
-                "TX: %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s" \ 
+                "TX: %s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s" \
             "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",    \
                 (!endOfLine && atCmd[0]) ? atCmd[0] : (endOfLine = true, ""),    \
                 (!endOfLine && atCmd[1]) ? atCmd[1] : (endOfLine = true, ""),    \

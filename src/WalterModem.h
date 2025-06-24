@@ -61,6 +61,13 @@
 for efficient configuration management."
     #endif
 #endif
+
+#pragma region WARNING_MACROS
+#ifndef DISABLE_USED_WARNING
+    #define DISABLE_USED_WARNING __attribute__((unused))
+#endif
+#pragma endregion
+
 #pragma region CONFIG_MACRO
 #ifdef CONFIG_WALTER_MODEM_KCONFIG
     #define CONFIG(name, type, default_value) static constexpr type name = CONFIG_##name;
