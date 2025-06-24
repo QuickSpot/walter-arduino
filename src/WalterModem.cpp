@@ -283,8 +283,7 @@ const char *_pdpTypeStr(WalterModemPDPType type)
  */
 int64_t strTotime(const char *timeStr, const char *format = "%Y-%m-%dT%H:%M:%S")
 {
-    struct tm tm {
-    };
+    struct tm tm{};
     if (strptime(timeStr, format, &tm) == NULL) {
         return -1;
     }
@@ -1011,10 +1010,8 @@ void WalterModem::_addATBytesToBuffer(const char *data, size_t length)
         return;
     }
 
-  
     memcpy(&_parserData.buf->data[_parserData.buf->size], data, length);
     _parserData.buf->size += length;
-
 }
 
 void WalterModem::_queueRxBuffer()
@@ -1031,7 +1028,7 @@ void WalterModem::_queueRxBuffer()
                  * consumer.
                  */
                 _parserData.buf->free = true;
-                ESP_LOGW("WalterParser","unable to queue the buffer");
+                ESP_LOGW("WalterParser", "unable to queue the buffer");
             }
         }
 
@@ -1039,7 +1036,7 @@ void WalterModem::_queueRxBuffer()
     }
 }
 
-size_t WalterModem::_getCRLFPosition(const char *rxData, size_t len) 
+size_t WalterModem::_getCRLFPosition(const char *rxData, size_t len)
 {
     const char *lfPtr = (const char *)memchr(rxData, '\n', len);
 
@@ -1067,10 +1064,7 @@ bool WalterModem::_checkPayloadComplete()
 
 #pragma region ERROR
     resultPos = (char *)memmem(
-        &_parserData.buf->data[_receiveExpected],
-        _parserData.buf->size,
-        "\r\nERROR\r\n",
-        9);
+        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nERROR\r\n", 9);
 
     if (resultPos && _parserData.buf->size >= _receiveExpected) {
         _parserData.buf->size -= 9;
@@ -1085,12 +1079,12 @@ bool WalterModem::_checkPayloadComplete()
     resultPos = (char *)memmem(
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\n+CME ERROR:", 13);
 
-    if (resultPos && _parserData.buf->size >= _receiveExpected){
-        uint16_t size = (uint16_t)((uint8_t*)resultPos - _parserData.buf->data);
+    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        uint16_t size = (uint16_t)((uint8_t *)resultPos - _parserData.buf->data);
         _parserData.buf->size -= size;
         _queueRxBuffer();
         _resetParseRxFlags();
-        _parseRxData(resultPos,size);
+        _parseRxData(resultPos, size);
         return true;
     }
 #pragma endregion
@@ -1109,11 +1103,10 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
 {
     if (len <= 0 || _hardwareReset)
         return;
-    char* dataStart = rxData;
+    char *dataStart = rxData;
     size_t dataLen = len;
     /* remove the leading CRLF*/
-    if (_parserData.buf == NULL)
-    {
+    if (_parserData.buf == NULL) {
         if (dataStart[0] == '\r') {
             /* remove the leading \r */
             dataLen--;
@@ -1132,8 +1125,10 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
 
     ESP_LOGV("WalterParser", "rxData (%u bytes): \r\n '%.*s'", dataLen, dataLen, dataStart);
 
-    size_t CRLFPos = _getCRLFPosition(dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
-    bool hasTripleChevron = memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
+    size_t CRLFPos = _getCRLFPosition(
+        dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
+    bool hasTripleChevron =
+        memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
 
     if (_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
         if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {
@@ -1160,7 +1155,7 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
         bool httpPrompt = dataLen >= 3
             ? dataStart[0] == '>' && dataStart[1] == '>' && dataStart[2] == '>'
             : false;
-        
+
         _addATBytesToBuffer(dataStart, dataLen);
 
         if (dataPrompt || httpPrompt) {
@@ -1490,16 +1485,34 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 #pragma region GENERAL
     if (_buffStartsWith(buff, "+CEREG: ")) {
         const char *rspStr = _buffStr(buff);
-        int ceReg = atoi(rspStr + _strLitLen("+CEREG: "));
-        bool attached = ceReg == 5 || ceReg == 1;
-        for (size_t i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; i++) {
-            if (_pdpCtxSet[i].state != WALTER_MODEM_PDP_CONTEXT_STATE_INACTIVE) {
-                _pdpCtxSet[i].state = attached ? WALTER_MODEM_PDP_CONTEXT_STATE_ATTACHED
-                                               : WALTER_MODEM_PDP_CONTEXT_STATE_NOT_ATTACHED;
+        int mode = 0;
+        int ceReg = 0;
+
+        int parsed = sscanf(rspStr, "+CEREG: %d,%d", &mode, &ceReg);
+        if (parsed == 2) {
+            if (mode > 0) {
+                bool attached = ceReg == 5 || ceReg == 1;
+                for (size_t i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; i++) {
+                    if (_pdpCtxSet[i].state != WALTER_MODEM_PDP_CONTEXT_STATE_INACTIVE) {
+                        _pdpCtxSet[i].state = attached
+                            ? WALTER_MODEM_PDP_CONTEXT_STATE_ATTACHED
+                            : WALTER_MODEM_PDP_CONTEXT_STATE_NOT_ATTACHED;
+                    }
+                }
+                _regState = (WalterModemNetworkRegState)ceReg;
+                _dispatchEvent(_regState);
             }
+        } else if (parsed == 1) {
+            bool attached = mode == 5 || mode == 1;
+            for (size_t i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; i++) {
+                if (_pdpCtxSet[i].state != WALTER_MODEM_PDP_CONTEXT_STATE_INACTIVE) {
+                    _pdpCtxSet[i].state = attached ? WALTER_MODEM_PDP_CONTEXT_STATE_ATTACHED
+                                                   : WALTER_MODEM_PDP_CONTEXT_STATE_NOT_ATTACHED;
+                }
+            }
+            _regState = (WalterModemNetworkRegState)mode;
+            _dispatchEvent(_regState);
         }
-        _regState = (WalterModemNetworkRegState)ceReg;
-        _dispatchEvent(_regState);
     } else if (_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>")) {
         if (cmd != NULL && cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT && cmd->data != NULL) {
 #ifdef ARDUINO
@@ -2336,7 +2349,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
     if (_buffStartsWith(buff, "+SQNCOAPRCV: ")) {
         const char *rspStr = _buffStr(buff);
         char *payload = strstr(rspStr, "\r\n");
-        if(payload) {
+        if (payload) {
             payload += 2;
         }
         char *commaPos = strchr(rspStr, ',');
@@ -2502,7 +2515,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
                     const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] =
                         arr((const char *)stringsBuffer->data);
                     _receiving = true;
-                    _receiveExpected  = length;
+                    _receiveExpected = length;
                     _addQueueCmd(
                         _cmdArr,
                         "OK",
@@ -2601,7 +2614,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
         if (sock) {
             _socketRelease(sock);
-            _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED,sock->id,0,nullptr);
+            _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, sock->id, 0, nullptr);
         }
     }
 
@@ -2630,8 +2643,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, sock->id, sock->dataReceived, sock->data);
     }
 
-    if(_buffStartsWith(buff, "+SQNSRECV: "))
-    {
+    if (_buffStartsWith(buff, "+SQNSRECV: ")) {
         const char *rspStr = _buffStr(buff);
 
         char *payload = strstr(rspStr, "\r\n");
@@ -2640,7 +2652,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         }
 
         char *start = (char *)rspStr + _strLitLen("+SQNSRECV: ");
-        
+
         int sockId = atoi(start);
 
         WalterModemSocket *sock = _socketGet(sockId);
@@ -3527,7 +3539,8 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         &_rxTaskBuf,
         0);
 #endif
-/* the queueProcessingTask cannot be on the same level as the UART task otherwise a modem freeze can occur */
+/* the queueProcessingTask cannot be on the same level as the UART task otherwise a modem freeze can
+ * occur */
 #ifdef ARDUINO
     _queueTask = xTaskCreateStaticPinnedToCore(
         _queueProcessingTask,
@@ -3827,6 +3840,24 @@ bool WalterModem::tlsConfigProfile(
 #pragma region MODEM_STATE
 WalterModemNetworkRegState WalterModem::getNetworkRegState()
 {
+    WalterModemRsp *rsp = NULL;
+    walterModemCb cb = NULL;
+    void *args = NULL;
+
+    const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = arr("AT+CEREG?");
+    WalterModemCmd *cmd = _addQueueCmd(_cmdArr, "OK", rsp, cb, args);
+    if (cmd == NULL) {
+        return WalterModemNetworkRegState::WALTER_MODEM_NETWORK_REG_NOT_SEARCHING;
+    }
+
+    std::unique_lock<std::mutex> lock{cmd->cmdLock.mutex};
+    cmd->cmdLock.cond.wait(lock, [cmd] {
+        return cmd->state == WALTER_MODEM_CMD_STATE_SYNC_LOCK_NOTIFIED;
+        ;
+    });
+    cmd->state = WALTER_MODEM_CMD_STATE_COMPLETE;
+    lock.unlock();
+
     return _regState;
 }
 
@@ -4123,7 +4154,8 @@ uint8_t WalterModem::durationToTAU(
     return _convertDuration(base_times, 7, duration_seconds, actual_duration_seconds);
 }
 
-uint8_t WalterModem::durationToActiveTime(uint32_t seconds, uint32_t minutes, uint32_t *actual_duration_seconds)
+uint8_t WalterModem::durationToActiveTime(
+    uint32_t seconds, uint32_t minutes, uint32_t *actual_duration_seconds)
 {
     static const uint32_t base_times[] = {2, 60, 360};
     uint32_t duration_seconds = seconds + (60 * minutes);
