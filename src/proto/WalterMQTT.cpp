@@ -84,31 +84,28 @@ WalterModemMqttStatus WalterModem::getMqttStatus()
 }
 
 bool WalterModem::mqttConfig(
-    const char *clientId, const char *userName, const char *password, uint8_t tlsProfileId)
+    const char *clientId, const char *username, const char *password, uint8_t tlsProfileId)
 {
     WalterModemRsp *rsp = NULL;
     walterModemCb cb = NULL;
     void *args = NULL;
 
-    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
-    stringsBuffer->size +=
-        sprintf((char *)stringsBuffer->data, "AT+SQNSMQTTCFG=0,\"%s\"", clientId);
+    WalterModemBuffer *buf = _getFreeBuffer();
+    buf->size += sprintf((char*) buf->data, "AT+SQNSMQTTCFG=0,\"%s\"", clientId);
 
-    if (userName && password) {
-        stringsBuffer->size += sprintf(
-            (char *)stringsBuffer->data + stringsBuffer->size,
-            ",\"%s\",\"%s\"",
-            userName,
-            password);
-    } else {
-        stringsBuffer->size += sprintf((char *)stringsBuffer->data + stringsBuffer->size, ",,");
+    if(username && password) {
+        buf->size += sprintf((char*)buf->data + buf->size,",\"%s\",\"%s\"", username, password);
     }
 
-    if (tlsProfileId > 0) {
-        stringsBuffer->size +=
-            sprintf((char *)stringsBuffer->data + stringsBuffer->size, ",%u", tlsProfileId);
+    if(tlsProfileId > 0) {
+        if(!(username && password)) {
+            buf->size += sprintf((char*) buf->data + buf->size, ",,");
+        }
+
+        buf->size += sprintf((char*) buf->data + buf->size, ",%u", tlsProfileId);
     }
-    _runCmd(arr((const char *)stringsBuffer->data), "OK", rsp, cb, args);
+    
+    _runCmd(arr((const char*) buf->data), "OK", rsp, cb, args);
     _returnAfterReply();
 }
 

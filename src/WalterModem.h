@@ -4047,7 +4047,7 @@ public:
      * This function configures an mqtt client, without connecting.
      *
      * @param clientId MQTT client id to be used
-     * @param userName Username for auth
+     * @param username Username for auth
      * @param password Password for auth
      * @param tlsProfileId TLS profile id to be used
      *
@@ -4055,7 +4055,7 @@ public:
      */
     static bool mqttConfig(
         const char *clientId = "walter-mqtt-client",
-        const char *userName = NULL,
+        const char *username = NULL,
         const char *password = NULL,
         uint8_t tlsProfileId = 0);
 
