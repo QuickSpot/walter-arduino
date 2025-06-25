@@ -1167,6 +1167,24 @@ typedef enum {
 } WalterModemBlueCherryStatus;
 
 /**
+ * @brief The possible statuses of the custom BlueCherry CoAP protocol.
+ */
+typedef enum {
+    WALTER_MODEM_BLUECHERRY_COAP_RSP_VALID = 0x43,
+    WALTER_MODEM_BLUECHERRY_COAP_RSP_CONTINUE = 0x61
+} WalterModemBlueCherryCoapRspStatus;
+
+/**
+ * @brief The possible send types of the custom BlueCherry CoAP protocol.
+ */
+typedef enum {
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_CON = 0,
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_NON = 1,
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK = 2,
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_RST = 3
+} WalterModemBlueCherryCoapSendType;
+
+/**
  * @brief The possible types of BlueCherry events.
  */
 typedef enum {

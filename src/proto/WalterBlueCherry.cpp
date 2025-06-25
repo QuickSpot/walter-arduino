@@ -129,7 +129,7 @@ bool WalterModem::_blueCherryCoapSend(uint8_t code, uint16_t payloadLen, const u
     uint8_t *p = coap;
 
     *p++ = 0x40 | tokenLen;             // ver=1, type=0 (CON), token len
-    *p++ = code;                        // BlueCherry replaces request/response code with nrMissed
+    *p++ = code;                        // BlueCherry replaces request/response code
     *p++ = msgId >> 8;                  // Message ID high byte
     *p++ = msgId & 0xFF;                // Message ID low byte
 
@@ -219,9 +219,9 @@ bool WalterModem::blueCherryInit(
 
     _blueCherry.tlsProfileId = tlsProfileId;
 
-    _blueCherry.messageOutLen = 0;
-    _blueCherry.curMessageId = 0x1;
-    _blueCherry.lastAckedMessageId = 0x0;
+    _blueCherry.messageOutLen = 0x0000;
+    _blueCherry.curMessageId = 0x0000;
+    _blueCherry.lastAckedMessageId = 0x0000;
     _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
     _blueCherry.moreDataAvailable = false;
 
@@ -297,117 +297,97 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
 
         uint8_t recvBuf[WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN] = {};
         uint16_t receivedBytes = 0;
-        if (socketDidRing(_blueCherry.bcSocketId, sizeof(recvBuf), recvBuf, &receivedBytes)) {
-            printf("Received UDP CoAP Datagram message of size %d\n", receivedBytes);
 
-            uint8_t byteOffset = 0;
-
-            printf("Raw header byte: 0x%02X\n", recvBuf[0]);
-            printf("Raw header byte: 1x%02X\n", recvBuf[1]);
-            printf("Raw header byte: 2x%02X\n", recvBuf[2]);
-            printf("Raw header byte: 3x%02X\n", recvBuf[3]);
-
-
-            uint8_t header = recvBuf[byteOffset++];
-            uint8_t version = (header >> 6) & 0x03;
-            uint8_t type = (header >> 4) & 0x03;
-            uint8_t tokenLen = header & 0x0F;
-
-            // if (version != 1) {
-            //     printf("Invalid CoAP version: %d\n", version);
-            //     return false;
-            // }
-
-            if (type == 0) {  // CON
-                printf("Packet is CON\n");
-
-                // Extract other fields
-                uint8_t code = recvBuf[byteOffset++];
-                uint16_t messageId = (recvBuf[byteOffset++] << 8) | recvBuf[byteOffset++];
-
-                printf("Token Length: %u\n", tokenLen);
-                printf("Code: 0x%02X\n", code);
-                printf("Message ID: 0x%04X\n", messageId);
-
-            } else if (type == 2) { // ACK
-                printf("Packet is ACK\n");
-
-                // Extract other fields
-                uint8_t code = recvBuf[byteOffset++];
-                uint16_t messageId = (recvBuf[byteOffset++] << 8) | recvBuf[byteOffset++];
-
-                printf("Token Length: %u\n", tokenLen);
-                printf("Code: 0x%02X\n", code);
-                printf("Message ID: 0x%04X\n", messageId);
-
-            } else { // Unsupported
-                printf("Packet type is not CON or ACK (type = %u)\n", type);
-            }
-
-            // rsp->data.blueCherry.messageCount =
-            // rsp->data.blueCherry.messages[].data = 
-            // rsp->data.blueCherry.messages[].topic = 
-
-            rsp->data.blueCherry.syncFinished = !_blueCherry.moreDataAvailable;
+        if(socketDidRing(_blueCherry.bcSocketId, 0, nullptr, &receivedBytes)) {
+            socketReceive(sizeof(recvBuf), recvBuf, _blueCherry.bcSocketId);
+            printf("DEBUG: Received UDP CoAP Datagram message of size %d\n", receivedBytes);
             _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
 
-            /* BlueCherry cloud ack means our last error line can be cleared */
-            _blueCherry.emitErrorEvent = false;
+            printf("DEBUG: Received (%u bytes):", sizeof(recvBuf));
+            for (size_t i = 0; i < sizeof(recvBuf); ++i) {
+                printf(" %02X", recvBuf[i]);
+            }
+            printf("\n");
+
+            uint8_t byteOffset = 0;
+            uint8_t recvHeader = recvBuf[byteOffset++];
+            uint8_t recvVer = (recvHeader >> 6) & 0x03;
+
+            if (recvVer != 1) {
+                printf("DEBUG: Invalid CoAP version: %d\n", recvVer);
+            }
+
+            uint8_t recvType = (recvHeader >> 4) & 0x03;
+            uint8_t recvTokenLen = recvHeader & 0x0F;
+            byteOffset += recvTokenLen;
+            uint8_t recvCode = recvBuf[byteOffset++];
+            uint16_t recvMsgId = (recvBuf[byteOffset++] << 8) | recvBuf[byteOffset++];
+            byteOffset++; // Skip the 0xff payload marker
+
+            if (recvType == WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK) {
+                    _blueCherry.lastAckedMessageId = recvMsgId;
+                    /* BlueCherry cloud ack means our last error line can be cleared */
+                    _blueCherry.emitErrorEvent = false;
+            }
+
+            switch (recvCode) {
+                case WALTER_MODEM_BLUECHERRY_COAP_RSP_VALID:
+                    printf("DEBUG: Packet has code VALID. Data transfer complete.\n");
+                    _blueCherry.moreDataAvailable = false;
+                    break;
+                case WALTER_MODEM_BLUECHERRY_COAP_RSP_CONTINUE:
+                    printf("DEBUG: Packet has code CONTINUE. More data available in cloud.\n");
+                    _blueCherry.moreDataAvailable = true;
+                    break;
+            }
+
+            _blueCherry.messageInLen = receivedBytes - byteOffset;
+            memcpy(_blueCherry.messageIn, recvBuf + byteOffset, _blueCherry.messageInLen);
+            uint16_t msgOffset = 0;
+
+            while (msgOffset < _blueCherry.messageInLen) {
+                uint8_t topic = _blueCherry.messageIn[msgOffset];
+                msgOffset++;
+                uint8_t dataLen = _blueCherry.messageIn[msgOffset];
+                msgOffset++;
+
+                /*
+                    * Topic 0 is reserved for BlueCherry events, which are also visible to walter as mqtt
+                    * messages on topic id 0
+                    */
+                if (topic == 0) {
+                    rsp->data.blueCherry.syncFinished = false;
+
+                    if (_blueCherryProcessEvent(_blueCherry.messageIn + msgOffset, dataLen)) {
+                        _blueCherry.emitErrorEvent = true;
+                        _blueCherry.otaSize = 0;
+                    }
+                }
+
+                if (rsp) {
+                    WalterModemBlueCherryMessage *msg =
+                        rsp->data.blueCherry.messages + rsp->data.blueCherry.messageCount;
+                    msg->topic = topic;
+                    msg->dataSize = dataLen;
+                    msg->data = _blueCherry.messageIn + msgOffset;
+
+                    rsp->data.blueCherry.messageCount++;
+                }
+
+                msgOffset += dataLen;
+            }
+
+            rsp->data.blueCherry.syncFinished = !_blueCherry.moreDataAvailable;
+
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
-    // while (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
-    //     if (time(NULL) - _blueCherry.lastTransmissionTime > _blueCherry.ackTimeout) {
-    //         _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
-    //     }
-    //     vTaskDelay(pdMS_TO_TICKS(100));
-    // }
-
-    // if (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY) {
-    //     rsp->data.blueCherry.syncFinished = !_blueCherry.moreDataAvailable;
-
-    //     /* BlueCherry cloud ack means our last error line can be cleared */
-    //     _blueCherry.emitErrorEvent = false;
-
-    //     while (curOffset < _blueCherry.messageInLen) {
-    //         uint8_t topic = _blueCherry.messageIn[curOffset];
-    //         curOffset++;
-    //         uint8_t dataLen = _blueCherry.messageIn[curOffset];
-    //         curOffset++;
-
-    //         /*
-    //          * Topic 0 is reserved for BlueCherry events, which are also visible to walter as mqtt
-    //          * messages on topic id 0
-    //          */
-    //         if (topic == 0) {
-    //             rsp->data.blueCherry.syncFinished = false;
-
-    //             if (_blueCherryProcessEvent(_blueCherry.messageIn + curOffset, dataLen)) {
-    //                 _blueCherry.emitErrorEvent = true;
-    //                 _blueCherry.otaSize = 0;
-    //             }
-    //         }
-
-    //         if (rsp) {
-    //             WalterModemBlueCherryMessage *msg =
-    //                 rsp->data.blueCherry.messages + rsp->data._blueCherry.messageCount;
-    //             msg->topic = topic;
-    //             msg->dataSize = dataLen;
-    //             msg->data = _blueCherry.messageIn + curOffset;
-
-    //             rsp->data.blueCherry.messageCount++;
-    //         }
-
-    //         curOffset += dataLen;
-    //     }
-    // }
-
     _blueCherry.curMessageId++;
-    if (_blueCherry.curMessageId == 0) {
-        /* on wrap around, skip msg id 0 which we use as a special/error value */
-        _blueCherry.curMessageId++;
-    }
+    // if (_blueCherry.curMessageId == 0) {
+    //     /* on wrap around, skip msg id 0 which we use as a special/error value */
+    //     _blueCherry.curMessageId++;
+    // }
     _blueCherry.messageOutLen = 0;
 
     if (_blueCherry.emitErrorEvent) {

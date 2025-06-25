@@ -1457,36 +1457,6 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
     return WALTER_MODEM_CMD_TIMEOUT_TICKS;
 }
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-static void coapReceivedFromBlueCherry(const WalterModemRsp *rsp, void *args)
-{
-    WalterModemBlueCherryState *blueCherry = (WalterModemBlueCherryState *)args;
-
-    if (rsp->type != WALTER_MODEM_RSP_DATA_TYPE_COAP) {
-        return;
-    }
-
-    /*
-     * Silently discard unexpected requests or responses, to keep the basic BlueCherry cloud API
-     * with blueCherryDidRing simple. Users who want full control can manually use CoAP with profile
-     * id 1 or 2.
-     */
-
-    /* sanity checks: valid message (response) ? */
-    if (blueCherry->status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE &&
-        rsp->data.coapResponse.messageId == blueCherry->curMessageId &&
-        rsp->data.coapResponse.sendType == WALTER_MODEM_COAP_SEND_TYPE_ACK &&
-        (rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_VALID ||
-         rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE)) {
-        blueCherry->lastAckedMessageId = rsp->data.coapResponse.messageId;
-        blueCherry->messageInLen = rsp->data.coapResponse.length;
-        blueCherry->status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
-        blueCherry->moreDataAvailable =
-            rsp->data.coapResponse.methodRsp == WALTER_MODEM_COAP_SEND_RSP_CODE_CONTINUE;
-    }
-}
-#endif
-
 void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 {
     ESP_LOGD("WalterModem", "RX: %.*s", buff->size, buff->data);
@@ -2479,27 +2449,27 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             }
         }
 
-        if (commaPos) {
+        if(commaPos) {
             *commaPos = '\0';
             messageIdStr = start;
             start = ++commaPos;
             commaPos = strchr(commaPos, ',');
         }
 
-        if (commaPos) {
+        if(commaPos) {
             *commaPos = '\0';
             start = ++commaPos;
             commaPos = strchr(commaPos, ',');
         }
 
-        if (commaPos) {
+        if(commaPos) {
             *commaPos = '\0';
             sendTypeStr = start;
             start = ++commaPos;
             commaPos = strchr(commaPos, ',');
         }
 
-        if (commaPos) {
+        if(commaPos) {
             *commaPos = '\0';
             reqRspCodeRawStr = start;
             lengthStr = commaPos + 1;
@@ -2511,104 +2481,63 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             uint8_t reqRspCodeRaw = atoi(reqRspCodeRawStr);
             uint16_t length = atoi(lengthStr);
 
-    #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-            if (profileId == 0) {
-                /* profile id 0 is the internal BlueCherry cloud coap profile */
-                if (_blueCherry.lastAckedMessageId != messageId) {
-                    WalterModemBuffer *stringsBuffer = _getFreeBuffer();
-                    stringsBuffer->size += sprintf(
-                        (char *)stringsBuffer->data,
-                        "AT+SQNCOAPRCV=%s,%s,%s",
-                        profileIdStr,
-                        messageIdStr,
-                        lengthStr);
-                    const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] =
-                        arr((const char *)stringsBuffer->data);
-                    _receiving = true;
-                    _receiveExpected = length;
-                    _addQueueCmd(
-                        _cmdArr,
-                        "OK",
-                        NULL,
-                        coapReceivedFromBlueCherry,
-                        &_blueCherry,
-                        NULL,
-                        NULL,
-                        WALTER_MODEM_CMD_TYPE_TX_WAIT,
-                        _blueCherry.messageIn,
-                        WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN,
-                        stringsBuffer);
-                }
-            } else {
-    #endif
-                /* store ring in ring list for this coap context */
-                uint8_t ringIdx;
-                for (ringIdx = 0; ringIdx < WALTER_MODEM_COAP_MAX_PENDING_RINGS; ringIdx++) {
-                    if (!_coapContextSet[profileId].rings[ringIdx].messageId) {
-                        break;
-                    }
-                    if (_coapContextSet[profileId].rings[ringIdx].messageId == messageId &&
-                        _coapContextSet[profileId].rings[ringIdx].sendType == sendType &&
-                        _coapContextSet[profileId].rings[ringIdx].methodRsp == reqRspCodeRaw) {
-                        break;
-                    }
-                }
-
-                if (ringIdx == WALTER_MODEM_COAP_MAX_PENDING_RINGS) {
-                    // TODO: error reporting mechanism for this failed URC
-                    buff->free = true;
-                    return;
-                }
-
+            /* store ring in ring list for this coap context */
+            uint8_t ringIdx;
+            for(ringIdx = 0; ringIdx < WALTER_MODEM_COAP_MAX_PENDING_RINGS; ringIdx++) {
                 if (!_coapContextSet[profileId].rings[ringIdx].messageId) {
-                    _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
-                    _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
-                    _coapContextSet[profileId].rings[ringIdx].methodRsp =
-                        (WalterModemCoapSendMethodRsp)reqRspCodeRaw;
-                    _coapContextSet[profileId].rings[ringIdx].length = length;
-                    _dispatchEvent(WALTER_MODEM_COAP_EVENT_RING, profileId);
+                    break;
                 }
-    #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-            } // DO NOT REMOVE IS PART OF ABOVE IF STATEMENT
-    #endif
+                if (_coapContextSet[profileId].rings[ringIdx].messageId == messageId &&
+                    _coapContextSet[profileId].rings[ringIdx].sendType == sendType &&
+                    _coapContextSet[profileId].rings[ringIdx].methodRsp == reqRspCodeRaw) {
+                    break;
+                }
+            }
+
+            if (ringIdx == WALTER_MODEM_COAP_MAX_PENDING_RINGS) {
+                // TODO: error reporting mechanism for this failed URC
+                buff->free = true;
+                return;
+            }
+
+            if(!_coapContextSet[profileId].rings[ringIdx].messageId) {
+                _coapContextSet[profileId].rings[ringIdx].messageId = messageId;
+                _coapContextSet[profileId].rings[ringIdx].sendType = sendType;
+                _coapContextSet[profileId].rings[ringIdx].methodRsp =
+                    (WalterModemCoapSendMethodRsp)reqRspCodeRaw;
+                _coapContextSet[profileId].rings[ringIdx].length = length;
+                _dispatchEvent(WALTER_MODEM_COAP_EVENT_RING, profileId);
+            }
         }
     }
 
-    else if (_buffStartsWith(buff, "+SQNCOAPCONNECTED: ")) {
+    else if(_buffStartsWith(buff, "+SQNCOAPCONNECTED: ")) {
         const char *rspStr = _buffStr(buff);
         char *commaPos = strchr(rspStr, ',');
-        if (commaPos) {
+        if(commaPos) {
             *commaPos = '\0';
         }
 
         uint8_t profileId = atoi(rspStr + _strLitLen("+SQNCOAPCONNECTED: "));
 
-        if (profileId < WALTER_MODEM_MAX_COAP_PROFILES) {
+        if(profileId < WALTER_MODEM_MAX_COAP_PROFILES) {
             _coapContextSet[profileId].connected = true;
             _dispatchEvent(WALTER_MODEM_COAP_EVENT_CONNECTED, profileId);
         }
     } else if (_buffStartsWith(buff, "+SQNCOAPCLOSED: ")) {
         const char *rspStr = _buffStr(buff);
         char *commaPos = strchr(rspStr, ',');
-        if (commaPos) {
+        if(commaPos) {
             *commaPos = '\0';
         }
 
         uint8_t profileId = atoi(rspStr + _strLitLen("+SQNCOAPCLOSED: "));
 
-        if (profileId < WALTER_MODEM_MAX_COAP_PROFILES) {
+        if(profileId < WALTER_MODEM_MAX_COAP_PROFILES) {
             _coapContextSet[profileId].connected = false;
             /* Clear all pending rings on connection close */
             memset(_coapContextSet[profileId].rings, 0, sizeof(_coapContextSet[profileId].rings));
             _dispatchEvent(WALTER_MODEM_COAP_EVENT_DISCONNECTED, profileId);
-    #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-            if (profileId == 0) {
-                /* our own coap profile for BlueCherry was just closed */
-                if (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
-                    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
-                }
-            }
-    #endif
         }
     }
 #endif
