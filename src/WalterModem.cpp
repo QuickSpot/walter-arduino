@@ -2697,7 +2697,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
 
         WalterModemSocket *sock = _socketGet(sockId);
         if (sock) {
-            sock->didRing = true;
+            sock->didRing = false;
         }
 
         char *commaPos = strchr(start, ',');
