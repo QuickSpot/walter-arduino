@@ -1047,6 +1047,41 @@ size_t WalterModem::_getCRLFPosition(const char *rxData, size_t len)
     return 0;
 }
 
+size_t WalterModem::_getRingUrcSize(const char *rxData, size_t len)
+{
+    char *ptr = (char *)rxData;
+    size_t remaining = len;
+
+    for (int i = 0; i < 3; ++i) {
+        ptr = (char *)memchr(ptr, ',', remaining);
+        if (!ptr)
+            return 0;
+        remaining -= (size_t)(++ptr - rxData);
+    }
+
+    return len - remaining; // offset to third comma
+}
+
+void WalterModem::_handleRingUrc(const char *rxData, size_t len)
+{
+    if (!_receiving) {
+        int profile, dataCount;
+        const char *pos = (const char *)memmem(rxData, len, "+SQNSRING:", 10);
+        if (pos != NULL && sscanf(pos, "+SQNSRING: %d,%d,", &profile, &dataCount) == 2) {
+            uint16_t ringSize = _getRingUrcSize(rxData, len);
+            if(ringSize > 0) {
+            _receiving = true;
+            _receiveExpected += dataCount + ringSize;
+            ESP_LOGV(
+                "WalterParser",
+                "Receive expected: %u",
+                static_cast<unsigned int>(_receiveExpected));
+            }
+           
+        }
+    }
+}
+
 bool WalterModem::_checkPayloadComplete()
 {
 #pragma region OK
@@ -1054,6 +1089,8 @@ bool WalterModem::_checkPayloadComplete()
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nOK\r\n", 6);
 
     if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        ESP_LOGI("WalterParser", "payload completed (OK)");
+
         _parserData.buf->size -= 6;
         _queueRxBuffer();
         _resetParseRxFlags();
@@ -1067,6 +1104,7 @@ bool WalterModem::_checkPayloadComplete()
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nERROR\r\n", 9);
 
     if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        ESP_LOGI("WalterParser", "payload received error (ERROR)");
         _parserData.buf->size -= 9;
         _resetParseRxFlags();
         _queueRxBuffer();
@@ -1080,6 +1118,7 @@ bool WalterModem::_checkPayloadComplete()
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\n+CME ERROR:", 13);
 
     if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        ESP_LOGI("WalterParser", "payload CME error (OK)");
         uint16_t size = (uint16_t)((uint8_t *)resultPos - _parserData.buf->data);
         _parserData.buf->size -= size;
         _queueRxBuffer();
@@ -1129,6 +1168,8 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
         dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
     bool hasTripleChevron =
         memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
+
+    _handleRingUrc(dataStart,dataLen);
 
     if (_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
         if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {

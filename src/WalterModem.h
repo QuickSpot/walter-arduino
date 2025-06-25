@@ -312,7 +312,7 @@ constexpr uint16_t WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN = 1220;
 /**
  * @brief The maximum size of an outgoing message payload.
  */
-constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024
+constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024;
 #endif
 /**
  * @brief Encrypted block size within flash.
@@ -3298,6 +3298,23 @@ private:
      * @param len The number of bytes in the rxData buffer.
      */
     static size_t _getCRLFPosition(const char *rxData, size_t len);
+
+    /**
+     * @brief returns the size of the ring message without the payload.
+     *
+     * @param data The incoming data buffer.
+     * @param len The number of bytes in the rxData buffer.
+     */
+    static size_t _getRingUrcSize(const char *rxData, size_t len);
+
+    /**
+     * @brief handles the special +SQNSRING: urc which contains the payload.
+     *
+     * @param data The incoming data buffer.
+     * @param len The number of bytes in the rxData buffer.
+     */
+    static void _handleRingUrc(const char *rxData, size_t len);
+
     /**
      * @brief Parse incoming modem data.
      *
@@ -4678,7 +4695,7 @@ public:
         walterModemCb cb = NULL,
         void *args = NULL,
         int socketId = -1,
-        WalterModemSocketRingMode ringMode = WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW,
+        WalterModemSocketRingMode ringMode = WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT,
         WalterModemSocketRecvMode recvMode = WALTER_MODEM_SOCKET_RECV_MODE_TEXT,
         int keepAlive = 0,
         WalterModemSocketListenMode listenMode = WALTER_MODEM_SOCKET_LISTEN_MODE_DISABLED,
@@ -4836,20 +4853,27 @@ public:
      * WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW in socketConfigExtended.
      */
     static bool socketDidRing(
-        int socketId = -1, uint8_t* dataReceived = nullptr,uint8_t targetBUfSize = 0, uint8_t *targetBuf = nullptr);
+        int socketId = -1, uint16_t* dataReceived = nullptr,uint16_t targetBUfSize = 0, uint8_t *targetBuf = nullptr);
 
     /**
      * @brief Receive data from an incomming socket connection
      *
+     * @param receiveCount the amount of bytes to receive.
      * @param targetBufSize The size of the target buffer.
      * @param targetBuf The target buffer to write the data to
      * @param socketId The socket id to receive from.
      * @param rsp Optional modem response structure to save the result in.
      *
      * @return True on success, false otherwise.
+     * 
+     * @warning the receiveCount cannot be larger then the amount of bytes left to receive (use event handler to keep track of the available bytes)
      */
     static bool socketReceive(
-        uint16_t targetBufSize, uint8_t *targetBuf, int socketId = -1, WalterModemRsp *rsp = NULL);
+        uint16_t receiveCount,
+        size_t targetBufSize,
+        uint8_t *targetBuf,
+        int socketId = -1,
+        WalterModemRsp *rsp = NULL);
 #endif
 #pragma endregion
 

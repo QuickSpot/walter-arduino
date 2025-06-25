@@ -376,7 +376,7 @@ bool WalterModem::socketListen(
 }
 
 bool WalterModem::socketDidRing(
-    int socketId, uint8_t *dataReceived, uint8_t targetBufSize, uint8_t *targetBuf)
+    int socketId, uint16_t *dataReceived, uint16_t targetBufSize, uint8_t *targetBuf)
 {
     WalterModemRsp *rsp = NULL;
     walterModemCb cb = NULL;
@@ -394,15 +394,19 @@ bool WalterModem::socketDidRing(
 
         if (targetBuf != nullptr && targetBufSize != 0) {
             memcpy(targetBuf, sock->data, targetBufSize);
-            return true;
         }
+        return true;
     }
 
     return false;
 }
 
 bool WalterModem::socketReceive(
-    uint16_t targetBufSize, uint8_t *targetBuf, int socketId, WalterModemRsp *rsp)
+    uint16_t receiveCount,
+    size_t targetBufSize,
+    uint8_t *targetBuf,
+    int socketId,
+    WalterModemRsp *rsp)
 {
     /* this is by definition a blocking call without callback.
      * it is only used when the arduino user is not taking advantage of
@@ -419,10 +423,11 @@ bool WalterModem::socketReceive(
     if (targetBufSize > 1500) {
         _returnState(WALTER_MODEM_STATE_NO_MEMORY);
     }
+
     _receiving = true;
-    _receiveExpected = sock->dataReceived;
+    _receiveExpected = receiveCount;
     _runCmd(
-        arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(targetBufSize)),
+        arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(receiveCount)),
         "OK",
         rsp,
         cb,
