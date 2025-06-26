@@ -220,7 +220,7 @@ bool WalterModem::blueCherryInit(
     _blueCherry.tlsProfileId = tlsProfileId;
 
     _blueCherry.messageOutLen = 0x0000;
-    _blueCherry.curMessageId = 0x0000;
+    _blueCherry.curMessageId = 0x0001;
     _blueCherry.lastAckedMessageId = 0x0000;
     _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
     _blueCherry.moreDataAvailable = false;
@@ -284,12 +284,6 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
     _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
     _blueCherry.lastTransmissionTime = time(NULL);
 
-    // TODO: extract CoAP payload:
-    // Step 1: Parse bytes and calculate true size
-    // Step 2: Filter based on type (ACK/CON etc)
-    // Step 3: Determine "Continue" flag/response code
-    // Step 4: Map to WalterModemRsp
-
     while (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
         if (time(NULL) - _blueCherry.lastTransmissionTime > _blueCherry.ackTimeout) {
             _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
@@ -298,16 +292,9 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
         uint8_t recvBuf[WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN] = {};
         uint16_t receivedBytes = 0;
 
-        if(socketDidRing(_blueCherry.bcSocketId, 0, nullptr, &receivedBytes)) {
-            socketReceive(sizeof(recvBuf), recvBuf, _blueCherry.bcSocketId);
-            printf("DEBUG: Received UDP CoAP Datagram message of size %d\n", receivedBytes);
+        if(socketDidRing(_blueCherry.bcSocketId, &receivedBytes)) {
+            socketReceive(receivedBytes, sizeof(recvBuf), recvBuf, _blueCherry.bcSocketId);
             _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
-
-            printf("DEBUG: Received (%u bytes):", sizeof(recvBuf));
-            for (size_t i = 0; i < sizeof(recvBuf); ++i) {
-                printf(" %02X", recvBuf[i]);
-            }
-            printf("\n");
 
             uint8_t byteOffset = 0;
             uint8_t recvHeader = recvBuf[byteOffset++];
@@ -315,6 +302,7 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
 
             if (recvVer != 1) {
                 printf("DEBUG: Invalid CoAP version: %d\n", recvVer);
+                continue;
             }
 
             uint8_t recvType = (recvHeader >> 4) & 0x03;
@@ -340,6 +328,8 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
                     _blueCherry.moreDataAvailable = true;
                     break;
             }
+
+            rsp->data.blueCherry.syncFinished = !_blueCherry.moreDataAvailable;
 
             _blueCherry.messageInLen = receivedBytes - byteOffset;
             memcpy(_blueCherry.messageIn, recvBuf + byteOffset, _blueCherry.messageInLen);
@@ -376,18 +366,15 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
 
                 msgOffset += dataLen;
             }
-
-            rsp->data.blueCherry.syncFinished = !_blueCherry.moreDataAvailable;
-
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
 
     _blueCherry.curMessageId++;
-    // if (_blueCherry.curMessageId == 0) {
-    //     /* on wrap around, skip msg id 0 which we use as a special/error value */
-    //     _blueCherry.curMessageId++;
-    // }
+    if (_blueCherry.curMessageId == 0) {
+        /* on wrap around, skip msg id 0 which we use as a special/error value */
+        _blueCherry.curMessageId++;
+    }
     _blueCherry.messageOutLen = 0;
 
     if (_blueCherry.emitErrorEvent) {
