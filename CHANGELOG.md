@@ -103,3 +103,28 @@ This is the Changelog for WalterModem
 ### Bug Fixes
 
 - fixed bug where tlsWriteCredential is private, `again`
+
+## [v1.3.2](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.3.2)
+
+### Features
+
+- feat(socket): add datareceived param to socketReceive. ([#86](https://github.com/QuickSpot/walter-esp-idf/pull/86))
+- feat(socket): add receive example + (fix required bugs) ([#88](https://github.com/QuickSpot/walter-esp-idf/pull/88))
+- feat(socket): add arduino example ([#49](https://github.com/QuickSpot/walter-arduino/pull/49))
+
+
+
+### Bug Fixes
+
+- fix(MQTT): mqttConfig function, prevent trailing commas when no TLS profile is used ([#78](https://github.com/QuickSpot/walter-esp-idf/pull/78))
+
+- fix(modem) get network reg state ([#79](https://github.com/QuickSpot/walter-esp-idf/pull/79))
+- fix(modem) compilation warnings ([#81](https://github.com/QuickSpot/walter-esp-idf/pull/81))
+- fix(modem) define should be constexpr ([#82](https://github.com/QuickSpot/walter-esp-idf/pull/82))
+- fix(socket): issue memcpy in socket urc handler ([#84](https://github.com/QuickSpot/walter-esp-idf/pull/84))
+- fix(socket): bug where didRIng flag was not reset ([#90](https://github.com/QuickSpot/walter-esp-idf/pull/90))
+- fix(socket): didRing flag not reset when reading using dataview mode ([#92](https://github.com/QuickSpot/walter-esp-idf/pull/92))
+- fix(parser): update uart_config flow control treshhold ([#93](https://github.com/QuickSpot/walter-esp-idf/pull/93))
+- fix(parser): buffer was not null on reset ([#97](https://github.com/QuickSpot/walter-esp-idf/pull/97))
+- fix(parser): update params ([#48](https://github.com/QuickSpot/walter-arduino/pull/48))
+- fix(parser): buffer was not null on reset ([#97](https://github.com/QuickSpot/walter-esp-idf/pull/97))
