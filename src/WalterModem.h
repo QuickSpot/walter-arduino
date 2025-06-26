@@ -52,7 +52,12 @@
 #include <mutex>
 
 #ifdef ARDUINO
-    #include <Arduino.h>
+    #undef ARDUINO_SERIAL_EVENT_TASK_STACK_SIZE
+    #define ARDUINO_SERIAL_EVENT_TASK_STACK_SIZE 4096
+    #undef CONFIG_ARDUINO_SERIAL_EVENT_TASK_STACK_SIZE
+    #define CONFIG_ARDUINO_SERIAL_EVENT_TASK_STACK_SIZE 4096
+#include <Arduino.h>
+
 #else
     #include "sdkconfig.h"
     #ifndef CONFIG_WALTER_MODEM_KCONFIG
