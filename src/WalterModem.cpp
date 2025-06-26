@@ -3541,13 +3541,13 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
 
 #ifdef ARDUINO
     _uart = uart;
+    _uart->setRxBufferSize(UART_BUF_SIZE * 2);
     _uart->begin(WALTER_MODEM_BAUD, SERIAL_8N1, WALTER_MODEM_PIN_RX, WALTER_MODEM_PIN_TX);
 
     _uart->setPins(
         WALTER_MODEM_PIN_RX, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_CTS, WALTER_MODEM_PIN_RTS);
 
-    _uart->setHwFlowCtrlMode();
-    _uart->setRxTimeout(1);
+    _uart->setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS,UART_BUF_SIZE * 0.8);
     _uart->onReceive(_handleRxData);
 #else
     //the initialization is done this way because otherwise we get warnings
@@ -3558,7 +3558,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
     uart_config.parity = UART_PARITY_DISABLE;
     uart_config.stop_bits = UART_STOP_BITS_1;
     uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;
-    uart_config.rx_flow_ctrl_thresh = UART_BUF_SIZE;
+    uart_config.rx_flow_ctrl_thresh = (uint8_t)(UART_BUF_SIZE * 0.8);
     uart_config.source_clk = UART_SCLK_DEFAULT;
 
     _uartNo = uartNo;
