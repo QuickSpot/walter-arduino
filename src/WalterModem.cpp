@@ -3558,7 +3558,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
     uart_config.parity = UART_PARITY_DISABLE;
     uart_config.stop_bits = UART_STOP_BITS_1;
     uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;
-    uart_config.rx_flow_ctrl_thresh = 122;
+    uart_config.rx_flow_ctrl_thresh = UART_BUF_SIZE;
     uart_config.source_clk = UART_SCLK_DEFAULT;
 
     _uartNo = uartNo;
