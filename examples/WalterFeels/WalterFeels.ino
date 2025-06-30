@@ -640,7 +640,6 @@ void setup() {
       j++;
       delay(500);
     }
-    Serial.println("");
   }
 
   uint8_t aboveThreshold = 0;
@@ -657,7 +656,7 @@ void setup() {
     posFix.satCount = 0xFF;
     lat = 0.0;
     lon = 0.0;
-    Serial.println("Could not get a valid fix");
+    Serial.println("Error: Could not get a valid fix");
   } else {
     Serial.printf("GNSS fix attempt finished:\n"
                   "  Confidence: %.02f\n"
