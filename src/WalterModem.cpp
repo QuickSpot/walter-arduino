@@ -1117,9 +1117,21 @@ bool WalterModem::_checkPayloadComplete()
 #pragma region CME_ERROR
     resultPos = (char *)memmem(
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\n+CME ERROR:", 13);
+    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+        // ESP_LOGI("WalterParser", "payload CME error (OK)");
+        uint16_t size = (uint16_t)((uint8_t *)resultPos - _parserData.buf->data);
+        _parserData.buf->size -= size;
+        _queueRxBuffer();
+        _resetParseRxFlags();
+        _parseRxData(resultPos, size);
+        return true;
+    }
+    
+    resultPos = (char *)memmem(
+        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "+CME ERROR:", 11);
 
     if (resultPos && _parserData.buf->size >= _receiveExpected) {
-        //ESP_LOGI("WalterParser", "payload CME error (OK)");
+        // ESP_LOGI("WalterParser", "payload CME error (OK)");
         uint16_t size = (uint16_t)((uint8_t *)resultPos - _parserData.buf->data);
         _parserData.buf->size -= size;
         _queueRxBuffer();
