@@ -205,7 +205,7 @@ void checkAssistanceData(WalterModemRsp *rsp, bool *updateAlmanac = NULL,
           rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate <= 0;
     }
   } else {
-    Serial.println("not available.\n");
+    Serial.println("not available.");
     if (updateEphemeris != NULL) {
       *updateEphemeris = true;
     }
@@ -238,15 +238,16 @@ bool updateGNSSAssistance() {
      */
     for (int i = 0; i < 5; ++i) {
       if (!modem.getClock(&rsp)) {
-        Serial.println("Error: Could not check the modem time");
+        Serial.println("Warning: Could not check the modem time");
         return false;
       }
 
       if (rsp.data.clock.epochTime > 0) {
-        Serial.printf("Got time from LTE: %" PRIi64 "\n", rsp.data.clock.epochTime);
+        Serial.printf("Got time from LTE: %" PRIi64 "\n",
+                      rsp.data.clock.epochTime);
         break;
       } else if (i == 4) {
-        Serial.println("Error: Could not sync time with network");
+        Serial.println("Warning: Could not sync time with network");
         return false;
       }
 
@@ -255,7 +256,7 @@ bool updateGNSSAssistance() {
   }
 
   /* Check the availability of assistance data */
-  if (!modem.getGNSSAssistanceStatus(&rsp) ||
+  if (!modem.gnssGetAssistanceStatus(&rsp) ||
       rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
     Serial.println("Error: Could not request GNSS assistance status");
     return false;
@@ -271,7 +272,7 @@ bool updateGNSSAssistance() {
   }
 
   if (updateAlmanac) {
-    if (!modem.updateGNSSAssistance(
+    if (!modem.gnssUpdateAssistance(
             WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
       Serial.println("Error: Could not update almanac data");
       return false;
@@ -279,14 +280,14 @@ bool updateGNSSAssistance() {
   }
 
   if (updateEphemeris) {
-    if (!modem.updateGNSSAssistance(
+    if (!modem.gnssUpdateAssistance(
             WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS)) {
-      Serial.println("Error: Could not update real-time ephemeris data");
+      Serial.println("Error: Could not update real-time ephemeris data\n");
       return false;
     }
   }
 
-  if (!modem.getGNSSAssistanceStatus(&rsp) ||
+  if (!modem.gnssGetAssistanceStatus(&rsp) ||
       rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
     Serial.println("Error: Could not request GNSS assistance status");
     return false;
@@ -318,7 +319,7 @@ void modem_setup() {
                                        : WALTER_MODEM_RAT_LTEM;
 
     if (!modem.setRAT(rat)) {
-      Serial.println("Could not switch radio access technology");
+      Serial.println("Error: Could not switch radio access technology (restarting...)");
       delay(1000);
       ESP.restart();
       return;
@@ -328,24 +329,16 @@ void modem_setup() {
 
   /* Set operational state to MINIMUM */
   if (modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.println("Successfully set operational state to MINIMUM\r\n");
+    Serial.println("Successfully set operational state to MINIMUM");
   } else {
-    Serial.println("Could not set operational state to MINIMUM\r\n");
+    Serial.println("Error: Could not set operational state to MINIMUM");
     return;
   }
 
-  if (!modem.configGNSS()) {
-    Serial.println("Could not configure the GNSS subsystem\n");
+  if (!modem.gnssConfig()) {
+    Serial.println("Error: Could not configure the GNSS subsystem");
     delay(1000);
     ESP.restart();
-    return;
-  }
-
-  /* Create PDP context */
-  if (modem.definePDPContext()) {
-    Serial.println("Created PDP context");
-  } else {
-    Serial.println("Error: Could not create PDP context");
     return;
   }
 
@@ -360,10 +353,10 @@ void modem_setup() {
   if (modem.configCEREGReports(
           WALTER_MODEM_CEREG_REPORTS_ENABLED_UE_PSM_WITH_LOCATION_EMM_CAUSE)) {
     Serial.println(
-        "Configured CEREG to receive PSM result allocated by the network \r\n");
+        "Configured CEREG to receive PSM result allocated by the network");
   } else {
-    Serial.println("Error: Could not configure CEREG to receive PSM result "
-                   "allocated by the network");
+    Serial.println(
+        "Error: Could not configure CEREG to receive PSM result allocated by the network");
   }
 
   /* Enable /disable eDRX */
@@ -380,13 +373,6 @@ void modem_setup() {
     return;
   }
 
-  /* Set the network operator selection to automatic */
-  if (!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println(
-        "Error: Could not set the network selection mode to automatic");
-    return;
-  }
-
   Serial.printf("Connecting to the %s network\n",
                 rat == WALTER_MODEM_RAT_LTEM ? "LTE-M" : "NB-IoT");
 
@@ -396,7 +382,7 @@ void modem_setup() {
            regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING)) {
     if (count >= 1800) {
       Serial.println(
-          "Error: Could not connect to the network, going to to try other RAT");
+          "Warning: Could not connect to the network, going to to try other RAT");
       break;
     }
 
@@ -435,7 +421,8 @@ void modem_setup() {
     /* Set the network operator selection to automatic */
     if (!modem.setNetworkSelectionMode(
             WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-      Serial.println("Error: Could not set the network selection mode to automatic");
+      Serial.println(
+          "Error: Could not set the network selection mode to automatic");
       return;
     }
 
@@ -460,17 +447,17 @@ void modem_setup() {
     }
   }
 
-  Serial.println("Error: Connected to the network");
+  Serial.println("Connected to the network");
 }
 
 void modem_transmit() {
   if (modem.socketConfig()) {
-    Serial.println("Created a new socket");
+    Serial.println("Successfully configured the socket");
   } else {
-    Serial.println("Error: Could not create a new socket");
+    Serial.println("Error: Could not configure the socket");
   }
 
-  if (modem.socketDial(SERV_ADDR, SERV_PORT)) {
+  if (modem.socketDial(SERV_ADDR, SERV_PORT, SERV_PORT)) {
     Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
   } else {
     Serial.println("Error: Could not connect UDP socket");
@@ -518,7 +505,7 @@ void setup_serial() {
 
 void setup() {
   setup_serial();
-  Serial.println("Walter feels demo firmware V2.2");
+  Serial.println("Walter feels demo firmware V2.1");
 
   /* Disable output holds */
   gpio_hold_dis((gpio_num_t)PWR_3V3_EN_PIN);
@@ -590,6 +577,7 @@ void setup() {
   digitalWrite(CO2_EN_PIN, LOW);
   Wire1.begin(CO2_SDA_PIN, CO2_SCL_PIN);
   Serial.println("Waiting for CO2 sensor to boot");
+  delay(100);
 
   bool co2_sensor_installed = scd30.begin(Wire1);
   for (int i = 0; i < 10 && !co2_sensor_installed; ++i) {
@@ -599,7 +587,7 @@ void setup() {
 
   if (!co2_sensor_installed) {
     digitalWrite(CO2_EN_PIN, HIGH);
-    Serial.println("No CO2 sensor is installed");
+    Serial.println("Warning: No CO2 sensor is installed");
   } else {
     Serial.println("Sensirion SCD30 CO2 sensor is installed");
   }
@@ -616,18 +604,18 @@ void setup() {
 
   /* Check clock and assistance data, update if required */
   if (!updateGNSSAssistance()) {
-    Serial.println("Error: Could not update GNSS assistance data.");
+    Serial.println("Error: Could not update GNSS assistance data");
     delay(1000);
     ESP.restart();
     return;
   }
 
   /* Perform GNSS positioning */
-  modem.setGNSSEventHandler(fixHandler);
+  modem.gnssSetEventHandler(fixHandler);
   fixRcvd = false;
   bool gnssSearching = false;
   for (int i = 0; i < 5; ++i) {
-    if (modem.performGNSSAction()) {
+    if (modem.gnssPerformAction()) {
       gnssSearching = true;
       break;
     }
@@ -641,8 +629,9 @@ void setup() {
 
     int j = 0;
     while (!fixRcvd) {
-      Serial.println(".");
+      Serial.print(".");
       if (j >= 240) {
+        Serial.println("");
         Serial.println("Error: Timed out while waiting for GNSS fix");
         delay(1000);
         ESP.restart();
