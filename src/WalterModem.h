@@ -2203,7 +2203,7 @@ typedef struct {
     /**
      * @brief Last incoming ring: http status code
      */
-    uint8_t httpStatus;
+    uint16_t httpStatus;
 
     /**
      * @brief Last incoming ring: length

@@ -2298,7 +2298,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         char *start = (char *)rspStr + _strLitLen("+SQNHTTPRING: ");
 
         uint8_t profileId = 0;
-        uint8_t httpStatus = 0;
+        uint16_t httpStatus = 0;
         char *contentType = NULL;
         uint16_t contentLength = 0;
 
