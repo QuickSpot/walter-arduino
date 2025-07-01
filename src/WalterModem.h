@@ -49,6 +49,7 @@
 #include <bitset>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <mutex>
 
 #ifdef ARDUINO
@@ -1922,13 +1923,6 @@ typedef struct {
     int bcSocketId = 0;
 
     /**
-     * @brief The maximum token length used for CoAP messages, in bytes.
-     * 
-     * Minimum 0, Maximum 8.
-     */
-    uint8_t coapMaxTokenLen = 0;
-
-    /**
      * @brief The TLS profile used by the BlueCherry connection.
      */
     uint8_t tlsProfileId;
@@ -1949,9 +1943,11 @@ typedef struct {
     uint8_t messageOut[WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN];
 
     /**
-     * @brief Length of the CoAP message being composed so far (containing a client id initially)
+     * @brief Length of the CoAP message being composed so far
+     * 
+     * Reserved space for CoAP headers on initial boot without token.
      */
-    uint16_t messageOutLen = 1;
+    uint16_t messageOutLen = 5;
 
     /**
      * @brief Buffer for the incoming CoAP message.
@@ -3556,19 +3552,38 @@ private:
     static bool _blueCherryProcessEvent(uint8_t *data, uint8_t len);
     
     /**
-     * @brief Connect to the bluecherry cloud by opening a UDP socket
+     * @brief Configure a UDP socket to connect to the bluecherry cloud.
      * 
-     * @return True if successfully established connection over the socket, False if no socket was
-     * available or the connection couldn't be established.
+     * @return True if successfully configured a socket, False if no socket was available.
      */
-    static bool _blueCherryCoapConnect();
+    static bool _blueCherrySocketConfigure();
+
+    /**
+     * @brief The custom socket event handler for bluecherry communications.
+     */
+    static void _blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived, uint8_t *dataBuffer);
+
+    /**
+     * @brief Write the outgoing buffer's CoAP headers and set them accordingly.
+     */
+    static void _blueCherrySetCoapHeaders(uint8_t code, uint8_t tokenLen, uint16_t msgId);
 
     /**
      * @brief Send data to bluecherry over a UDP socket using a custom tailored CoAP protocol.
      * 
      * @return True on success, False otherwise.
      */
-    static bool _blueCherryCoapSend(uint8_t code, uint16_t payloadLen, const uint8_t *payload);
+    static bool _blueCherryCoapSend(WalterModemRsp *rsp);
+
+    /**
+     * @brief Process the incoming bluecherry CoAP datagram.
+     * 
+     * This method will call _blueCherryProcessEvent if the datagram contains bluecherry events.
+     * 
+     * @return True if successfully processed the datagram, False if malformed or no data could be
+     * read from the socket.
+     */
+    static bool _blueCherryCoapProcessResponse(WalterModemRsp *rsp);
 #endif
 
 #pragma region OTA
