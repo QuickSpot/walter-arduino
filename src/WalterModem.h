@@ -851,8 +851,7 @@ typedef enum {
  */
 typedef enum {
     WALTER_MODEM_SOCKET_RING_MODE_NORMAL = 0,
-    WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT = 1,
-    WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW = 2
+    WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT = 1
 } WalterModemSocketRingMode;
 
 /**
@@ -2854,8 +2853,6 @@ private:
      * @brief boolean for when we are doing a hardware reset.
      */
     static inline bool _receiving = false;
-
-    static inline bool _receivingSocketRing = false;
 
     static inline bool _foundCRLF = false;
 

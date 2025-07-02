@@ -1047,54 +1047,8 @@ size_t WalterModem::_getCRLFPosition(const char *rxData, size_t len)
     return 0;
 }
 
-size_t WalterModem::_getRingUrcSize(const char *rxData, size_t len) {
-    const char *ptr = (const char *)rxData;
-    const char *end = ptr + len;
-
-    int commaCount = 0;
-    while (ptr < end && commaCount < 3) {
-        if (*ptr == ',') {
-        ++commaCount;
-        if (commaCount == 3) {
-            // Return offset to third comma (i.e., where ring data starts)
-            return (int)(ptr - (const char *)rxData + 1);
-        }
-        }
-        ++ptr;
-    }
-  return 0; // not found
-}
-
-void WalterModem::_handleRingUrc(const char *rxData, size_t len)
-{
-    if (!_receiving) {
-        int profile, dataCount;
-        const char *pos = (const char *)memmem(rxData, len, "+SQNSRING:", 10);
-        if (pos != NULL && sscanf(pos, "+SQNSRING: %d,%d,", &profile, &dataCount) == 2) {
-            uint16_t ringSize = _getRingUrcSize(rxData, len);
-            if(ringSize > 0) {
-            _receiving = true;
-            _receiveExpected += dataCount + ringSize;
-            _receivingSocketRing = true;
-            /*
-            ESP_LOGV(
-                "WalterParser",
-                "Receive expected: %u",
-                static_cast<unsigned int>(_receiveExpected));
-            */
-            }
-        }
-    }
-}
-
 bool WalterModem::_checkPayloadComplete()
 {
-    if (_receivingSocketRing && _parserData.buf->size >= _receiveExpected) {
-        _queueRxBuffer();
-        _resetParseRxFlags();
-        return true;
-    }
-
 #pragma region OK
     char *resultPos = (char *)memmem(
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nOK\r\n", 6);
