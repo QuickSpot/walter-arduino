@@ -1075,6 +1075,7 @@ void WalterModem::_handleRingUrc(const char *rxData, size_t len)
             if(ringSize > 0) {
             _receiving = true;
             _receiveExpected += dataCount + ringSize;
+            _receivingSocketRing = true;
             /*
             ESP_LOGV(
                 "WalterParser",
@@ -1158,6 +1159,7 @@ void WalterModem::_resetParseRxFlags()
     _receiving = false;
     _foundCRLF = false;
     _receiveExpected = 0;
+    _receivingSocketRing = false;
 }
 
 void WalterModem::_parseRxData(char *rxData, size_t len)
@@ -1198,8 +1200,9 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
             _receiveExpected += CRLFPos;
             /* we need to keep append the CRLFPos for correct _receivExpected usage*/
         }
-        _foundCRLF = true;
         if (_receiving) {
+            _foundCRLF = true;
+
             /* We are receiving payload data*/
             _addATBytesToBuffer(dataStart, dataLen);
             _checkPayloadComplete();
