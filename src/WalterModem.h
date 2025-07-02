@@ -2855,6 +2855,8 @@ private:
      */
     static inline bool _receiving = false;
 
+    static inline bool _receivingSocketRing = false;
+
     static inline bool _foundCRLF = false;
 
     static inline size_t currentCRLF = 0;

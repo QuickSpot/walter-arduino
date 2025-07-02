@@ -1047,19 +1047,22 @@ size_t WalterModem::_getCRLFPosition(const char *rxData, size_t len)
     return 0;
 }
 
-size_t WalterModem::_getRingUrcSize(const char *rxData, size_t len)
-{
-    char *ptr = (char *)rxData;
-    size_t remaining = len;
+size_t WalterModem::_getRingUrcSize(const char *rxData, size_t len) {
+    const char *ptr = (const char *)rxData;
+    const char *end = ptr + len;
 
-    for (int i = 0; i < 3; ++i) {
-        ptr = (char *)memchr(ptr, ',', remaining);
-        if (!ptr)
-            return 0;
-        remaining -= (size_t)(++ptr - rxData);
+    int commaCount = 0;
+    while (ptr < end && commaCount < 3) {
+        if (*ptr == ',') {
+        ++commaCount;
+        if (commaCount == 3) {
+            // Return offset to third comma (i.e., where ring data starts)
+            return (int)(ptr - (const char *)rxData + 1);
+        }
+        }
+        ++ptr;
     }
-
-    return len - remaining; // offset to third comma
+  return 0; // not found
 }
 
 void WalterModem::_handleRingUrc(const char *rxData, size_t len)
@@ -1085,6 +1088,12 @@ void WalterModem::_handleRingUrc(const char *rxData, size_t len)
 
 bool WalterModem::_checkPayloadComplete()
 {
+    if (_receivingSocketRing && _parserData.buf->size >= _receiveExpected) {
+        _queueRxBuffer();
+        _resetParseRxFlags();
+        return true;
+    }
+
 #pragma region OK
     char *resultPos = (char *)memmem(
         &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nOK\r\n", 6);
