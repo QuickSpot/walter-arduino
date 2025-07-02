@@ -77,6 +77,11 @@ CONFIG_INT(SERV_PORT, 80)
 static constexpr const char *TAG = "socket_example";
 
 /**
+ * @brief The serial interface to talk to the modem.
+ */
+#define ModemSerial Serial2
+
+/**
  * @brief The modem instance.
  */
 WalterModem modem;
@@ -185,7 +190,7 @@ void setup() {
                 dataBuf[5]);
 
   /* Initialize the modem */
-  if (WalterModem::begin(UART_NUM_1)) {
+  if (WalterModem::begin(&ModemSerial)) {
     Serial.println("Successfully initialized modem");
   } else {
     Serial.println("Error: Could not initialize modem");
