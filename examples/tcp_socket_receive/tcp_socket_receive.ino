@@ -166,16 +166,6 @@ bool lteConnect() {
   return waitForNetwork();
 }
 
-void mySocketEventHandler(WalterModemSocketEvent ev, int socketId,
-                          uint16_t dataReceived, uint8_t *dataBuffer,
-                          void *args) {
-  if (ev == WALTER_MODEM_SOCKET_EVENT_RING) {
-    Serial.print("received ring message (");
-    Serial.print(dataReceived);
-    Serial.println(" bytes)");
-    dataAvailable += dataReceived;
-  }
-}
 
 void setup() {
   Serial.begin(115200);
@@ -218,8 +208,6 @@ void setup() {
     return;
   }
 
-  modem.socketSetEventHandler(mySocketEventHandler, NULL);
-
   /* Connect to the demo server */
   if (modem.socketDial(SERV_ADDR, SERV_PORT, 0, NULL, NULL, NULL,
                        WALTER_MODEM_SOCKET_PROTO_TCP)) {
@@ -240,19 +228,18 @@ void loop() {
     }
 
     vTaskDelay(pdMS_TO_TICKS(SEND_DELAY_MS));
-    while (dataAvailable > 0) {
-        // 1500 is the max amount of bytes the modem can read at a time.
-        uint16_t dataToRead = (dataAvailable > 1500) ? 1500 : dataAvailable;
+    while (modem.socketAvailable() > 0) {
+      // 1500 is the max amount of bytes the modem can read at a time.
+      uint16_t dataToRead =
+          (modem.socketAvailable() > 1500) ? 1500 : modem.socketAvailable();
 
-        Serial.print("Reading: ");
-        Serial.print(dataToRead);
-        Serial.println(" bytes");
+      Serial.print("Reading: ");
+      Serial.print(dataToRead);
+      Serial.println(" bytes");
 
-        if (modem.socketReceive(dataToRead, sizeof(dataBuf), dataBuf)) {
-        dataAvailable -= dataToRead;
-
+      if (modem.socketReceive(dataToRead, sizeof(dataBuf), dataBuf)) {
         Serial.print("Remaining: ");
-        Serial.print(dataAvailable);
+        Serial.print(modem.socketAvailable());
         Serial.print(" | Data: ");
         Serial.write(dataBuf, dataToRead);
         Serial.println();

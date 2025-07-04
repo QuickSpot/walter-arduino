@@ -81,6 +81,16 @@ uint8_t dataBuf[8] = {0};
  */
 uint16_t counter = 0;
 
+void mySocketEventHandler(WalterModemSocketEvent ev, int socketId,
+                          uint16_t dataReceived, uint8_t *dataBuffer,
+                          void *args) {
+  if (ev == WALTER_MODEM_SOCKET_EVENT_RING) {
+    Serial.printf("received ring message (%u bytes)\r\n", dataReceived);
+    Serial.printf("Data: %.*s\r\n", dataReceived,
+                  reinterpret_cast<const char *>(dataBuffer));
+  }
+}
+
 /**
  * @brief This function checks if we are connected to the lte network
  *
@@ -100,8 +110,8 @@ bool waitForNetwork() {
   /* Wait for the network to become available */
   int timeout = 0;
   while (!lteConnected()) {
-    delay(100);
-    timeout += 100;
+    delay(1000);
+    timeout += 1000;
     if (timeout > 300000)
       return false;
   }
@@ -173,6 +183,8 @@ void setup() {
     Serial.println("Error: Could Not Connect to LTE");
     return;
   }
+
+  modem.socketSetEventHandler(mySocketEventHandler, NULL);
 
   /* configure the socket */
   if (modem.socketConfig()) {

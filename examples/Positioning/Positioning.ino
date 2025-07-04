@@ -129,7 +129,7 @@ bool lteConnect()
   while(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
           regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
   {
-    delay(100);
+    delay(1000);
     regState = modem.getNetworkRegState();
   }
 
