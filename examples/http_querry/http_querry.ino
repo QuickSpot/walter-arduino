@@ -95,8 +95,8 @@ bool waitForNetwork() {
   /* Wait for the network to become available */
   int timeout = 0;
   while (!lteConnected()) {
-    delay(100);
-    timeout += 100;
+    delay(1000);
+    timeout += 1000;
     if (timeout > 300000)
       return false;
   }
