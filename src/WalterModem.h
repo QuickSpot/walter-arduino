@@ -239,6 +239,17 @@ CONFIG_UINT8(WALTER_MODEM_MAX_TLS_PROFILES, 6)
  * @brief The maximum number of sockets.
  */
 CONFIG_UINT8(WALTER_MODEM_MAX_SOCKETS, 6)
+
+/**
+ * @brief The maximum number of rings a socket profile will store.
+ */
+CONFIG_UINT8(WALTER_MODEM_MAX_SOCKET_RINGS, 8)
+
+/**
+ * @brief The size in bytes of the task queue.
+ */
+#define WALTER_MODEM_SOCKET_RING_QUEUE_SIZE \
+    WALTER_MODEM_MAX_SOCKET_RINGS * sizeof(WalterModemSocketRing)
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
@@ -2225,6 +2236,21 @@ typedef struct {
 #pragma region SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 /**
+ * @brief this structure represents a modem socket ring URC
+ */
+typedef struct {
+    /**
+     * @brief profile id of the ring
+     */
+    uint8_t profileId = 0;
+
+    /**
+     * @brief size of the ring message (data amount)
+     */
+    uint16_t ringSize = 0;
+} WalterModemSocketRing;
+
+/**
  * @brief This structure represents a socket.
  */
 typedef struct {
@@ -2297,19 +2323,9 @@ typedef struct {
     uint16_t localPort = 0;
 
     /**
-     * @brief Has the listening socket received a ring URC.
+     * @brief amount of data available from the modem.
      */
-    bool didRing = false;
-
-    /**
-     * @brief Data amount received (0-1500)
-     */
-    uint16_t dataReceived;
-
-    /**
-     * @brief Data received (0-1500)
-     */
-    uint8_t data[1500];
+    uint16_t dataAvailable = 0;
 } WalterModemSocket;
 #endif
 #pragma endregion
@@ -2769,6 +2785,23 @@ typedef struct {
     uint8_t mem[WALTER_MODEM_TASK_QUEUE_SIZE] = {0};
 } WalterModemTaskQueue;
 
+typedef struct {
+    /**
+     * @brief The queue handle.
+     */
+    QueueHandle_t handle;
+
+    /**
+     * @brief The memory handle.
+     */
+    StaticQueue_t memHandle;
+
+    /**
+     * @brief The statically allocated queue memory.
+     */
+    uint8_t mem[WALTER_MODEM_SOCKET_RING_QUEUE_SIZE] = {0};
+} WalterModemSocketRingQueue;
+
 /**
  * @brief This structure represents the command queue. This queue is used inside the libraries
  * processing task to manage incoming and pending commands.
@@ -3024,6 +3057,26 @@ private:
      * use.
      */
     static inline WalterModemSocket *_socket = NULL;
+
+    /**
+     * @brief The task in which AT commands and responses are handled.
+     */
+    static inline TaskHandle_t _ringQueueTask;
+
+    /**
+     * @brief Handle used to manage the queue processing task stack.
+     */
+    static inline StaticTask_t _ringQueueTaskBuf;
+
+    /**
+     * @brief The statically allocated queue processing task stack memory.
+     */
+    static inline StackType_t _ringQueueTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
+
+    /**
+     * @brief The Socket ring URC queue.
+     */
+    static inline WalterModemSocketRingQueue _ringQueue = {};
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
@@ -3235,6 +3288,17 @@ private:
      * @return None.
      */
     static void _socketRelease(WalterModemSocket *sock);
+
+    /**
+     * @brief This is the entrypoint of the ring queue processing task.
+     *
+     * The WalterModem library relies on a seperate task for handeling ring messages from the modem
+     *
+     * @param args A NULL pointer.
+     *
+     * @return None.
+     */
+    static void _ringQueueProcessingTask(void *args);
 #endif
 #pragma endregion
 
@@ -3302,22 +3366,6 @@ private:
      * @param len The number of bytes in the rxData buffer.
      */
     static size_t _getCRLFPosition(const char *rxData, size_t len);
-
-    /**
-     * @brief returns the size of the ring message without the payload.
-     *
-     * @param data The incoming data buffer.
-     * @param len The number of bytes in the rxData buffer.
-     */
-    static size_t _getRingUrcSize(const char *rxData, size_t len);
-
-    /**
-     * @brief handles the special +SQNSRING: urc which contains the payload.
-     *
-     * @param data The incoming data buffer.
-     * @param len The number of bytes in the rxData buffer.
-     */
-    static void _handleRingUrc(const char *rxData, size_t len);
 
     /**
      * @brief Parse incoming modem data.
@@ -4844,20 +4892,7 @@ public:
         WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
         int socketListenPort = 0);
 
-    /**
-     * @brief check if the Socket received a Ring URC.
-     *
-     * @param socketId  The id of the socket to wait for the ring or -1 to re-use the last one.
-     * @param targetBufSize The size of the targetBuffer.
-     * @param targetBuf The targetBuffer to store the received data in.abort
-     *
-     * @return True on success, false otherwise.
-     *
-     * @warning The target buffer will only be filled when ringMode is set to
-     * WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW in socketConfigExtended.
-     */
-    static bool socketDidRing(
-        int socketId = -1, uint16_t* dataReceived = nullptr,uint16_t targetBUfSize = 0, uint8_t *targetBuf = nullptr);
+    static uint16_t socketAvailable(int socketId = -1);
 
     /**
      * @brief Receive data from an incomming socket connection
@@ -4877,7 +4912,8 @@ public:
         size_t targetBufSize,
         uint8_t *targetBuf,
         int socketId = -1,
-        WalterModemRsp *rsp = NULL);
+        WalterModemRsp *rsp = NULL
+    );
 #endif
 #pragma endregion
 

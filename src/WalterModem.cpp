@@ -1113,7 +1113,6 @@ void WalterModem::_resetParseRxFlags()
     _receiving = false;
     _foundCRLF = false;
     _receiveExpected = 0;
-    _receivingSocketRing = false;
 }
 
 void WalterModem::_parseRxData(char *rxData, size_t len)
@@ -1147,8 +1146,6 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
     bool hasTripleChevron =
         memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
 
-    _handleRingUrc(dataStart,dataLen);
-
     if (_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
         if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {
             _receiveExpected += CRLFPos;
@@ -1170,16 +1167,22 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
             _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
         }
     } else if (dataLen > 0) {
-        /* We are receiving a partial message or a data PROMPT*/
-        bool dataPrompt = dataStart[0] == '>';
-        bool httpPrompt = dataLen >= 3
-            ? dataStart[0] == '>' && dataStart[1] == '>' && dataStart[2] == '>'
-            : false;
 
         _addATBytesToBuffer(dataStart, dataLen);
 
+        /* We are receiving a partial message or a data PROMPT*/
+        bool dataPrompt = (_parserData.buf->size >= 2)
+            ? (_parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ')
+            : false;
+
+        bool httpPrompt = (_parserData.buf->size >= 3)
+            ? (_parserData.buf->data[0] == '>' && _parserData.buf->data[1] == '>' &&
+               _parserData.buf->data[2] == '>')
+            : false;
+
         if (dataPrompt || httpPrompt) {
             _queueRxBuffer();
+            _resetParseRxFlags();
         }
     }
 }
@@ -2643,23 +2646,28 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         int sockId = atoi(start);
 
         WalterModemSocket *sock = _socketGet(sockId);
-        if (sock) {
-            sock->didRing = true;
-        }
+        uint16_t dataReceived = 0;
+       //TODO store ring
 
         char *commaPos = strchr(start, ',');
         if (commaPos) {
             *commaPos = '\0';
             start = ++commaPos;
-            sock->dataReceived = atoi(commaPos);
-            commaPos = strchr(commaPos, ',');
+            dataReceived = atoi(commaPos);
         }
+        WalterModemEventHandler *handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
+        if (handler->socketHandler != nullptr) {
+            WalterModemSocketRing ring{};
+            ring.profileId = sockId;
+            ring.ringSize = dataReceived;
+            sock->dataAvailable += dataReceived;
+            if (xQueueSend(_ringQueue.handle,&ring,0))
+            {
 
-        if (commaPos) {
-            memcpy(sock->data, ++commaPos, sock->dataReceived);
+            }
+        } else {
+            sock->dataAvailable += dataReceived;
         }
-
-        _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, sock->id, sock->dataReceived, sock->data);
     }
 
     if (_buffStartsWith(buff, "+SQNSRECV: ")) {
@@ -2673,25 +2681,27 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         char *start = (char *)rspStr + _strLitLen("+SQNSRECV: ");
 
         int sockId = atoi(start);
+        uint16_t dataReceived = 0;
 
         WalterModemSocket *sock = _socketGet(sockId);
-        if (sock) {
-            sock->didRing = false;
-        }
 
         char *commaPos = strchr(start, ',');
         if (commaPos) {
             *commaPos = '\0';
             start = ++commaPos;
-            sock->dataReceived = atoi(start);
+            dataReceived = atoi(start);
         }
 
+        WalterModemEventHandler *handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
+        if (handler->socketHandler != nullptr) {
+            sock->dataAvailable -= dataReceived;
+        }
         /*
          * If data and dataSize are null, we cannot store the result. We can only hope the user
          * is using a callback which has access to the raw buffer.
          */
         if (cmd->data != nullptr) {
-            memcpy(cmd->data, payload, sock->dataReceived);
+            memcpy(cmd->data, payload, dataReceived);
         }
     }
 #endif
@@ -3513,6 +3523,12 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         sizeof(WalterModemTaskQueueItem),
         _taskQueue.mem,
         &(_taskQueue.memHandle));
+    
+    _ringQueue.handle = xQueueCreateStatic(
+        WALTER_MODEM_MAX_SOCKET_RINGS,
+        sizeof(WalterModemSocketRing),
+        _ringQueue.mem,
+        &(_ringQueue.memHandle));
 
     gpio_set_direction((gpio_num_t)WALTER_MODEM_PIN_RESET, GPIO_MODE_OUTPUT);
     gpio_set_pull_mode((gpio_num_t)WALTER_MODEM_PIN_RESET, GPIO_FLOATING);
@@ -3559,6 +3575,8 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         _rxTaskStack,
         &_rxTaskBuf,
         0);
+
+    
 #endif
 /* the queueProcessingTask cannot be on the same level as the UART task otherwise a modem freeze can
  * occur */
@@ -3583,7 +3601,17 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
         &_queueTaskBuf,
         0);
 #endif
-
+    #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+    _queueTask = xTaskCreateStaticPinnedToCore(
+        _ringQueueProcessingTask,
+        "ringQueueProcessingTask",
+        WALTER_MODEM_TASK_STACK_SIZE,
+        NULL,
+        4,
+        _ringQueueTaskStack,
+        &_ringQueueTaskBuf,
+        0);
+    #endif
     esp_sleep_wakeup_cause_t wakeupReason;
     wakeupReason = esp_sleep_get_wakeup_cause();
 

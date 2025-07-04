@@ -92,6 +92,21 @@ void WalterModem::_socketRelease(WalterModemSocket *sock)
     sock->state = WALTER_MODEM_SOCKET_STATE_FREE;
 }
 
+void WalterModem::_ringQueueProcessingTask(void *args)
+{
+    WalterModemSocketRing ring{};
+    TickType_t blockTime = pdMS_TO_TICKS(1000);
+    uint8_t data[1500];
+    while(true) 
+    {
+        if (xQueueReceive(_ringQueue.handle, &ring, blockTime) == pdTRUE) {
+            socketReceive(ring.ringSize, sizeof(data), data, ring.profileId);
+            _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, ring.profileId,ring.ringSize, data);
+            // TODO Bluecherry custom eventHandler goes here.
+        }
+    }
+}
+
 void WalterModem::_dispatchEvent(
     WalterModemSocketEvent event, int socketId, uint16_t dataReceived, uint8_t *dataBuffer)
 {
@@ -375,30 +390,13 @@ bool WalterModem::socketListen(
     }
 }
 
-bool WalterModem::socketDidRing(
-    int socketId, uint16_t *dataReceived, uint16_t targetBufSize, uint8_t *targetBuf)
+uint16_t WalterModem::socketAvailable(int socketId)
 {
-    WalterModemRsp *rsp = NULL;
-    walterModemCb cb = NULL;
-    void *args = NULL;
-
     WalterModemSocket *sock = _socketGet(socketId);
     if (sock == NULL) {
-        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
+        return 0;
     }
-
-    if (sock->didRing) {
-        if (dataReceived != nullptr) {
-            *dataReceived = sock->dataReceived;
-        }
-
-        if (targetBuf != nullptr && targetBufSize != 0) {
-            memcpy(targetBuf, sock->data, targetBufSize);
-        }
-        return true;
-    }
-
-    return false;
+    return  sock->dataAvailable;
 }
 
 bool WalterModem::socketReceive(
@@ -414,18 +412,25 @@ bool WalterModem::socketReceive(
      */
     walterModemCb cb = NULL;
     void *args = NULL;
-
+    uint16_t dataToRead;
     WalterModemSocket *sock = _socketGet(socketId);
     if (sock == NULL) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
 
-    if (targetBufSize > 1500) {
+    if (targetBufSize < receiveCount || receiveCount > 1500) {
         _returnState(WALTER_MODEM_STATE_NO_MEMORY);
     }
 
+    dataToRead = (receiveCount > sock->dataAvailable) ? sock->dataAvailable : receiveCount;
+
+    if (dataToRead == 0) {
+        return true;
+    }
+
     _receiving = true;
-    _receiveExpected = receiveCount;
+    _receiveExpected = dataToRead;
+    sock->dataAvailable -= dataToRead;
     _runCmd(
         arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(receiveCount)),
         "OK",
@@ -445,5 +450,6 @@ void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, v
     _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].socketHandler = handler;
     _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].args = args;
 }
+
     #pragma endregion
 #endif
