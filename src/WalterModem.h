@@ -4349,6 +4349,7 @@ public:
         WalterModemHttpQueryCmd httpQueryCmd = WALTER_MODEM_HTTP_QUERY_CMD_GET,
         char *contentTypeBuf = NULL,
         uint16_t contentTypeBufSize = 0,
+        const char* extraHeaderLine = NULL,
         WalterModemRsp *rsp = NULL,
         walterModemCb cb = NULL,
         void *args = NULL);

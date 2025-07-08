@@ -185,6 +185,7 @@ bool WalterModem::httpQuery(
     WalterModemHttpQueryCmd httpQueryCmd,
     char *contentTypeBuf,
     uint16_t contentTypeBufSize,
+    const char* extraHeaderLine,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args)
@@ -211,6 +212,10 @@ bool WalterModem::httpQuery(
     WalterModemBuffer *stringsBuffer = _getFreeBuffer();
     stringsBuffer->size += sprintf(
         (char *)stringsBuffer->data, "AT+SQNHTTPQRY=%d,%d,\"%s\"", profileId, httpQueryCmd, uri);
+
+    if(extraHeaderLine != NULL && strlen(extraHeaderLine) > 0) {
+        stringsBuffer->size += sprintf((char *)stringsBuffer->data + stringsBuffer->size, ",\"%s\"", extraHeaderLine);
+    }
 
     _runCmd(
         arr((const char *)stringsBuffer->data),
