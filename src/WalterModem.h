@@ -3571,19 +3571,17 @@ private:
     /**
      * @brief Send data to bluecherry over a UDP socket using a custom tailored CoAP protocol.
      * 
-     * @return True on success, False otherwise.
+     * @return True on successfull transmission and received acknowledgement. False when no
+     * acknowledgement was received in the CoAP timeout period.
      */
-    static bool _blueCherryCoapSend(WalterModemRsp *rsp);
+    static bool _blueCherryCoapSend();
 
     /**
      * @brief Process the incoming bluecherry CoAP datagram.
-     * 
-     * This method will call _blueCherryProcessEvent if the datagram contains bluecherry events.
-     * 
-     * @return True if successfully processed the datagram, False if malformed or no data could be
-     * read from the socket.
+     *  
+     * @return True if successfully processed the datagram, False if malformed.
      */
-    static bool _blueCherryCoapProcessResponse(WalterModemRsp *rsp);
+    static bool _blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t *dataBuffer);
 #endif
 
 #pragma region OTA

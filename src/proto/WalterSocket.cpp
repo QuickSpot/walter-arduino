@@ -102,7 +102,11 @@ void WalterModem::_ringQueueProcessingTask(void *args)
         if (xQueueReceive(_ringQueue.handle, &ring, blockTime) == pdTRUE) {
             socketReceive(ring.ringSize, sizeof(data), data, ring.profileId);
             _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, ring.profileId,ring.ringSize, data);
-            // TODO Bluecherry custom eventHandler goes here.
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+            if(ring.profileId == _blueCherry.bcSocketId) {
+                _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, ring.ringSize, data);
+            }
+#endif
         }
     }
 }

@@ -2573,7 +2573,11 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
             dataReceived = atoi(commaPos);
         }
         WalterModemEventHandler *handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
-        if (handler->socketHandler != nullptr) {
+        if (handler->socketHandler != nullptr
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+            || _blueCherry.bcSocketId != 0
+#endif
+        ) {
             WalterModemSocketRing ring{};
             ring.profileId = sockId;
             ring.ringSize = dataReceived;
