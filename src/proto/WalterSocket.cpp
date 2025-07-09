@@ -126,15 +126,6 @@ void WalterModem::_dispatchEvent(
     #pragma endregion
 
     #pragma region PUBLIC_METHODS
-int WalterModem::reserveSocketId() {
-    WalterModemSocket *sock = _socketReserve();
-    if (sock == NULL) {
-        return NULL;
-    }
-
-    return sock->id;
-}
-
 bool WalterModem::socketConfig(
     WalterModemRsp *rsp,
     walterModemCb cb,

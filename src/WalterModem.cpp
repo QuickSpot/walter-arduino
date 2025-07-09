@@ -3171,8 +3171,6 @@ bool WalterModem::_processMotaChunkEvent(uint8_t *data, uint16_t len)
 
 bool WalterModem::_processMotaFinishEvent(void)
 {
-    char *atCmd[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = {NULL};
-
     if (!_blueCherry.otaSize || _blueCherry.otaProgress != _blueCherry.otaSize || !_mota_file_ptr) {
         ESP_LOGD("WalterModem", "MOTA error: incomplete or missing dup file");
         return true;
@@ -3658,7 +3656,7 @@ bool WalterModem::softReset(WalterModemRsp *rsp, walterModemCb cb, void *args)
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-    _blueCherry.bcSocketId = NULL;
+    _blueCherry.bcSocketId = 0;
 #endif
     _operator = {};
 
@@ -3722,7 +3720,7 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-    _blueCherry.bcSocketId = NULL;
+    _blueCherry.bcSocketId = 0;
 #endif
     _operator = {};
 

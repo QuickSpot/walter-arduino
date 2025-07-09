@@ -4757,17 +4757,6 @@ public:
 
 #pragma region SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-    
-    /**
-     * @brief Reserve a socket and return it's identifier number.
-     * 
-     * This function will reserve a socket identification number, the socket will not yet be
-     * configured in the modem and expects to be used later for configuration.
-     *
-     * @return Socket ID on success (1-6), NULL if no socket was available. 
-     */
-    static int reserveSocketId();
-
     /**
      * @brief Configure a new socket in a certain PDP context.
      *

@@ -90,12 +90,12 @@ bool WalterModem::_blueCherryProcessEvent(uint8_t *data, uint8_t len)
 
 bool WalterModem::_blueCherrySocketConfigure()
 {
-    if(_blueCherry.bcSocketId == NULL) {
-        _blueCherry.bcSocketId = reserveSocketId();
-
-        if(_blueCherry.bcSocketId == NULL) {
+    if(_blueCherry.bcSocketId == 0) {
+        WalterModemSocket *sock = _socketReserve();
+        if (sock == NULL) {
             return false;
         }
+        _blueCherry.bcSocketId = sock->id;
 
         if(!socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId)) {
             return false;
@@ -126,6 +126,10 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
         case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
             // Dial the host over the socket if the connection was not yet established or dropped.
             socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port);
+        case WALTER_MODEM_SOCKET_EVENT_CONNECTED:
+        default:
+            break;
+        
     }
 }
 
@@ -153,8 +157,6 @@ bool WalterModem::_blueCherryCoapSend()
         lastAcked -= 0xffff;
     }
     uint8_t nrMissed = _blueCherry.curMessageId - lastAcked - 1;
-
-    WalterModemSocket *sock = _socketGet(_blueCherry.bcSocketId);
 
     _blueCherrySetCoapHeaders(nrMissed, 0, _blueCherry.curMessageId);
 
@@ -209,7 +211,9 @@ bool WalterModem::_blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t 
     uint8_t recvTokenLen = recvHeader & 0x0F;
     byteOffset += recvTokenLen;
     uint8_t recvCode = dataBuffer[byteOffset++];
-    uint16_t recvMsgId = (dataBuffer[byteOffset++] << 8) | dataBuffer[byteOffset++];
+    uint8_t highByteRecvMsgId = dataBuffer[byteOffset++];
+    uint8_t lowByteRecvMsgId  = dataBuffer[byteOffset++];
+    uint16_t recvMsgId = ((uint16_t)highByteRecvMsgId << 8) | lowByteRecvMsgId;
     byteOffset++; // Skip the 0xff payload marker
 
     if (recvType == WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK) {
