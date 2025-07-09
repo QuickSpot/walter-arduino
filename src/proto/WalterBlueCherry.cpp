@@ -96,20 +96,20 @@ bool WalterModem::_blueCherrySocketConfigure()
         if(_blueCherry.bcSocketId == NULL) {
             return false;
         }
-    }
 
-    if(!socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId)) {
-        return false;
+        if(!socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId)) {
+            return false;
+        }
+        if(!socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId, WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT)) {
+            return false;
+        }
+        if(!socketConfigTLS(_blueCherry.bcSocketId, _blueCherry.tlsProfileId, true)) {
+            return false;
+        }
+        if(!socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port)) {
+            return false;
+        }
     }
-
-    if(!socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId, WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT)) {
-        return false;
-    }
-
-    if(!socketConfigTLS(_blueCherry.bcSocketId, _blueCherry.tlsProfileId, true)) {
-        return false;
-    }
-
     return true;
 }
 
@@ -123,6 +123,9 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
                 _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
             }
             break;
+        case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
+            // Dial the host over the socket if the connection was not yet established or dropped.
+            socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port);
     }
 }
 
@@ -159,14 +162,6 @@ bool WalterModem::_blueCherryCoapSend()
     _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
 
     for (uint8_t attempt = 1; attempt <= MAX_RETRANSMIT; ++attempt) {
-
-        // Dial the host over the socket if the connection was not yet established or dropped.
-        if (sock->state != WALTER_MODEM_SOCKET_STATE_OPENED) {
-            if(!socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port)) {
-                return false;
-            }
-        }
-
         _blueCherry.lastTransmissionTime = time(NULL);
 
         socketSend(_blueCherry.messageOut,
@@ -294,14 +289,14 @@ bool WalterModem::blueCherryIsProvisioned()
 bool WalterModem::blueCherryInit(
     uint8_t tlsProfileId, uint8_t *otaBuffer, WalterModemRsp *rsp, uint16_t ackTimeout)
 {
-    if (!blueCherryIsProvisioned() ||
+    if ((!blueCherryIsProvisioned() ||
         !tlsConfigProfile(
             tlsProfileId,
             WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
             WALTER_MODEM_TLS_VERSION_12,
             6,
             5,
-            0)) {
+            0))) {
         _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED;
 
         if(rsp) {

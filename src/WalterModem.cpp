@@ -146,6 +146,10 @@ RTC_DATA_ATTR WalterModemMqttTopic _mqttTopicSetRTC[WALTER_MODEM_MQTT_MAX_TOPICS
 #endif
 #pragma endregion
 
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+RTC_DATA_ATTR WalterModemSocket _socketCtxSetRTC[WALTER_MODEM_MAX_SOCKETS] = {};
+#endif
+
 #pragma region HELPER_FUNCTIONS
 /**
  * @brief Convert a digit to a string literal.
@@ -2554,6 +2558,11 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         if(sock) {
             _socketRelease(sock);
             _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, sock->id, 0, nullptr);
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+            if(sockId == _blueCherry.bcSocketId) {
+                _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, 0, nullptr);
+            }
+#endif
         }
     }
 
@@ -3379,6 +3388,11 @@ void WalterModem::_sleepPrepare()
         _mqttTopicSetRTC, _mqttTopics, WALTER_MODEM_MQTT_MAX_TOPICS * sizeof(WalterModemMqttTopic));
 #endif
 
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+ memcpy(
+        _socketCtxSetRTC, _socketSet, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
+#endif
+
 #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
     blueCherryRTC = _blueCherry;
 #endif
@@ -3405,6 +3419,11 @@ void WalterModem::_sleepWakeup()
             _pdpCtx = _pdpCtxSet + i;
         }
     }
+
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+ memcpy(
+        _socketSet, _socketCtxSetRTC, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
+#endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
     _blueCherry = blueCherryRTC;
@@ -3629,6 +3648,10 @@ bool WalterModem::softReset(WalterModemRsp *rsp, walterModemCb cb, void *args)
         _mqttRings[i] = {};
     }
 #endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+    _blueCherry.bcSocketId = NULL;
+#endif
     _operator = {};
 
     _returnAfterReply();
@@ -3688,6 +3711,10 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     for (int i = 0; i < WALTER_MODEM_MQTT_MAX_PENDING_RINGS; i++) {
         _mqttRings[i] = {};
     }
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+    _blueCherry.bcSocketId = NULL;
 #endif
     _operator = {};
 

@@ -346,7 +346,7 @@ bool WalterModem::socketSend(
     if (sock == NULL) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
-
+    
     _runCmd(
         arr("AT+SQNSSENDEXT=", _digitStr(sock->id), ",", _atNum(dataSize), ",", _digitStr(rai)),
         "OK",
