@@ -72,6 +72,14 @@ byte otaBuffer[SPI_FLASH_BLOCK_SIZE] = {0};
 // The modem instance
 WalterModem modem;
 
+/**
+ * @brief The binary configuration settings for PSM.
+ * These can be calculated using e.g.
+ * https://www.soracom.io/psm-calculation-tool/
+ */
+const char *psmActive = "00000001";
+const char *psmTAU = "00000110";
+
 // The BlueCherry CA root + intermediate certificate used for CoAP DTLS
 // communication
 const char *bc_ca_cert = "-----BEGIN CERTIFICATE-----\r\n\
@@ -130,9 +138,18 @@ bool lteConnect() {
     return false;
   }
 
+  delay(1000);
+
+  if (!modem.setNetworkAttachmentState(false)) {
+    Serial.println("Error: Could not set the modem attachment state to false");
+    return false;
+  }
+
+  delay(500);
+
   // Set the network operator selection to automatic
-  if (!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println("Error: Could not set the network selection mode to automatic");
+  if (!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_MANUAL, "20601", WALTER_MODEM_OPERATOR_FORMAT_NUMERIC)) {
+    Serial.println("Error: Could not set the network selection mode to manual");
     return false;
   }
 
@@ -181,6 +198,7 @@ void syncBlueCherry() {
           rsp.data.blueCherry.state);
       modem.reset();
       lteConnect();
+      modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer);
       return;
     }
 
@@ -209,7 +227,7 @@ void syncBlueCherry() {
 void setup() {
   Serial.begin(115200);
   delay(100);
-  Serial.println("Walter BlueCherry ZTP + OTA example.");
+  Serial.println("Walter BlueCherry ZTP + OTA + PSM example.");
 
   // Modem initialization
   if (!modem.begin(&ModemSerial)) {
@@ -219,100 +237,107 @@ void setup() {
     ESP.restart();
   }
 
+  modem.configPSM(WALTER_MODEM_PSM_ENABLE,psmTAU,psmActive);
+
   // Connect to cellular network
-  if (!lteConnect()) {
+  if (!lteConnected() && !lteConnect()) {
     Serial.println("Error: Unable to connect to cellular network, restarting Walter "
-                   "in 10 seconds");
-    delay(10000);
-    ESP.restart();
+                  "in 10 seconds");
+   delay(10000);
+  ESP.restart();
   }
+
 
   WalterModemRsp rsp = {};
 
-  // Initialize the BlueCherry connection
-  unsigned short attempt = 0;
-  while (!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
-    if (rsp.data.blueCherry.state ==
-            WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
-        attempt <= 2) {
-      Serial.println("Device is not provisioned for BlueCherry "
-                     "communication, starting Zero Touch Provisioning");
+  // If this is the first boot, set up bluecherry and ZTP.
+  if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
+    // Initialize the BlueCherry connection
+    unsigned short attempt = 0;
+    while (!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
+      if (rsp.data.blueCherry.state ==
+              WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
+          attempt <= 2) {
+        Serial.println("Device is not provisioned for BlueCherry "
+                      "communication, starting Zero Touch Provisioning");
 
-      if (attempt == 0) {
-        // Device is not provisioned yet, initialize BlueCherry zero touch
-        // provisioning
-        if (!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert,
-                                  &modem)) {
-          Serial.println("Error: Failed to initialize ZTP");
+        if (attempt == 0) {
+          // Device is not provisioned yet, initialize BlueCherry zero touch
+          // provisioning
+          if (!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert,
+                                    &modem)) {
+            Serial.println("Error: Failed to initialize ZTP");
+            continue;
+          }
+
+          // Fetch MAC address
+          uint8_t mac[8] = {0};
+          esp_read_mac(mac, ESP_MAC_WIFI_STA);
+          if (!BlueCherryZTP::addDeviceIdParameter(
+                  BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
+            Serial.println(
+                "Error: Could not add MAC address as ZTP device ID parameter");
+          }
+
+          // Fetch IMEI number
+          if (!modem.getIdentity(&rsp)) {
+            Serial.println("Error: Could not fetch IMEI number from modem");
+          }
+          if (!BlueCherryZTP::addDeviceIdParameter(
+                  BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI, rsp.data.identity.imei)) {
+            Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
+          }
+        }
+        attempt++;
+
+        // Request the BlueCherry device ID
+        if (!BlueCherryZTP::requestDeviceId()) {
+          Serial.println("Error: Could not request device ID");
           continue;
         }
 
-        // Fetch MAC address
-        uint8_t mac[8] = {0};
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        if (!BlueCherryZTP::addDeviceIdParameter(
-                BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
-          Serial.println(
-              "Error: Could not add MAC address as ZTP device ID parameter");
+        // Generate the private key and CSR
+        if (!BlueCherryZTP::generateKeyAndCsr()) {
+          Serial.println("Error: Could not generate private key");
+        }
+        delay(1000);
+
+        // Request the signed certificate
+        if (!BlueCherryZTP::requestSignedCertificate()) {
+          Serial.println("Error: Could not request signed certificate");
+          continue;
         }
 
-        // Fetch IMEI number
-        if (!modem.getIdentity(&rsp)) {
-          Serial.println("Error: Could not fetch IMEI number from modem");
+        // Store BlueCherry TLS certificates + private key in the modem
+        if (!modem.blueCherryProvision(BlueCherryZTP::getCert(),
+                                      BlueCherryZTP::getPrivKey(), bc_ca_cert)) {
+          Serial.println("Error: Failed to upload the DTLS certificates");
+          continue;
         }
-        if (!BlueCherryZTP::addDeviceIdParameter(
-                BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI, rsp.data.identity.imei)) {
-          Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
-        }
+      } else {
+        Serial.println("Error: Failed to initialize BlueCherry cloud platform, "
+                      "restarting Walter in 10 seconds");
+        delay(10000);
+        ESP.restart();
       }
-      attempt++;
-
-      // Request the BlueCherry device ID
-      if (!BlueCherryZTP::requestDeviceId()) {
-        Serial.println("Error: Could not request device ID");
-        continue;
-      }
-
-      // Generate the private key and CSR
-      if (!BlueCherryZTP::generateKeyAndCsr()) {
-        Serial.println("Error: Could not generate private key");
-      }
-      delay(1000);
-
-      // Request the signed certificate
-      if (!BlueCherryZTP::requestSignedCertificate()) {
-        Serial.println("Error: Could not request signed certificate");
-        continue;
-      }
-
-      // Store BlueCherry TLS certificates + private key in the modem
-      if (!modem.blueCherryProvision(BlueCherryZTP::getCert(),
-                                     BlueCherryZTP::getPrivKey(), bc_ca_cert)) {
-        Serial.println("Error: Failed to upload the DTLS certificates");
-        continue;
-      }
-    } else {
-      Serial.println("Error: Failed to initialize BlueCherry cloud platform, "
-                     "restarting Walter in 10 seconds");
-      delay(10000);
-      ESP.restart();
     }
+    Serial.println("Successfully initialized BlueCherry cloud platform");
   }
-  Serial.println("Successfully initialized BlueCherry cloud platform");
 }
 
 void loop() {
   // Check if the modem is connected to the cellular network, else try to
   // reconnect
-  if (!lteConnected() && !lteConnect()) {
+   if (!lteConnected() && !lteConnect()) {
     Serial.println("Error: Unable to connect to cellular network, restarting Walter "
                    "in 10 seconds");
     delay(10000);
     ESP.restart();
   }
 
-  // Send a message containing the measured RSRP value to an MQTT topic
   WalterModemRsp rsp = {};
+
+  // Send a message containing the measured RSRP value to an MQTT topic
   if (modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
                                &rsp)) {
     char msg[18];
@@ -323,6 +348,9 @@ void loop() {
   // Poll BlueCherry platform if an incoming message or firmware update is available
   syncBlueCherry();
 
-  // Hold for a minute
-  delay(60000);
+  // Wait for PSM to become active
+  delay(20000);
+
+  // Go sleep for a minute
+  modem.sleep(60);
 }
