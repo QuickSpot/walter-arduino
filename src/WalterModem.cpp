@@ -1524,6 +1524,14 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         cmd->state = WALTER_MODEM_CMD_STATE_RETRY_AFTER_ERROR;
         buff->free = true;
         return;
+    } else if (_buffStartsWith(buff, "NO CARRIER")) {
+        if (cmd != NULL) {
+            cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_NO_DATA;
+            cmd->rsp->result = WALTER_MODEM_STATE_ERROR;
+            cmd->state = WALTER_MODEM_CMD_STATE_SYNC_LOCK_NOTIFIED;
+        }
+        buff->free = true;
+        return;
     } else if (_buffStartsWith(buff, "+CFUN: ")) {
         const char *rspStr = _buffStr(buff);
         int opState = atoi(rspStr + _strLitLen("+CFUN: "));
