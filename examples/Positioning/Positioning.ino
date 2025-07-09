@@ -349,8 +349,18 @@ bool updateGNSSAssistance()
 bool socketConnect(const char *ip, uint16_t port)
 {
   /* Construct a socket */
-  if(!modem.socketConfig()) {
+  if(modem.socketConfig()) {
+    Serial.print("Created a new socket\r\n");
+  } else {
     Serial.print("Could not create a new socket\r\n");
+    return false;
+  }
+
+  /* disable socket tls as the demo server does not use it */
+  if(modem.socketConfigTLS(-1, 1, false)) {
+    Serial.print("Configured TLS\r\n");
+  } else {
+    Serial.print("Could not configure TLS\r\n");
     return false;
   }
 

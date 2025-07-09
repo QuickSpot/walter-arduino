@@ -208,6 +208,14 @@ void setup() {
     return;
   }
 
+  /* disable socket tls as the demo server does not use it */
+  if(modem.socketConfigTLS(-1, 1, false)) {
+    Serial.print("Configured TLS\r\n");
+  } else {
+    Serial.print("Could not configure TLS\r\n");
+    return;
+  }
+
   /* Connect to the demo server */
   if (modem.socketDial(SERV_ADDR, SERV_PORT, 0, NULL, NULL, NULL,
                        WALTER_MODEM_SOCKET_PROTO_TCP)) {

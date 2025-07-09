@@ -193,6 +193,14 @@ void setup() {
     Serial.println("Error: Could not connect the socket");
   }
 
+  /* disable socket tls as the demo server does not use it */
+  if(modem.socketConfigTLS(-1, 1, false)) {
+    Serial.print("Configured TLS\r\n");
+  } else {
+    Serial.print("Could not configure TLS\r\n");
+    return;
+  }
+
   /* Connect to the UDP test server */
   if (modem.socketDial(SERV_ADDR, SERV_PORT)) {
     Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
