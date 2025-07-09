@@ -102,7 +102,11 @@ void WalterModem::_ringQueueProcessingTask(void *args)
         if (xQueueReceive(_ringQueue.handle, &ring, blockTime) == pdTRUE) {
             socketReceive(ring.ringSize, sizeof(data), data, ring.profileId);
             _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, ring.profileId,ring.ringSize, data);
-            // TODO Bluecherry custom eventHandler goes here.
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+            if(ring.profileId == _blueCherry.bcSocketId) {
+                _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, ring.ringSize, data);
+            }
+#endif
         }
     }
 }
@@ -122,6 +126,15 @@ void WalterModem::_dispatchEvent(
     #pragma endregion
 
     #pragma region PUBLIC_METHODS
+int WalterModem::reserveSocketId() {
+    WalterModemSocket *sock = _socketReserve();
+    if (sock == NULL) {
+        return NULL;
+    }
+
+    return sock->id;
+}
+
 bool WalterModem::socketConfig(
     WalterModemRsp *rsp,
     walterModemCb cb,
@@ -130,12 +143,21 @@ bool WalterModem::socketConfig(
     uint16_t mtu,
     uint16_t exchangeTimeout,
     uint16_t connTimeout,
-    uint16_t sendDelayMs)
+    uint16_t sendDelayMs,
+    int socketId)
 {
-    WalterModemSocket *sock = _socketReserve();
+    WalterModemSocket *sock = NULL;
+
+    if (socketId == -1) {
+        sock = _socketReserve();
+    } else {
+        sock = _socketGet(socketId);
+    }
+
     if (sock == NULL) {
         _returnState(WALTER_MODEM_STATE_NO_FREE_SOCKET);
     }
+
 
     sock->pdpContextId = pdpCtxId;
     sock->mtu = mtu;
@@ -211,6 +233,30 @@ bool WalterModem::socketConfigExtended(
         args,
         NULL,
         sock);
+    _returnAfterReply();
+}
+
+bool WalterModem::socketConfigTLS(
+    int socketId,
+    int profileId,
+    bool enableTLS,
+    WalterModemRsp *rsp,
+    walterModemCb cb,
+    void *args)
+{
+    WalterModemSocket *sock = _socketGet(socketId);
+    if (sock == NULL) {
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
+    }
+
+    _runCmd(
+        arr("AT+SQNSSCFG=", _digitStr(sock->id), ",", enableTLS ? "1" : "0",
+            ",", _digitStr(profileId)),
+        "OK",
+        rsp,
+        cb,
+        args,
+        NULL);
     _returnAfterReply();
 }
 
@@ -300,7 +346,7 @@ bool WalterModem::socketSend(
     if (sock == NULL) {
         _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
     }
-
+    
     _runCmd(
         arr("AT+SQNSSENDEXT=", _digitStr(sock->id), ",", _atNum(dataSize), ",", _digitStr(rai)),
         "OK",

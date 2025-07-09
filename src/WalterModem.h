@@ -49,6 +49,7 @@
 #include <bitset>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <mutex>
 
 #ifdef ARDUINO
@@ -1167,6 +1168,24 @@ typedef enum {
 } WalterModemBlueCherryStatus;
 
 /**
+ * @brief The possible statuses of the custom BlueCherry CoAP protocol.
+ */
+typedef enum {
+    WALTER_MODEM_BLUECHERRY_COAP_RSP_VALID = 0x43,
+    WALTER_MODEM_BLUECHERRY_COAP_RSP_CONTINUE = 0x61
+} WalterModemBlueCherryCoapRspStatus;
+
+/**
+ * @brief The possible send types of the custom BlueCherry CoAP protocol.
+ */
+typedef enum {
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_CON = 0,
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_NON = 1,
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK = 2,
+    WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_RST = 3
+} WalterModemBlueCherryCoapSendType;
+
+/**
  * @brief The possible types of BlueCherry events.
  */
 typedef enum {
@@ -1892,6 +1911,17 @@ typedef struct {
  * @brief This structure represents the state of the BlueCherry connection.
  */
 typedef struct {
+    //TODO: save CoAP specific state here
+    /**
+     * @brief CoAP message id of the message being composed or sent. Start at 1, 0 is invalid.
+     */
+    uint16_t curMessageId = 1;
+
+    /**
+     * @brief The UDP socket ID of the bluecherry CoAP socket.
+     */
+    int bcSocketId = 0;
+
     /**
      * @brief The TLS profile used by the BlueCherry connection.
      */
@@ -1913,9 +1943,11 @@ typedef struct {
     uint8_t messageOut[WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN];
 
     /**
-     * @brief Length of the CoAP message being composed so far (containing a client id initially)
+     * @brief Length of the CoAP message being composed so far
+     * 
+     * Reserved space for CoAP headers on initial boot without token.
      */
-    uint16_t messageOutLen = 1;
+    uint16_t messageOutLen = 5;
 
     /**
      * @brief Buffer for the incoming CoAP message.
@@ -1926,11 +1958,6 @@ typedef struct {
      * @brief Length of the incoming CoAP message.
      */
     uint16_t messageInLen = 0;
-
-    /**
-     * @brief CoAP message id of the message being composed or sent. Start at 1, 0 is invalid.
-     */
-    uint16_t curMessageId = 1;
 
     /**
      * @brief Last acknowledged message id, 0 means nothing received yet.
@@ -3016,7 +3043,6 @@ private:
     static inline WalterModemOperator _operator = {};
 
 #pragma region CONTEXTS
-
     /**
      * @brief The PDP context which is currently in use by the library or NULL when no PDP
      * context is in use. In use doesn't mean that the context is activated yet it is just a
@@ -3091,7 +3117,7 @@ private:
     /*
      * @brief The current BlueCherry state.
      */
-    static inline WalterModemBlueCherryState blueCherry;
+    static inline WalterModemBlueCherryState _blueCherry;
 #endif
 
 #pragma region MOTA
@@ -3523,7 +3549,39 @@ private:
      *
      * @return Whether we should emit an error BC event on next sync.
      */
-    static bool _processBlueCherryEvent(uint8_t *data, uint8_t len);
+    static bool _blueCherryProcessEvent(uint8_t *data, uint8_t len);
+    
+    /**
+     * @brief Configure a UDP socket to connect to the bluecherry cloud.
+     * 
+     * @return True if successfully configured a socket, False if no socket was available.
+     */
+    static bool _blueCherrySocketConfigure();
+
+    /**
+     * @brief The custom socket event handler for bluecherry communications.
+     */
+    static void _blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived, uint8_t *dataBuffer);
+
+    /**
+     * @brief Write the outgoing buffer's CoAP headers and set them accordingly.
+     */
+    static void _blueCherrySetCoapHeaders(uint8_t code, uint8_t tokenLen, uint16_t msgId);
+
+    /**
+     * @brief Send data to bluecherry over a UDP socket using a custom tailored CoAP protocol.
+     * 
+     * @return True on successfull transmission and received acknowledgement. False when no
+     * acknowledgement was received in the CoAP timeout period.
+     */
+    static bool _blueCherryCoapSend();
+
+    /**
+     * @brief Process the incoming bluecherry CoAP datagram.
+     *  
+     * @return True if successfully processed the datagram, False if malformed.
+     */
+    static bool _blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t *dataBuffer);
 #endif
 
 #pragma region OTA
@@ -4699,6 +4757,17 @@ public:
 
 #pragma region SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+    
+    /**
+     * @brief Reserve a socket and return it's identifier number.
+     * 
+     * This function will reserve a socket identification number, the socket will not yet be
+     * configured in the modem and expects to be used later for configuration.
+     *
+     * @return Socket ID on success (1-6), NULL if no socket was available. 
+     */
+    static int reserveSocketId();
+
     /**
      * @brief Configure a new socket in a certain PDP context.
      *
@@ -4713,6 +4782,7 @@ public:
      * @param exchangeTimeout The maximum number of seconds this socket can be inactive.
      * @param connTimeout The maximum number of seconds this socket can try to connect.
      * @param sendDelayMs The number of milliseconds send delay.
+     * @param socketId The socket identifier. -1 to reserve a new one.
      *
      * @return True on success, false otherwise.
      */
@@ -4724,12 +4794,13 @@ public:
         uint16_t mtu = 300,
         uint16_t exchangeTimeout = 90,
         uint16_t connTimeout = 60,
-        uint16_t sendDelayMs = 5000);
+        uint16_t sendDelayMs = 5000,
+        int socketId = -1);
 
     /**
-     * @brief Configure the socket extended parameters
+     * @brief Configure the socket extended parameters.
      *
-     * This function confiures the sockett extended parameters.
+     * This function configures the socket extended parameters.
      *
      * @param rsp Optional modem response structure to save the result in.
      * @param cb Optional callback function, if set this function will not block.
@@ -4753,6 +4824,29 @@ public:
         int keepAlive = 0,
         WalterModemSocketListenMode listenMode = WALTER_MODEM_SOCKET_LISTEN_MODE_DISABLED,
         WalterModemsocketSendMode sendMode = WALTER_MODEM_SOCKET_SEND_MODE_TEXT);
+    
+    /**
+     * @brief Enable or disable (D)TLS on a socket.
+     * 
+     * This function will enable or disable (D)TLS on a socket. This can only be done when
+     * the socket is not connected.
+     * 
+     * @param rsp Optional modem response structure to save the result in.
+     * @param cb Optional callback function, if set this function will not block.
+     * @param args Optional argument to pass to the callback.
+     * @param socketId The id of the socket to connect or -1 to re-use the last one.
+     * @param profileId The TLS profile id to use.
+     * @param enableTLS True to enable TLS, false to disable it.
+     * 
+     * @return True on success, false otherwise.
+     */
+    static bool socketConfigTLS(
+        int socketId,
+        int profileId,
+        bool enableTLS,
+        WalterModemRsp *rsp = NULL,
+        walterModemCb cb = NULL,
+        void *args = NULL);
 
     /**
      * @brief Dial a socket after which data can be exchanged.

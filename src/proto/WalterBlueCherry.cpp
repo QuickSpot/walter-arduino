@@ -1,5 +1,5 @@
 /**
- * @file WalterModem.h
+ * @file WalterBlueCherry.cpp
  * @author Daan Pape <daan@dptechnics.com>
  * @date 28 Mar 2025
  * @copyright DPTechnics bv
@@ -39,54 +39,205 @@
  * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * @section DESCRIPTION
- *
- * This file contains the headers of Walter's modem library.
+ * 
+ * This file contains the implementation of the BlueCherry cloud protocol in the Walter Modem
+ * library. BlueCherry cloud uses CoAP + DTLS to communicate with the cloud.
  */
 
 #include <WalterDefines.h>
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-    #if !CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY || !CONFIG_WALTER_MODEM_ENABLE_MOTA
+
+#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && !CONFIG_WALTER_MODEM_ENABLE_MOTA
         #error Bluecherry cannot be enabled with OTA or MOTA disabled.
-    #endif
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && !CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-    #error OTA cann only be done when bluecherry is enabled.
+#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && !CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+        #error Bluecherry cannot be enabled with sockets disabled.
 #endif
+
 #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-    #pragma region PRIVATE_METHODS
-bool WalterModem::_processBlueCherryEvent(uint8_t *data, uint8_t len)
+
+#pragma region PRIVATE_METHODS
+
+bool WalterModem::_blueCherryProcessEvent(uint8_t *data, uint8_t len)
 {
     switch (data[0]) {
-    case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE:
-        return _processOtaInitializeEvent(data + 1, len - 1);
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE:
+            return _processOtaInitializeEvent(data + 1, len - 1);
 
-    case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_CHUNK:
-        return _processOtaChunkEvent(data + 1, len - 1);
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_CHUNK:
+            return _processOtaChunkEvent(data + 1, len - 1);
 
-    case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_FINISH:
-        return _processOtaFinishEvent();
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_FINISH:
+            return _processOtaFinishEvent();
 
-    case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_INITIALIZE:
-        return _processMotaInitializeEvent(data + 1, len - 1);
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_INITIALIZE:
+            return _processMotaInitializeEvent(data + 1, len - 1);
 
-    case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_CHUNK:
-        return _processMotaChunkEvent(data + 1, len - 1);
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_CHUNK:
+            return _processMotaChunkEvent(data + 1, len - 1);
 
-    case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH:
-        return _processMotaFinishEvent();
+        case WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH:
+            return _processMotaFinishEvent();
 
-    default:
-        ESP_LOGD(
-            "WalterModem", "Error: invalid BlueCherry event type 0x%x from cloud server", data[0]);
-        return true;
+        default:
+            ESP_LOGD(
+                "WalterModem", "Error: invalid BlueCherry event type 0x%x from cloud server", data[0]);
+            return true;
     }
 
     return true;
 }
-    #pragma endregion
 
-    #pragma region PUBLIC_METHODS
+bool WalterModem::_blueCherrySocketConfigure()
+{
+    if(_blueCherry.bcSocketId == NULL) {
+        _blueCherry.bcSocketId = reserveSocketId();
+
+        if(_blueCherry.bcSocketId == NULL) {
+            return false;
+        }
+
+        if(!socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId)) {
+            return false;
+        }
+        if(!socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId, WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT)) {
+            return false;
+        }
+        if(!socketConfigTLS(_blueCherry.bcSocketId, _blueCherry.tlsProfileId, true)) {
+            return false;
+        }
+        if(!socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived, uint8_t *dataBuffer) {
+    switch (event) {
+        case WALTER_MODEM_SOCKET_EVENT_RING:
+            // Verify the integrity of the message, and check if we are expecting it.
+            if (_blueCherryCoapProcessResponse(dataReceived, dataBuffer)) {
+                memcpy(_blueCherry.messageIn, dataBuffer, dataReceived);
+                _blueCherry.messageInLen = dataReceived;
+                _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
+            }
+            break;
+        case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
+            // Dial the host over the socket if the connection was not yet established or dropped.
+            socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port);
+    }
+}
+
+void WalterModem::_blueCherrySetCoapHeaders(uint8_t code, uint8_t tokenLen, uint16_t msgId) {
+    if (tokenLen > 8) tokenLen = 8;
+
+    _blueCherry.messageOut[0] = 0x40 | tokenLen;             // ver=1, type=0 (CON), token length
+    _blueCherry.messageOut[1] = code;                        // BlueCherry replaces request/response code
+    _blueCherry.messageOut[2] = msgId >> 8;                  // Message ID high byte
+    _blueCherry.messageOut[3] = msgId & 0xFF;                // Message ID low byte
+    _blueCherry.messageOut[4] = 0xFF;                        // payload marker
+}
+
+bool WalterModem::_blueCherryCoapSend()
+{
+    const uint8_t MAX_RETRANSMIT = 4;
+    const double ACK_TIMEOUT = 2.0;
+    const double ACK_RANDOM_FACTOR = 1.5;
+
+    _blueCherry.messageInLen = 0;
+
+    // Calculate missed messages
+    int32_t lastAcked = _blueCherry.lastAckedMessageId;
+    if(lastAcked > _blueCherry.curMessageId) {
+        lastAcked -= 0xffff;
+    }
+    uint8_t nrMissed = _blueCherry.curMessageId - lastAcked - 1;
+
+    WalterModemSocket *sock = _socketGet(_blueCherry.bcSocketId);
+
+    _blueCherrySetCoapHeaders(nrMissed, 0, _blueCherry.curMessageId);
+
+    double timeout = ACK_TIMEOUT * (1 + (rand() / (RAND_MAX + 1.0)) * (ACK_RANDOM_FACTOR - 1));
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
+
+    for (uint8_t attempt = 1; attempt <= MAX_RETRANSMIT; ++attempt) {
+        _blueCherry.lastTransmissionTime = time(NULL);
+
+        socketSend(_blueCherry.messageOut,
+            _blueCherry.messageOutLen,
+            NULL,
+            NULL,
+            NULL,
+            WALTER_MODEM_RAI_NO_INFO,
+            _blueCherry.bcSocketId);
+
+        while (true) {
+            if (_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
+                return true;
+            }
+
+            if (difftime(time(NULL), _blueCherry.lastTransmissionTime) >= timeout) {
+                break; // retransmit or give up
+            }
+        }
+
+        timeout *= 2;  // exponential backoff
+    }
+
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
+    return false;
+}
+
+bool WalterModem::_blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t *dataBuffer) {
+    uint16_t byteOffset = 0;
+
+    if (dataReceived < 5) {
+        // No CoAP Headers
+        return false;
+    }
+
+    uint8_t recvHeader = dataBuffer[byteOffset++];
+    uint8_t recvVer = (recvHeader >> 6) & 0x03;
+
+    if (recvVer != 1) {
+        // Possible packet malformation
+        return false;
+    }
+
+    uint8_t recvType = (recvHeader >> 4) & 0x03;
+    uint8_t recvTokenLen = recvHeader & 0x0F;
+    byteOffset += recvTokenLen;
+    uint8_t recvCode = dataBuffer[byteOffset++];
+    uint16_t recvMsgId = (dataBuffer[byteOffset++] << 8) | dataBuffer[byteOffset++];
+    byteOffset++; // Skip the 0xff payload marker
+
+    if (recvType == WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK) {
+        if (recvMsgId != _blueCherry.curMessageId) {
+            // Acknowledgement was not expected
+            return false;
+        }
+        _blueCherry.lastAckedMessageId = recvMsgId;
+        /* BlueCherry cloud ack means our last error line can be cleared */
+        _blueCherry.emitErrorEvent = false;
+    }
+
+    switch (recvCode) {
+        case WALTER_MODEM_BLUECHERRY_COAP_RSP_VALID:
+            _blueCherry.moreDataAvailable = false;
+            break;
+        case WALTER_MODEM_BLUECHERRY_COAP_RSP_CONTINUE:
+            _blueCherry.moreDataAvailable = true;
+            break;
+    }
+
+    return true;
+}
+
+#pragma endregion
+
+#pragma region PUBLIC_METHODS
+
 bool WalterModem::blueCherryProvision(
     const char *walterCertificate,
     const char *walterPrivateKey,
@@ -138,17 +289,17 @@ bool WalterModem::blueCherryIsProvisioned()
 bool WalterModem::blueCherryInit(
     uint8_t tlsProfileId, uint8_t *otaBuffer, WalterModemRsp *rsp, uint16_t ackTimeout)
 {
-    if (!blueCherryIsProvisioned() ||
+    if ((!blueCherryIsProvisioned() ||
         !tlsConfigProfile(
             tlsProfileId,
             WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
             WALTER_MODEM_TLS_VERSION_12,
             6,
             5,
-            0)) {
-        blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED;
+            0))) {
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED;
 
-        if (rsp) {
+        if(rsp) {
             rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
             rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED;
             rsp->data.blueCherry.messageCount = 0;
@@ -157,38 +308,38 @@ bool WalterModem::blueCherryInit(
         return false;
     }
 
-    blueCherry.tlsProfileId = tlsProfileId;
+    _blueCherry.tlsProfileId = tlsProfileId;
 
-    blueCherry.messageOutLen = 0;
-    blueCherry.curMessageId = 0x1;
-    blueCherry.lastAckedMessageId = 0x0;
-    blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
-    blueCherry.moreDataAvailable = false;
+    _blueCherry.messageOutLen = 0x0005; // Reserve space for CoAP headers
+    _blueCherry.curMessageId = 0x0001;
+    _blueCherry.lastAckedMessageId = 0x0000;
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+    _blueCherry.moreDataAvailable = false;
 
-    blueCherry.emitErrorEvent = false;
-    blueCherry.otaSize = 0;
-    blueCherry.otaBuffer = otaBuffer;
-    blueCherry.ackTimeout = ackTimeout;
+    _blueCherry.emitErrorEvent = false;
+    _blueCherry.otaSize = 0;
+    _blueCherry.otaBuffer = otaBuffer;
+    _blueCherry.ackTimeout = ackTimeout;
 
-    return true;
+    return _blueCherrySocketConfigure();
 }
 
 bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t *data)
 {
-    if (blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
-        blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+    if (_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
+        _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
         return false;
     }
 
-    if (blueCherry.messageOutLen + len >= WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN) {
+    if (_blueCherry.messageOutLen + len + 2 >= WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN) {
         return false;
     }
 
-    blueCherry.messageOut[blueCherry.messageOutLen] = topic;
-    blueCherry.messageOut[blueCherry.messageOutLen + 1] = len;
-    memcpy(blueCherry.messageOut + blueCherry.messageOutLen + 2, data, len);
+    _blueCherry.messageOut[_blueCherry.messageOutLen] = topic;
+    _blueCherry.messageOut[_blueCherry.messageOutLen + 1] = len;
+    memcpy(_blueCherry.messageOut + _blueCherry.messageOutLen + 2, data, len);
 
-    blueCherry.messageOutLen += len + 2;
+    _blueCherry.messageOutLen += len + 2;
     return true;
 }
 
@@ -196,118 +347,74 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
 {
     walterModemCb cb = NULL;
     void *args = NULL;
-    uint16_t curOffset = 0;
 
-    if (blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
-        blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES &&
-        blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
-        return false;
+    if (_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
+        _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES &&
+        _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+        _returnState(WALTER_MODEM_STATE_BUSY)
     }
 
-    if (rsp) {
-        rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
-        rsp->data.blueCherry.syncFinished = false;
-        rsp->data.blueCherry.messageCount = 0;
-    }
+    rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
+    rsp->data.blueCherry.syncFinished = false;
+    rsp->data.blueCherry.messageCount = 0;
 
-    if (!coapCreateContext(
-            0, WALTER_MODEM_BLUE_CHERRY_HOSTNAME, blueCherry.port, blueCherry.tlsProfileId)) {
-        return false;
-    }
+    _blueCherryCoapSend();
 
-    if (!coapSetHeader(0, blueCherry.curMessageId)) {
-        return false;
-    }
+    uint16_t payloadOffset = 5; // skip CoAP headers
+    while (payloadOffset < _blueCherry.messageInLen) {
+        uint8_t topic = _blueCherry.messageIn[payloadOffset++];
+        uint8_t dataLen = _blueCherry.messageIn[payloadOffset++];
 
-    /* determine nr of messages to recup if we missed any */
-    int32_t lastAckedMessageId = blueCherry.lastAckedMessageId;
-    if (lastAckedMessageId > blueCherry.curMessageId) {
-        lastAckedMessageId -= 0xffff;
-    }
+        /*
+            * Topic 0 is reserved for BlueCherry events, which are also visible to walter as mqtt
+            * messages on topic id 0
+            */
+        if (topic == 0) {
+            _blueCherry.moreDataAvailable = true;
 
-    uint8_t nrMissed = blueCherry.curMessageId - lastAckedMessageId - 1;
-
-    if (!coapSendData(
-            0,
-            WALTER_MODEM_COAP_SEND_TYPE_CON,
-            (WalterModemCoapSendMethodRsp)nrMissed,
-            blueCherry.messageOutLen,
-            blueCherry.messageOut)) {
-        return false;
-    }
-
-    blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
-    blueCherry.lastTransmissionTime = time(NULL);
-
-    while (blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
-        if (time(NULL) - blueCherry.lastTransmissionTime > blueCherry.ackTimeout) {
-            blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    if (blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY) {
-        rsp->data.blueCherry.syncFinished = !blueCherry.moreDataAvailable;
-
-        /* BlueCherry cloud ack means our last error line can be cleared */
-        blueCherry.emitErrorEvent = false;
-
-        while (curOffset < blueCherry.messageInLen) {
-            uint8_t topic = blueCherry.messageIn[curOffset];
-            curOffset++;
-            uint8_t dataLen = blueCherry.messageIn[curOffset];
-            curOffset++;
-
-            /*
-             * Topic 0 is reserved for BlueCherry events, which are also visible to walter as mqtt
-             * messages on topic id 0
-             */
-            if (topic == 0) {
-                rsp->data.blueCherry.syncFinished = false;
-
-                if (_processBlueCherryEvent(blueCherry.messageIn + curOffset, dataLen)) {
-                    blueCherry.emitErrorEvent = true;
-                    blueCherry.otaSize = 0;
-                }
+            if (_blueCherryProcessEvent(_blueCherry.messageIn + payloadOffset, dataLen)) {
+                _blueCherry.emitErrorEvent = true;
+                _blueCherry.otaSize = 0;
             }
-
-            if (rsp) {
-                WalterModemBlueCherryMessage *msg =
-                    rsp->data.blueCherry.messages + rsp->data.blueCherry.messageCount;
-                msg->topic = topic;
-                msg->dataSize = dataLen;
-                msg->data = blueCherry.messageIn + curOffset;
-
-                rsp->data.blueCherry.messageCount++;
-            }
-
-            curOffset += dataLen;
         }
+
+        WalterModemBlueCherryMessage *msg =
+            rsp->data.blueCherry.messages + rsp->data.blueCherry.messageCount;
+        msg->topic = topic;
+        msg->dataSize = dataLen;
+        msg->data = _blueCherry.messageIn + payloadOffset;
+
+        rsp->data.blueCherry.messageCount++;
+
+        payloadOffset += dataLen;
     }
 
-    blueCherry.curMessageId++;
-    if (blueCherry.curMessageId == 0) {
+    _blueCherry.curMessageId++;
+    if (_blueCherry.curMessageId == 0) {
         /* on wrap around, skip msg id 0 which we use as a special/error value */
-        blueCherry.curMessageId++;
+        _blueCherry.curMessageId++;
     }
-    blueCherry.messageOutLen = 0;
+    // Reserve initial 5 bytes for CoAP headers
+    _blueCherry.messageOutLen = 5;
 
-    if (blueCherry.emitErrorEvent) {
+    if (_blueCherry.emitErrorEvent) {
         uint8_t blueCherryErrorEventCode = WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR;
         blueCherryPublish(0, 1, &blueCherryErrorEventCode);
     }
 
-    if (blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+    if (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
         rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
         _returnState(WALTER_MODEM_STATE_ERROR)
     }
 
-    if (blueCherry.moreDataAvailable) {
-        blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES;
+    if (_blueCherry.moreDataAvailable) {
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES;
         rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES;
+        rsp->data.blueCherry.syncFinished = false;
     } else {
-        blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
         rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+        rsp->data.blueCherry.syncFinished = true;
     }
 
     _returnState(WALTER_MODEM_STATE_OK);
@@ -322,22 +429,21 @@ bool WalterModem::blueCherryClose(WalterModemRsp *rsp, walterModemCb cb, void *a
 
 size_t WalterModem::blueCherryGetOtaProgressPercentage()
 {
-    if (blueCherry.otaSize == 0) {
+    if (_blueCherry.otaSize == 0) {
         return 0; /* NO deviding by ZERO*/
     }
-    return (blueCherry.otaProgress * 100) / blueCherry.otaSize;
+    return (_blueCherry.otaProgress * 100) / _blueCherry.otaSize;
 }
 
 
 size_t WalterModem::blueCherryGetOtaProgressBytes() 
 {
-    return blueCherry.otaProgress;
+    return _blueCherry.otaProgress;
 }
 size_t WalterModem::blueCherryGetOtaSize()
 {
-    return blueCherry.otaSize;
+    return _blueCherry.otaSize;
 }
 
-    #pragma endregion
-
+#pragma endregion
 #endif
