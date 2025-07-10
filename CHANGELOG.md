@@ -139,3 +139,20 @@ This is the Changelog for WalterModem
 - fix(walterfeels): updated walterfeels example ([#52](https://github.com/QuickSpot/walter-arduino/pull/52))
 - fix(http): wrong int type in httpring handler ([#54](https://github.com/QuickSpot/walter-arduino/pull/54))
 - fix(parser): dataPrompt bug where modem could hang
+
+## [v1.4.0](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.4.0)
+
+### Features
+
+- feat(http): added support for extra header line ([#106](https://github.com/QuickSpot/walter-esp-idf/pull/106))
+- feat(bluecherry psm example): BlueCherry example update with deepsleep and PSM ([#109](https://github.com/QuickSpot/walter-esp-idf/pull/109))
+feat(bluecherry-coap-restructure): bluecherry coap messages via udp modem sockets ([#62](https://github.com/QuickSpot/walter-arduino/pull/62))
+
+
+### Bug Fixes
+
+- fix(socket): added NO CARRIER support for socketDial ([#108](https://github.com/QuickSpot/walter-esp-idf/pull/108))
+- fix(modem): fixed NO CARRIER bug _finishQueueCMd ([#110](https://github.com/QuickSpot/walter-esp-idf/pull/110))
+- fix(examples): add socket config tls ([#111](https://github.com/QuickSpot/walter-esp-idf/pull/111))
+- fix(socket-tls-examples): updated examples to disable tls by default ([#63](https://github.com/QuickSpot/walter-arduino/pull/63))
+- fix(bluecherry): bluecherry port was not properly set (replaced by CONFIG macro)
