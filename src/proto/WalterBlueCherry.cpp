@@ -46,15 +46,15 @@
 
 #include <WalterDefines.h>
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && !CONFIG_WALTER_MODEM_ENABLE_MOTA
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && !CONFIG_WALTER_MODEM_ENABLE_MOTA
         #error Bluecherry cannot be enabled with OTA or MOTA disabled.
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && !CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && !CONFIG_WALTER_MODEM_ENABLE_SOCKETS
         #error Bluecherry cannot be enabled with sockets disabled.
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
 #pragma region PRIVATE_METHODS
 
@@ -111,8 +111,8 @@ bool WalterModem::_blueCherrySocketConfigure()
     }
 
     if(!socketDial(
-        WALTER_MODEM_BLUE_CHERRY_HOSTNAME,
-        WALTER_MODEM_BLUE_CHERRY_PORT,
+        WALTER_MODEM_BLUECHERRY_HOSTNAME,
+        WALTER_MODEM_BLUECHERRY_PORT,
         0,
         NULL,
         NULL,

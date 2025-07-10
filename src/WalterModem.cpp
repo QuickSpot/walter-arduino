@@ -52,13 +52,13 @@
 #include <esp_log.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
-#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     #include <esp_ota_ops.h>
 #endif
 #include <driver/gpio.h>
 #include <driver/uart.h>
 #include <esp_task_wdt.h>
-#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     #include <esp_image_format.h>
     #include <esp_partition.h>
 #endif
@@ -137,7 +137,7 @@ RTC_DATA_ATTR WalterModemPDPContext _pdpCtxSetRTC[WALTER_MODEM_MAX_PDP_CTXTS] = 
 RTC_DATA_ATTR WalterModemCoapContext _coapCtxSetRTC[WALTER_MODEM_MAX_COAP_PROFILES] = {};
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 RTC_DATA_ATTR WalterModemBlueCherryState blueCherryRTC = {};
 #endif
 
@@ -2568,7 +2568,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         if(sock) {
             _socketRelease(sock);
             _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, sock->id, 0, nullptr);
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
             if(sockId == _blueCherry.bcSocketId) {
                 _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, 0, nullptr);
             }
@@ -2593,7 +2593,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
         }
         WalterModemEventHandler *handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
         if (handler->socketHandler != nullptr
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
             || _blueCherry.bcSocketId != 0
 #endif
         ) {
@@ -2854,7 +2854,7 @@ after_processing_logic:
 #pragma endregion
 
 #pragma region OTA
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 bool WalterModem::_processOtaInitializeEvent(uint8_t *data, uint16_t len)
 {
     if (!_blueCherry.otaBuffer || len != sizeof(uint32_t)) {
@@ -3046,7 +3046,7 @@ bool WalterModem::_processOtaFinishEvent(void)
 #endif
 #pragma endregion
 
-#pragma region MOTA_BLUE_CHERRY
+#pragma region MOTA_BLUECHERRY
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 uint16_t WalterModem::_calculateStpCrc16(const void *input, size_t length)
 {
@@ -3138,7 +3138,7 @@ bool WalterModem::_processMotaInitializeEvent(uint8_t *data, uint16_t len)
     return false;
 }
 
-    #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+    #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 bool WalterModem::_processMotaChunkEvent(uint8_t *data, uint16_t len)
 {
     if (!_blueCherry.otaSize || len == 0 || _blueCherry.otaProgress + len > _blueCherry.otaSize) {
@@ -3401,7 +3401,7 @@ void WalterModem::_sleepPrepare()
         _socketCtxSetRTC, _socketSet, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     blueCherryRTC = _blueCherry;
 #endif
 }
@@ -3433,7 +3433,7 @@ void WalterModem::_sleepWakeup()
         _socketSet, _socketCtxSetRTC, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     _blueCherry = blueCherryRTC;
 #endif
 }
@@ -3657,7 +3657,7 @@ bool WalterModem::softReset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     }
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     _blueCherry.bcSocketId = 0;
 #endif
     _operator = {};
@@ -3721,7 +3721,7 @@ bool WalterModem::reset(WalterModemRsp *rsp, walterModemCb cb, void *args)
     }
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     _blueCherry.bcSocketId = 0;
 #endif
     _operator = {};

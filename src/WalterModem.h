@@ -101,16 +101,16 @@ for efficient configuration management."
         #define CONFIG_WALTER_MODEM_ENABLE_COAP 1
     #endif
 
-    #ifndef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-        #define CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY 1
+    #ifndef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+        #define CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY 1
     #endif
 
     #ifndef CONFIG_WALTER_MODEM_ENABLE_MOTA
         #define CONFIG_WALTER_MODEM_ENABLE_MOTA 1
     #endif
 
-    #ifndef CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
-        #define CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY 1
+    #ifndef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+        #define CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY 1
     #endif
 #endif
 
@@ -253,13 +253,13 @@ CONFIG_UINT8(WALTER_MODEM_MAX_SOCKET_RINGS, 8)
     WALTER_MODEM_MAX_SOCKET_RINGS * sizeof(WalterModemSocketRing)
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 /**
  * @brief The default hostname for Bluecherry.
  */
-CONFIG(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, const char *, "coap.bluecherry.io")
+CONFIG(WALTER_MODEM_BLUECHERRY_HOSTNAME, const char *, "coap.bluecherry.io")
 
-CONFIG(WALTER_MODEM_BLUE_CHERRY_PORT, uint16_t, 5684)
+CONFIG(WALTER_MODEM_BLUECHERRY_PORT, uint16_t, 5684)
 #endif
 
 /**
@@ -322,7 +322,7 @@ CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
 #endif
 
 //The following variables are fixed by bluecherry
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 /**
  * @brief The maximum size of an incoming protocol message payload.
  */
@@ -1155,8 +1155,8 @@ typedef enum {
 #endif
 #pragma endregion
 
-#pragma region BLUE_CHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#pragma region BLUECHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 /**
  * @brief The possible statuses of a BlueCherry communication cycle.
  */
@@ -1861,8 +1861,8 @@ typedef struct {
 
 /* protocol structs: SOCKET, HTTP, MQTT, COAP, BLUECHERRY */
 #pragma region PROTO
-#pragma region BLUE_CHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#pragma region BLUECHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 /**
  * @brief This structure contains one of possibly multiple BlueCherry messages delivered in a CoAP
  * datagram.
@@ -2537,7 +2537,7 @@ union WalterModemRspData {
      * @brief The modem identity.
      */
     WalterModemIdentity identity;
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     /**
      * @brief The BlueCherry data
      */
@@ -3115,7 +3115,7 @@ private:
 #endif
 #pragma endregion
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     /*
      * @brief The current BlueCherry state.
      */
@@ -3539,7 +3539,7 @@ private:
     static void _processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *rsp);
 #pragma endregion
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     /**
      * @brief Process an incoming BlueCherry event.
      *
@@ -3587,7 +3587,7 @@ private:
 #endif
 
 #pragma region OTA
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY && CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     /**
      * @brief Process OTA init event
      *
@@ -3654,7 +3654,7 @@ private:
      */
     static bool _motaFormatAndMount(void);
 
-    #if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+    #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     /**
      * @brief Initialze a modem firmware update.
      *
@@ -4464,8 +4464,8 @@ public:
 #endif
 #pragma endregion
 
-#pragma region BLUE_CHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUE_CHERRY
+#pragma region BLUECHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
     /**
      * @brief Upload BlueCherry credentials to the modem.
      *
