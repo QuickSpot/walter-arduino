@@ -140,17 +140,12 @@ bool lteConnect() {
 
   delay(1000);
 
-  if (!modem.setNetworkAttachmentState(false)) {
-    Serial.println("Error: Could not set the modem attachment state to false");
-    return false;
-  }
-
-  delay(500);
-
   // Set the network operator selection to automatic
-  if (!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_MANUAL, "20601", WALTER_MODEM_OPERATOR_FORMAT_NUMERIC)) {
-    Serial.println("Error: Could not set the network selection mode to manual");
-    return false;
+  if (modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
+      Serial.println("Network selection mode to was set to automatic");
+  } else {
+      Serial.println("Error: Could not set the network selection mode to automatic");
+      return false;
   }
 
   // Wait (maximum 5 minutes) until successfully registered to the network
