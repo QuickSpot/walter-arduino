@@ -458,7 +458,7 @@ void modem_transmit() {
   }
 
   /* disable socket tls as the demo server does not use it */
-  if(modem.socketConfigTLS(-1, 1, false)) {
+  if(modem.socketConfigSecure(false)) {
     Serial.print("Configured TLS\r\n");
   } else {
     Serial.print("Could not configure TLS\r\n");
