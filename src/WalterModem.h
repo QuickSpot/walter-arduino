@@ -4829,10 +4829,10 @@ public:
      * 
      * @return True on success, false otherwise.
      */
-    static bool socketConfigTLS(
-        int socketId,
-        int profileId,
+    static bool socketConfigSecure(
         bool enableTLS,
+        int profileId = 1,
+        int socketId = -1,
         WalterModemRsp *rsp = NULL,
         walterModemCb cb = NULL,
         void *args = NULL);

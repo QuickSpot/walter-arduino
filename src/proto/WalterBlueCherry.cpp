@@ -103,7 +103,7 @@ bool WalterModem::_blueCherrySocketConfigure()
         if(!socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId, WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT)) {
             return false;
         }
-        if(!socketConfigTLS(_blueCherry.bcSocketId, _blueCherry.tlsProfileId, true)) {
+        if(!socketConfigSecure(_blueCherry.tlsProfileId, true)) {
             return false;
         }
         if(!socketDial(WALTER_MODEM_BLUE_CHERRY_HOSTNAME, _blueCherry.port)) {

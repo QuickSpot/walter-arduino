@@ -227,10 +227,10 @@ bool WalterModem::socketConfigExtended(
     _returnAfterReply();
 }
 
-bool WalterModem::socketConfigTLS(
-    int socketId,
-    int profileId,
+bool WalterModem::socketConfigSecure(
     bool enableTLS,
+    int profileId,
+    int socketId,
     WalterModemRsp *rsp,
     walterModemCb cb,
     void *args)
