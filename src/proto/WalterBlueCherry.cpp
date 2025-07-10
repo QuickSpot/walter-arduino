@@ -109,9 +109,10 @@ bool WalterModem::_blueCherrySocketConfigure()
     if(!socketConfigSecure(true, _blueCherry.tlsProfileId, _blueCherry.bcSocketId)) {
         return false;
     }
+
     if(!socketDial(
         WALTER_MODEM_BLUE_CHERRY_HOSTNAME,
-        _blueCherry.port,
+        WALTER_MODEM_BLUE_CHERRY_PORT,
         0,
         NULL,
         NULL,
@@ -135,18 +136,11 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
                 _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
             }
             break;
+
         case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
-            // Dial the host over the socket if the connection was not yet established or dropped.
-            socketDial(
-                WALTER_MODEM_BLUE_CHERRY_HOSTNAME,
-                _blueCherry.port,
-                0,
-                NULL,
-                NULL,
-                NULL,
-                WALTER_MODEM_SOCKET_PROTO_UDP,
-                WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
-                _blueCherry.bcSocketId);
+            _blueCherry.bcSocketId = 0;
+            _blueCherrySocketConfigure();
+
         case WALTER_MODEM_SOCKET_EVENT_CONNECTED:
         default:
             break;
