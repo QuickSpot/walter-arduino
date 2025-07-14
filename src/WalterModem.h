@@ -842,7 +842,8 @@ typedef enum {
     WALTER_MODEM_SOCKET_STATE_PENDING_NO_DATA = 5,
     WALTER_MODEM_SOCKET_STATE_PENDING_WITH_DATA = 6,
     WALTER_MODEM_SOCKET_STATE_LISTENING = 7,
-    WALTER_MODEM_SOCKET_STATE_INCOMMING_CONNECTION = 8
+    WALTER_MODEM_SOCKET_STATE_INCOMMING_CONNECTION = 8,
+    WALTER_MODEM_SOCKET_STATE_SUSPENDED = 9
 } WalterModemSocketState;
 
 /**
@@ -3320,8 +3321,10 @@ private:
      */
     static void _socketRelease(WalterModemSocket *sock);
 
-    /** 
+    /**
      * @brief this function retrieves and updates all the socketStates
+     *
+     * @return True on success, false on error.
      */
     static bool _socketUpdateStates();
 
@@ -5021,35 +5024,49 @@ public:
      *
      */
     static WalterModemSocketState socketGetState(int socketId = -1);
+
+    /**
+     * @brief this function resumes a suspended socketConnection.
+     *
+     * @param sockeId the id of the UDP socket to resume.
+     * @param rsp Optional modem response structure to save the result in.
+     *
+     * @return True on success, false otherwise.
+     */
+    static bool socketResume(
+        int socketId = -1,
+        WalterModemRsp *rsp = NULL,
+        walterModemCb cb = NULL,
+        void *args = NULL);
 #endif
 #pragma endregion
 
 #pragma region GNSS
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
-    /**
-     * @brief Configure Walter's GNSS receiver.
-     *
-     * This function will configure the GNSS receiver. The settings are persistent over reboots
-     * but it could be that they need to be set again after a modem firmware upgrade. Inbetween
-     * fixes this function could be used to change the sensitivity mode. It is recommended to
-     * run this function at least once before GNSS is used.
-     *
-     * @param sensMode The sensitivity mode.
-     * @param acqMode The acquisition mode.
-     * @param locMode The GNSS location mode.
-     * @param rsp Optional modem response structure to save the result in.
-     * @param cb Optional callback function, if set this function will not block.
-     * @param args Optional argument to pass to the callback.
-     *
-     * @return True on success, false on error.
-     */
-    static bool gnssConfig(
-        WalterModemGNSSSensMode sensMode = WALTER_MODEM_GNSS_SENS_MODE_HIGH,
-        WalterModemGNSSAcqMode acqMode = WALTER_MODEM_GNSS_ACQ_MODE_COLD_WARM_START,
-        WalterModemGNSSLocMode locMode = WALTER_MODEM_GNSS_LOC_MODE_ON_DEVICE_LOCATION,
-        WalterModemRsp *rsp = NULL,
-        walterModemCb cb = NULL,
-        void *args = NULL);
+        /**
+         * @brief Configure Walter's GNSS receiver.
+         *
+         * This function will configure the GNSS receiver. The settings are persistent over reboots
+         * but it could be that they need to be set again after a modem firmware upgrade. Inbetween
+         * fixes this function could be used to change the sensitivity mode. It is recommended to
+         * run this function at least once before GNSS is used.
+         *
+         * @param sensMode The sensitivity mode.
+         * @param acqMode The acquisition mode.
+         * @param locMode The GNSS location mode.
+         * @param rsp Optional modem response structure to save the result in.
+         * @param cb Optional callback function, if set this function will not block.
+         * @param args Optional argument to pass to the callback.
+         *
+         * @return True on success, false on error.
+         */
+        static bool gnssConfig(
+            WalterModemGNSSSensMode sensMode = WALTER_MODEM_GNSS_SENS_MODE_HIGH,
+            WalterModemGNSSAcqMode acqMode = WALTER_MODEM_GNSS_ACQ_MODE_COLD_WARM_START,
+            WalterModemGNSSLocMode locMode = WALTER_MODEM_GNSS_LOC_MODE_ON_DEVICE_LOCATION,
+            WalterModemRsp *rsp = NULL,
+            walterModemCb cb = NULL,
+            void *args = NULL);
 
     /**
      * @brief Get the current GNSS assistance data status.

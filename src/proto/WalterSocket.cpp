@@ -506,6 +506,18 @@ WalterModemSocketState WalterModem::socketGetState(int socketId)
     return sock->state;
 }
 
+bool WalterModem::socketResume(
+    int socketId, WalterModemRsp *rsp, walterModemCb cb, void *args)
+{
+    WalterModemSocket *sock = _socketGet(socketId);
+    if (sock == NULL) {
+        _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
+    }
+
+    _runCmd(arr("AT+SQNSO", _digitStr(sock->id)),"OK",rsp,cb,args);
+    _returnAfterReply();
+}
+
 void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void *args = NULL)
 {
     _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].socketHandler = handler;
