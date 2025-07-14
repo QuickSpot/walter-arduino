@@ -45,6 +45,7 @@
 
 #include <WalterDefines.h>
 #include <WalterModem.h>
+#include <esp_log.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
     #pragma region PRIVATE_METHODS
@@ -92,6 +93,15 @@ void WalterModem::_socketRelease(WalterModemSocket *sock)
     sock->state = WALTER_MODEM_SOCKET_STATE_FREE;
 }
 
+bool WalterModem::_socketUpdateStates()
+{
+    WalterModemRsp *rsp = NULL;
+    walterModemCb cb = NULL;
+    void *args = NULL;
+
+    _runCmd({"AT+SQNSS?"}, "OK", rsp, cb, args);
+    _returnAfterReply();
+}
 void WalterModem::_ringQueueProcessingTask(void *args)
 {
     WalterModemSocketRing ring{};
@@ -480,6 +490,20 @@ bool WalterModem::socketReceive(
         targetBuf,
         targetBufSize);
     _returnAfterReply();
+}
+
+WalterModemSocketState WalterModem::socketGetState(int socketId)
+{
+    if(!_socketUpdateStates()){
+        ESP_LOGW("WalterModem", "Could not update socket states");
+    }
+
+    WalterModemSocket *sock = _socketGet(socketId);
+    if (sock == NULL) {
+        return WalterModemSocketState::WALTER_MODEM_SOCKET_STATE_FREE;
+    }
+
+    return sock->state;
 }
 
 void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void *args = NULL)

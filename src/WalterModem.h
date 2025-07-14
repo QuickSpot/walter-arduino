@@ -837,9 +837,12 @@ typedef enum {
     WALTER_MODEM_SOCKET_STATE_FREE = 0,
     WALTER_MODEM_SOCKET_STATE_RESERVED = 1,
     WALTER_MODEM_SOCKET_STATE_CONFIGURED = 2,
-    WALTER_MODEM_SOCKET_STATE_OPENED = 3,
-    WALTER_MODEM_SOCKET_STATE_LISTENING = 4,
-    WALTER_MODEM_SOCKET_STATE_CLOSED = 5
+    WALTER_MODEM_SOCKET_STATE_CLOSED = 3,
+    WALTER_MODEM_SOCKET_STATE_OPENED = 4,
+    WALTER_MODEM_SOCKET_STATE_PENDING_NO_DATA = 5,
+    WALTER_MODEM_SOCKET_STATE_PENDING_WITH_DATA = 6,
+    WALTER_MODEM_SOCKET_STATE_LISTENING = 7,
+    WALTER_MODEM_SOCKET_STATE_INCOMMING_CONNECTION = 8
 } WalterModemSocketState;
 
 /**
@@ -3317,6 +3320,11 @@ private:
      */
     static void _socketRelease(WalterModemSocket *sock);
 
+    /** 
+     * @brief this function retrieves and updates all the socketStates
+     */
+    static bool _socketUpdateStates();
+
     /**
      * @brief This is the entrypoint of the ring queue processing task.
      *
@@ -4881,6 +4889,8 @@ public:
      * @param socketId The id of the socket to close or -1 to re-use the last one.
      *
      * @return True on success, false otherwise.
+     * 
+     * @note The socket needs to be closed to free it, even tough it is in a closed state as this is the modem state.
      */
     static bool socketClose(
         WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL, int socketId = -1);
@@ -5000,6 +5010,17 @@ public:
         int socketId = -1,
         WalterModemRsp *rsp = NULL
     );
+
+    /**
+     * @brief This function updates all the socketStates and returns the current state for the
+     * requested socket.
+     *
+     * @param socketId The socket id to retrieve the current state.
+     *
+     * @return The socket state.
+     *
+     */
+    static WalterModemSocketState socketGetState(int socketId = -1);
 #endif
 #pragma endregion
 
