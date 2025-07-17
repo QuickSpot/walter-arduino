@@ -1075,8 +1075,8 @@ bool WalterModem::_checkPayloadComplete()
     if (resultPos && _parserData.buf->size >= _receiveExpected) {
         //ESP_LOGI("WalterParser", "payload received error (ERROR)");
         _parserData.buf->size -= 9;
-        _resetParseRxFlags();
         _queueRxBuffer();
+        _resetParseRxFlags();
         _parseRxData((char *)"\r\nERROR\r\n", 9);
         return true;
     }
@@ -1102,9 +1102,31 @@ bool WalterModem::_checkPayloadComplete()
 
 void WalterModem::_resetParseRxFlags()
 {
-    _receiving = false;
+    _receivingPayload = false;
     _foundCRLF = false;
     _receiveExpected = 0;
+}
+
+bool WalterModem::_expectingPayload() {
+    int nothing;
+    const char *nothingString;
+
+    /* check for "+SQNSRECV: " prefix to start payload mode */
+    if (sscanf((const char*)_parserData.buf, "+SQNSRECV: %d,%d", &nothing, &_receiveExpected) == 2) {
+        return true;
+    }
+
+    /* check for "+SQNSMQTTRCVMESSAGE: " prefix to start payload mode */
+    if (sscanf((const char*)_parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%s,%d", &nothingString, &_receiveExpected) == 2) {
+        return true;
+    }
+
+    /* check for "+SQNCOAPRCV: " prefix to start payload mode */
+    if (sscanf((const char*)_parserData.buf, "+SQNCOAPRCV: %d,%d,%d", &nothing, &nothing, &_receiveExpected) == 3) {
+        return true;
+    }
+
+    return false;
 }
 
 void WalterModem::_parseRxData(char *rxData, size_t len)
@@ -1131,37 +1153,49 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
     if (dataLen <= 0 || dataLen > UART_BUF_SIZE)
         return;
 
-    //ESP_LOGV("WalterParser", "rxData (%u bytes): \r\n '%.*s'", dataLen, dataLen, dataStart);
+    // ESP_LOGV("WalterParser", "rxData (%u bytes): \r\n '%.*s'\n", dataLen, dataLen, dataStart);
 
     size_t CRLFPos = _getCRLFPosition(
         dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
     bool hasTripleChevron =
         memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
 
-    if (_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
-        if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {
-            _receiveExpected += CRLFPos;
-            /* we need to keep append the CRLFPos for correct _receivExpected usage*/
-        }
-        if (_receiving) {
+    if (_foundCRLF || CRLFPos > 0 || hasTripleChevron) { 
+        if (_receivingPayload || hasTripleChevron) {
+            /* We are receiving more payload data*/
+            _receivingPayload = true;
             _foundCRLF = true;
-
-            /* We are receiving payload data*/
             _addATBytesToBuffer(dataStart, dataLen);
             _checkPayloadComplete();
         } else {
             /* We have received a full message!*/
-
             _addATBytesToBuffer(dataStart, CRLFPos);
-            /* a full message has been found so queue it an*/
-            _queueRxBuffer();
-            _resetParseRxFlags();
-            _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
+
+            if(_expectingPayload()) {
+                /* We are expecting payload data to be received after this */
+                _receivingPayload = true;
+            }
+
+            if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {
+                /* We are receiving payload data */
+                /* We need to keep append the CRLFPos for correct _receivExpected usage */
+                _receiveExpected += CRLFPos;
+                _foundCRLF = true;
+                _addATBytesToBuffer(dataStart + CRLFPos, dataLen - CRLFPos);
+                _checkPayloadComplete();
+
+            } else {
+                /* A full message has been found so queue it */
+                _queueRxBuffer();
+                _resetParseRxFlags();
+                _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
+            }
         }
     } else if (dataLen > 0) {
 
         _addATBytesToBuffer(dataStart, dataLen);
 
+        #pragma region PROMPT
         /* We are receiving a partial message or a data PROMPT*/
         bool dataPrompt = (_parserData.buf->size >= 2)
             ? (_parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ')
@@ -1176,6 +1210,7 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
             _queueRxBuffer();
             _resetParseRxFlags();
         }
+        #pragma endregion
     } 
 }
 
@@ -1426,6 +1461,8 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
             TickType_t diff = xTaskGetTickCount() - cmd->attemptStart;
             bool timedOut = diff >= WALTER_MODEM_CMD_TIMEOUT_TICKS;
             if (timedOut || cmd->state == WALTER_MODEM_CMD_STATE_RETRY_AFTER_ERROR) {
+                ESP_LOGW("WalterModem", "Timed out or retrying last queue command");
+                _resetParseRxFlags();
                 if (cmd->attempt >= cmd->maxAttempts) {
                     _finishQueueCmd(
                         cmd, timedOut ? WALTER_MODEM_STATE_TIMEOUT : WALTER_MODEM_STATE_ERROR);
@@ -1450,6 +1487,8 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
         } else {
             TickType_t diff = xTaskGetTickCount() - cmd->attemptStart;
             if (diff >= WALTER_MODEM_CMD_TIMEOUT_TICKS) {
+                ESP_LOGW("WalterModem", "Timed out while processing WAIT queue cmd");
+                _resetParseRxFlags();
                 _finishQueueCmd(cmd, WALTER_MODEM_STATE_TIMEOUT);
             } else {
                 return diff;
@@ -3313,7 +3352,7 @@ bool WalterModem::_tlsIsCredentialPresent(bool isPrivateKey, uint8_t slotIdx)
     void *args = NULL;
 
     const char *keyType = isPrivateKey ? "privatekey" : "certificate";
-    _receiving = true;
+    _receivingPayload = true;
     _runCmd(arr("AT+SQNSNVR=", _atStr(keyType), ",", _atNum(slotIdx)), "+SQNSNVR: ", rsp, cb, args);
     _returnAfterReply();
 }
@@ -3471,9 +3510,9 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
     _watchdogTimeout = watchdogTimeout;
     if (_watchdogTimeout) {
         /* wdt timeout must be longer than max wait time for a modem response */
-        if (_watchdogTimeout * 1000UL < WALTER_MODEM_CMD_TIMEOUT_MS + 5000UL) {
-            _watchdogTimeout = (uint8_t)((WALTER_MODEM_CMD_TIMEOUT_MS / 1000UL) + 5);
-        }
+        // if (_watchdogTimeout * 1000UL < WALTER_MODEM_CMD_TIMEOUT_MS + 5000UL) {
+        //     _watchdogTimeout = (uint8_t)((WALTER_MODEM_CMD_TIMEOUT_MS / 1000UL) + 5);
+        // }
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         esp_task_wdt_init(_watchdogTimeout, true);
 #else

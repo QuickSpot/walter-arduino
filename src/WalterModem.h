@@ -259,7 +259,11 @@ CONFIG_UINT8(WALTER_MODEM_MAX_SOCKET_RINGS, 8)
  */
 CONFIG(WALTER_MODEM_BLUECHERRY_HOSTNAME, const char *, "coap.bluecherry.io")
 
+/**
+ * @brief The default port for Bluecherry CoAP.
+ */
 CONFIG(WALTER_MODEM_BLUECHERRY_PORT, uint16_t, 5684)
+
 #endif
 
 /**
@@ -1161,16 +1165,20 @@ typedef enum {
 
 #pragma region BLUECHERRY
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+
+#define WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE 5
+
 /**
  * @brief The possible statuses of a BlueCherry communication cycle.
  */
 typedef enum {
-    WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED,
+    WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED,
     WALTER_MODEM_BLUECHERRY_STATUS_IDLE,
     WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE,
     WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY,
     WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES,
-    WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT
+    WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT,
+    WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED
 } WalterModemBlueCherryStatus;
 
 /**
@@ -2918,13 +2926,13 @@ private:
     /**
      * @brief boolean for when we are doing a hardware reset.
      */
-    static inline bool _receiving = false;
+    static inline bool _receivingPayload = false;
 
     static inline bool _foundCRLF = false;
 
     static inline size_t currentCRLF = 0;
 
-    static inline size_t _receiveExpected = true;
+    static inline size_t _receiveExpected = 0;
     /**
      * @brief We remember the configured watchdog timeout.
      */
@@ -3407,6 +3415,13 @@ private:
     static size_t _getCRLFPosition(const char *rxData, size_t len);
 
     /**
+     * @brief Check the parser buffer for a message containing payload data.
+     *
+     * @return true if addintional payload data is expected, false otherwise.
+     */
+    static bool _expectingPayload();
+
+    /**
      * @brief Parse incoming modem data.
      *
      * @param rxData The incoming data buffer.
@@ -3567,9 +3582,17 @@ private:
     /**
      * @brief Configure a UDP socket to connect to the bluecherry cloud.
      * 
-     * @return True if successfully configured a socket, False if no socket was available.
+     * @return True if successfully configured a socket, False if not.
      */
     static bool _blueCherrySocketConfigure();
+
+    /**
+     * @brief Connect to bluecherry with a socket.
+     * 
+     * @return True if successfully configured, dialed or resumed a socket. False if unable
+     * to establish a connection.
+     */
+    static bool _blueCherrySocketConnect();
 
     /**
      * @brief The custom socket event handler for bluecherry communications.
@@ -5023,7 +5046,7 @@ public:
      * @return The socket state.
      *
      */
-    static WalterModemSocketState socketGetState(int socketId = -1);
+    static WalterModemSocketState socketGetState(int socketId = 0);
 
     /**
      * @brief this function resumes a suspended socketConnection.
