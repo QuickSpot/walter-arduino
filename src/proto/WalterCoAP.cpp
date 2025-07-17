@@ -101,8 +101,6 @@ bool WalterModem::coapDidRing(
         _coapContextSet[profileId].rings[ringIdx].messageId,
         _coapContextSet[profileId].rings[ringIdx].length);
         
-    _receiving = true;
-    _receiveExpected = _coapContextSet[profileId].rings[ringIdx].length;
     _runCmd(
         arr((const char *)stringsBuffer->data),
         "OK",

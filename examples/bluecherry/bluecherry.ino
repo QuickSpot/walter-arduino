@@ -193,7 +193,6 @@ void syncBlueCherry() {
           rsp.data.blueCherry.state);
       modem.reset();
       lteConnect();
-      modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer);
       return;
     }
 
@@ -343,6 +342,6 @@ void loop() {
   // Poll BlueCherry platform if an incoming message or firmware update is available
   syncBlueCherry();
 
-  // Go sleep for a minute
-  modem.sleep(60);
+  // Go sleep for 5 minutes
+  modem.sleep(60 * 5);
 }

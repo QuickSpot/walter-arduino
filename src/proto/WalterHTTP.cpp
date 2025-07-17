@@ -347,7 +347,6 @@ bool WalterModem::httpDidRing(
         _httpContextSet[_httpCurrentProfile].state = WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE;
         _httpCurrentProfile = 0xff;
     };
-    _receiving = true;
     _runCmd(
         arr("AT+SQNHTTPRCV=", _atNum(profileId)),
         "OK",

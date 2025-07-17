@@ -475,18 +475,15 @@ bool WalterModem::socketReceive(
         return true;
     }
 
-    _receiving = true;
-    _receiveExpected = dataToRead;
-    sock->dataAvailable -= dataToRead;
     _runCmd(
         arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(receiveCount)),
-        "OK",
+        "+SQNSRECV:",
         rsp,
         cb,
         args,
         NULL,
         NULL,
-        WALTER_MODEM_CMD_TYPE_TX_WAIT,
+        WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT,
         targetBuf,
         targetBufSize);
     _returnAfterReply();
@@ -496,6 +493,10 @@ WalterModemSocketState WalterModem::socketGetState(int socketId)
 {
     if(!_socketUpdateStates()){
         ESP_LOGW("WalterModem", "Could not update socket states");
+    }
+
+    if (socketId == 0) {
+        return WalterModemSocketState::WALTER_MODEM_SOCKET_STATE_FREE;
     }
 
     WalterModemSocket *sock = _socketGet(socketId);

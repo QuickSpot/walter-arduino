@@ -90,46 +90,79 @@ bool WalterModem::_blueCherryProcessEvent(uint8_t *data, uint8_t len)
 
 bool WalterModem::_blueCherrySocketConfigure()
 {
-    if (_blueCherry.bcSocketId != 0) {
-        return true;
-    }
-
-    WalterModemSocket *sock = _socketReserve();
-    if (sock == NULL) {
-        return false;
-    }
-    _blueCherry.bcSocketId = sock->id;
-
-    if(!socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId)) {
-        return false;
-    }
-    if(!socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId)) {
-        return false;
-    }
-    if(!socketConfigSecure(true, _blueCherry.tlsProfileId, _blueCherry.bcSocketId)) {
+    if (_blueCherry.bcSocketId == 0) {
         return false;
     }
 
-    if(!socketDial(
-        WALTER_MODEM_BLUECHERRY_HOSTNAME,
-        WALTER_MODEM_BLUECHERRY_PORT,
-        0,
-        NULL,
-        NULL,
-        NULL,
-        WALTER_MODEM_SOCKET_PROTO_UDP,
-        WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
-        _blueCherry.bcSocketId)) {
-        return false;
+    bool success = true;
+
+    success &= socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId);
+    success &= socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId);
+    success &= socketConfigSecure(true, _blueCherry.tlsProfileId, _blueCherry.bcSocketId);
+
+    return success;
+}
+
+bool WalterModem::_blueCherrySocketConnect() {
+
+    WalterModem::socketGetState(); // Update the socket statuses to the latest available data.
+
+    if (_blueCherry.bcSocketId == 0) {
+        if (WalterModemSocket* sock = _socketReserve(); sock != NULL) {
+            _blueCherry.bcSocketId = sock->id;
+        } else {
+            return false;
+        }
     }
-    
-    return true;
+
+    WalterModemSocket *sock = _socketGet(_blueCherry.bcSocketId);
+
+    for (int attempt = 0; attempt < 5; ++attempt) {
+        switch (sock->state) {
+            case WALTER_MODEM_SOCKET_STATE_FREE:
+            case WALTER_MODEM_SOCKET_STATE_RESERVED:
+            case WALTER_MODEM_SOCKET_STATE_CLOSED:
+                if (!_blueCherrySocketConfigure()) {
+                    break;
+                }
+                continue;
+
+            case WALTER_MODEM_SOCKET_STATE_CONFIGURED:
+                if (!socketDial(WALTER_MODEM_BLUECHERRY_HOSTNAME,
+                                WALTER_MODEM_BLUECHERRY_PORT,
+                                0, NULL, NULL, NULL,
+                                WALTER_MODEM_SOCKET_PROTO_UDP,
+                                WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
+                                _blueCherry.bcSocketId)) {
+                    break;
+                }
+                continue;
+
+            case WALTER_MODEM_SOCKET_STATE_OPENED:
+            case WALTER_MODEM_SOCKET_STATE_PENDING_NO_DATA:
+            case WALTER_MODEM_SOCKET_STATE_PENDING_WITH_DATA:
+                return true;
+
+            case WALTER_MODEM_SOCKET_STATE_SUSPENDED:
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    _blueCherry.bcSocketId = 0;
+    return false;
 }
 
 void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived, uint8_t *dataBuffer) {
     switch (event) {
         case WALTER_MODEM_SOCKET_EVENT_RING:
             // Verify the integrity of the message, and check if we are expecting it.
+            if (_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
+                break;
+            }
+
             if (_blueCherryCoapProcessResponse(dataReceived, dataBuffer)) {
                 memcpy(_blueCherry.messageIn, dataBuffer, dataReceived);
                 _blueCherry.messageInLen = dataReceived;
@@ -139,7 +172,6 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
 
         case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
             _blueCherry.bcSocketId = 0;
-            _blueCherrySocketConfigure();
 
         case WALTER_MODEM_SOCKET_EVENT_CONNECTED:
         default:
@@ -163,8 +195,6 @@ bool WalterModem::_blueCherryCoapSend()
     const uint8_t MAX_RETRANSMIT = 4;
     const double ACK_TIMEOUT = 2.0;
     const double ACK_RANDOM_FACTOR = 1.5;
-
-    _blueCherry.messageInLen = 0;
 
     // Calculate missed messages
     int32_t lastAcked = _blueCherry.lastAckedMessageId;
@@ -209,7 +239,7 @@ bool WalterModem::_blueCherryCoapSend()
 bool WalterModem::_blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t *dataBuffer) {
     uint16_t byteOffset = 0;
 
-    if (dataReceived < 5) {
+    if (dataReceived < WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE) {
         // No CoAP Headers
         return false;
     }
@@ -329,10 +359,9 @@ bool WalterModem::blueCherryInit(
 
     _blueCherry.tlsProfileId = tlsProfileId;
 
-    _blueCherry.messageOutLen = 0x0005; // Reserve space for CoAP headers
+    _blueCherry.messageOutLen = WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE; // Reserve space for CoAP headers
     _blueCherry.curMessageId = 0x0001;
     _blueCherry.lastAckedMessageId = 0x0000;
-    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
     _blueCherry.moreDataAvailable = false;
 
     _blueCherry.emitErrorEvent = false;
@@ -340,7 +369,13 @@ bool WalterModem::blueCherryInit(
     _blueCherry.otaBuffer = otaBuffer;
     _blueCherry.ackTimeout = ackTimeout;
 
-    return _blueCherrySocketConfigure();
+    if (_blueCherrySocketConnect()) {
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+        return true;
+    } else {
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
+        return false;
+    }
 }
 
 bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t *data)
@@ -369,17 +404,22 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
 
     if (_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
         _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES &&
-        _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+        _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT &&
+        _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED) {
         _returnState(WALTER_MODEM_STATE_BUSY)
     }
 
     rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
-    rsp->data.blueCherry.syncFinished = false;
     rsp->data.blueCherry.messageCount = 0;
+    _blueCherry.messageInLen = 0;
 
-    _blueCherryCoapSend();
+    if (_blueCherrySocketConnect()) {
+        _blueCherryCoapSend();
+    } else {
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
+    }
 
-    uint16_t payloadOffset = 5; // skip CoAP headers
+    uint16_t payloadOffset = WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE;
     while (payloadOffset < _blueCherry.messageInLen) {
         uint8_t topic = _blueCherry.messageIn[payloadOffset++];
         uint8_t dataLen = _blueCherry.messageIn[payloadOffset++];
@@ -408,13 +448,16 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
         payloadOffset += dataLen;
     }
 
+    // Mark the sync as finished whether we were successfull or not. This prevents an endless
+    // loop and offloads any connectivity issues to the application.
+    rsp->data.blueCherry.syncFinished = true;
+
     _blueCherry.curMessageId++;
     if (_blueCherry.curMessageId == 0) {
         /* on wrap around, skip msg id 0 which we use as a special/error value */
         _blueCherry.curMessageId++;
     }
-    // Reserve initial 5 bytes for CoAP headers
-    _blueCherry.messageOutLen = 5;
+    _blueCherry.messageOutLen = WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE;
 
     if (_blueCherry.emitErrorEvent) {
         uint8_t blueCherryErrorEventCode = WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR;
@@ -423,6 +466,11 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
 
     if (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
         rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
+        _returnState(WALTER_MODEM_STATE_ERROR)
+    }
+
+    if (_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED) {
+        rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
         _returnState(WALTER_MODEM_STATE_ERROR)
     }
 
