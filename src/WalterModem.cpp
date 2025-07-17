@@ -1107,22 +1107,20 @@ void WalterModem::_resetParseRxFlags()
     _receiveExpected = 0;
 }
 
-bool WalterModem::_expectingPayload() {
-    int nothing;
-    const char *nothingString;
-
-    /* check for "+SQNSRECV: " prefix to start payload mode */
-    if (sscanf((const char*)_parserData.buf, "+SQNSRECV: %d,%d", &nothing, &_receiveExpected) == 2) {
+bool WalterModem::_expectingPayload()
+{
+    // Check for "+SQNSRECV: <ignored>,<length>"
+    if (sscanf((const char *)_parserData.buf, "+SQNSRECV: %*d,%d", &_receiveExpected) == 1) {
         return true;
     }
 
-    /* check for "+SQNSMQTTRCVMESSAGE: " prefix to start payload mode */
-    if (sscanf((const char*)_parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%s,%d", &nothingString, &_receiveExpected) == 2) {
+    // Check for "+SQNSMQTTRCVMESSAGE=0,<ignored>,<length>"
+    if (sscanf((const char *)_parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%*[^,],%d", &_receiveExpected) == 1) {
         return true;
     }
 
-    /* check for "+SQNCOAPRCV: " prefix to start payload mode */
-    if (sscanf((const char*)_parserData.buf, "+SQNCOAPRCV: %d,%d,%d", &nothing, &nothing, &_receiveExpected) == 3) {
+    // Check for "+SQNCOAPRCV: <ignored>,<ignored>,<length>"
+    if (sscanf((const char *)_parserData.buf, "+SQNCOAPRCV: %*d,%*d,%d", &_receiveExpected) == 1) {
         return true;
     }
 
