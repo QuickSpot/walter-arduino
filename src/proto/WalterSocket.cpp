@@ -475,6 +475,9 @@ bool WalterModem::socketReceive(
         return true;
     }
 
+    // The number of received bytes attempts to be read from within the RX parser.
+    // This will be used as a fallback if it cannot read it.
+    _expectedPayloadSize = dataToRead;
     _runCmd(
         arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(receiveCount)),
         "+SQNSRECV:",
