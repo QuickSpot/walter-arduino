@@ -1459,7 +1459,11 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
             TickType_t diff = xTaskGetTickCount() - cmd->attemptStart;
             bool timedOut = diff >= WALTER_MODEM_CMD_TIMEOUT_TICKS;
             if (timedOut || cmd->state == WALTER_MODEM_CMD_STATE_RETRY_AFTER_ERROR) {
-                ESP_LOGW("WalterModem", "Timed out or retrying last queue command");
+                if (timedOut) {
+                    ESP_LOGW("WalterModem", "Command time-out (TX) Attempt %d of %d", cmd->attempt, cmd->maxAttempts);
+                } else {
+                    ESP_LOGW("WalterModem", "Command ERROR (TX) Attempt %d of %d", cmd->attempt, cmd->maxAttempts);
+                }
                 _resetParseRxFlags();
                 if (cmd->attempt >= cmd->maxAttempts) {
                     _finishQueueCmd(
@@ -1485,7 +1489,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
         } else {
             TickType_t diff = xTaskGetTickCount() - cmd->attemptStart;
             if (diff >= WALTER_MODEM_CMD_TIMEOUT_TICKS) {
-                ESP_LOGW("WalterModem", "Timed out while processing WAIT queue cmd");
+                ESP_LOGW("WalterModem", "Command time-out (WAIT)");
                 _resetParseRxFlags();
                 _finishQueueCmd(cmd, WALTER_MODEM_STATE_TIMEOUT);
             } else {
