@@ -1055,9 +1055,9 @@ bool WalterModem::_checkPayloadComplete()
 {
 #pragma region OK
     char *resultPos = (char *)memmem(
-        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nOK\r\n", 6);
+        &_parserData.buf->data[_receivedPayloadSize], _parserData.buf->size, "\r\nOK\r\n", 6);
 
-    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+    if (resultPos && _parserData.buf->size >= _receivedPayloadSize) {
         //ESP_LOGI("WalterParser", "payload completed (OK)");
 
         _parserData.buf->size -= 6;
@@ -1070,9 +1070,9 @@ bool WalterModem::_checkPayloadComplete()
 
 #pragma region ERROR
     resultPos = (char *)memmem(
-        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "\r\nERROR\r\n", 9);
+        &_parserData.buf->data[_receivedPayloadSize], _parserData.buf->size, "\r\nERROR\r\n", 9);
 
-    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+    if (resultPos && _parserData.buf->size >= _receivedPayloadSize) {
         //ESP_LOGI("WalterParser", "payload received error (ERROR)");
         _parserData.buf->size -= 9;
         _queueRxBuffer();
@@ -1084,9 +1084,9 @@ bool WalterModem::_checkPayloadComplete()
 
 #pragma region CME_ERROR
     resultPos = (char *)memmem(
-        &_parserData.buf->data[_receiveExpected], _parserData.buf->size, "+CME ERROR:", 11);
+        &_parserData.buf->data[_receivedPayloadSize], _parserData.buf->size, "+CME ERROR:", 11);
 
-    if (resultPos && _parserData.buf->size >= _receiveExpected) {
+    if (resultPos && _parserData.buf->size >= _receivedPayloadSize) {
         // ESP_LOGI("WalterParser", "payload CME error (OK)");
         uint16_t size = (uint16_t)((uint8_t *)resultPos - _parserData.buf->data);
         _parserData.buf->size -= size;
@@ -1104,23 +1104,39 @@ void WalterModem::_resetParseRxFlags()
 {
     _receivingPayload = false;
     _foundCRLF = false;
-    _receiveExpected = 0;
+    _receivedPayloadSize = 0;
 }
 
 bool WalterModem::_expectingPayload()
 {
-    // Check for "+SQNSRECV: <ignored>,<length>"
-    if (sscanf((const char *)_parserData.buf, "+SQNSRECV: %*d,%d", &_receiveExpected) == 1) {
+    // Check for "+SQNSRECV: "
+    if (strncmp((const char *)_parserData.buf, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
+        // Check for "+SQNSRECV: <ignored>,<length>"
+        if (sscanf((const char *)_parserData.buf, "+SQNSRECV: %*d,%d", &_receivedPayloadSize) != 1) {
+            // Fall back to the expected payload size if the length could not be found.
+            _receivedPayloadSize = _expectedPayloadSize;
+        }
         return true;
     }
 
-    // Check for "+SQNSMQTTRCVMESSAGE=0,<ignored>,<length>"
-    if (sscanf((const char *)_parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%*[^,],%d", &_receiveExpected) == 1) {
+    // Check for "+SQNSMQTTRCVMESSAGE: "
+    if (strncmp((const char *)_parserData.buf, "+SQNSMQTTRCVMESSAGE: ", strlen("+SQNSMQTTRCVMESSAGE: ")) == 0) {
+        // Check for "+SQNSMQTTRCVMESSAGE=0,<ignored>,<length>"
+        if (sscanf((const char *)_parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%*[^,],%d", &_receivedPayloadSize) != 1) {
+            // Fall back to the expected payload size if the length could not be found.
+            _receivedPayloadSize = _expectedPayloadSize;
+        }
         return true;
     }
 
-    // Check for "+SQNCOAPRCV: <ignored>,<ignored>,<length>"
-    if (sscanf((const char *)_parserData.buf, "+SQNCOAPRCV: %*d,%*d,%d", &_receiveExpected) == 1) {
+    // Check for "+SQNCOAPRCV: "
+    if (strncmp((const char *)_parserData.buf, "+SQNCOAPRCV: ", strlen("+SQNCOAPRCV: ")) == 0) {
+        // Check for "+SQNCOAPRCV: <ignored>,<length>"
+        if (sscanf((const char *)_parserData.buf, "+SQNCOAPRCV: %*d,%*d,,%*d,%*d,%*d,%d", &_receivedPayloadSize) != 1 &&
+            sscanf((const char *)_parserData.buf, "+SQNCOAPRCV: %*d,%*d,%*[^,],%*d,%*d,%*d,%d", &_receivedPayloadSize) != 1) {
+            // Fall back to the expected payload size if the length could not be found.
+            _receivedPayloadSize = _expectedPayloadSize;
+        }
         return true;
     }
 
@@ -1174,10 +1190,10 @@ void WalterModem::_parseRxData(char *rxData, size_t len)
                 _receivingPayload = true;
             }
 
-            if (!_foundCRLF && CRLFPos > 0 && _receiveExpected > 0) {
+            if (!_foundCRLF && CRLFPos > 0 && _receivedPayloadSize > 0) {
                 /* We are receiving payload data */
                 /* We need to keep append the CRLFPos for correct _receivExpected usage */
-                _receiveExpected += CRLFPos;
+                _receivedPayloadSize += CRLFPos;
                 _foundCRLF = true;
                 _addATBytesToBuffer(dataStart + CRLFPos, dataLen - CRLFPos);
                 _checkPayloadComplete();

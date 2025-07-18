@@ -100,7 +100,10 @@ bool WalterModem::coapDidRing(
         profileId,
         _coapContextSet[profileId].rings[ringIdx].messageId,
         _coapContextSet[profileId].rings[ringIdx].length);
-        
+
+    // The number of received bytes attempts to be read from within the RX parser.
+    // This will be used as a fallback if it cannot read it.
+    _expectedPayloadSize = _coapContextSet[profileId].rings[ringIdx].length;       
     _runCmd(
         arr((const char *)stringsBuffer->data),
         "OK",

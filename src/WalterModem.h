@@ -2932,7 +2932,9 @@ private:
 
     static inline size_t currentCRLF = 0;
 
-    static inline size_t _receiveExpected = 0;
+    static inline size_t _receivedPayloadSize = 0;
+
+    static inline size_t _expectedPayloadSize = 0;
     /**
      * @brief We remember the configured watchdog timeout.
      */
