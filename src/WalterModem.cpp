@@ -3496,9 +3496,9 @@ void WalterModem::_sleepWakeup()
 #pragma region PUBLIC_METHODS
 #pragma region BEGIN
 #ifdef ARDUINO
-bool WalterModem::begin(HardwareSerial *uart, uint8_t watchdogTimeout)
+bool WalterModem::begin(HardwareSerial *uart, uint16_t watchdogTimeout)
 #else
-bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
+bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
 #endif
 {
     if (_initialized) {
@@ -3508,9 +3508,9 @@ bool WalterModem::begin(uart_port_t uartNo, uint8_t watchdogTimeout)
     _watchdogTimeout = watchdogTimeout;
     if (_watchdogTimeout) {
         /* wdt timeout must be longer than max wait time for a modem response */
-        // if (_watchdogTimeout * 1000UL < WALTER_MODEM_CMD_TIMEOUT_MS + 5000UL) {
-        //     _watchdogTimeout = (uint8_t)((WALTER_MODEM_CMD_TIMEOUT_MS / 1000UL) + 5);
-        // }
+        if (_watchdogTimeout * 1000UL < WALTER_MODEM_CMD_TIMEOUT_MS + 5000UL) {
+            _watchdogTimeout = (uint16_t)((WALTER_MODEM_CMD_TIMEOUT_MS / 1000UL) + 5);
+        }
 #if ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 0, 0)
         esp_task_wdt_init(_watchdogTimeout, true);
 #else
