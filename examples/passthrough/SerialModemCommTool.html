@@ -1,0 +1,281 @@
+
+<!DOCTYPE html>
+
+<!-- 
+     It can be used with:  
+     https://github.com/QuickSpot/walter-arduino/tree/main/examples/passthrough
+
+     To add your own buttons or change initial commands, look below.  
+     Or ask an AI to do it.
+-->
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serial Modem Comm Tool</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      padding: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    textarea, input[type="text"], select {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      font-family: monospace;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      background-color: #2196f3;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #1976d2;
+    }
+    label {
+      margin-top: 15px;
+      display: block;
+      font-weight: bold;
+    }
+    .preset-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .preset-buttons button {
+      flex: 1 1 auto;
+      font-size: 14px;
+      padding: 8px 12px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .actions button {
+      flex: 1 1 auto;
+    }
+    .highlight {
+      background-color: #ffe5e5;
+    }
+    .ctrl-z-btn {
+      background-color: #f44336 !important;
+    }
+    .ctrl-z-btn:hover {
+      background-color: #d32f2f !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Serial Modem Comm Tool</h2>
+    <button id="connectBtn">Connect to Modem</button>
+
+    <!-- 
+	    Your own custom commands can be added here, 
+	    start a new div for a new row
+	    <button data-cmd="Button Command">Button Display</button>
+    -->
+
+    <div class="preset-buttons">
+      <button data-cmd="AT">AT</button>
+      <button data-cmd="ATI">ATI</button>
+      <button data-cmd="AT+CSQ">AT+CSQ</button>
+      <button data-cmd="AT+CGMI">AT+CGMI</button>
+    </div>
+
+    <!-- -->
+
+    <button id="ctrlZBtn" class="ctrl-z-btn">Ctrl+Z</button>
+
+    <label for="commandHistory">Command History:</label>
+    <select id="commandHistory">
+      <option value="">-- Select Previous Command --</option>
+    </select>
+
+    <label for="commandInput">Send AT Command:</label>
+    <input type="text" id="commandInput" placeholder="e.g. AT, ATI, AT+CSQ" />
+    <button id="sendBtn">Send Command</button>
+
+    <label for="output">Modem Response:</label>
+    <textarea id="output" rows="10" readonly></textarea>
+
+    <div class="actions">
+      <button id="copyLogs">Copy Logs</button>
+      <button id="exportLogs">Export Logs</button>
+      <button id="clearLogs">Clear Logs</button>
+    </div>
+  </div>
+
+  <script>
+    let port;
+    let writer;
+    let reader;
+    let keepReading = true;
+    let buffer = '';
+    const history = [];
+
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      try {
+        port = await navigator.serial.requestPort();
+	await port.open({ baudRate: 115200 });
+
+        const textDecoder = new TextDecoderStream();
+        const textEncoder = new TextEncoderStream();
+
+        const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+        const writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+
+        reader = textDecoder.readable.getReader();
+        writer = textEncoder.writable.getWriter();
+
+        readLoop();
+        logOutput('Connected to modem.');
+        await autoDetectModem();
+      } catch (err) {
+        logOutput('Connection failed: ' + err);
+      }
+    });
+
+    document.getElementById('sendBtn').addEventListener('click', async () => {
+      const commandInput = document.getElementById('commandInput');
+      const command = commandInput.value;
+      if (!command || !writer) return;
+      await writer.write(command + "\r");
+      const timestamp = new Date().toLocaleTimeString();
+      logOutput(`[${timestamp}] > ${command}`, true);
+      addToHistory(command);
+      commandInput.value = ''; // Clear the input after sending
+    });
+
+    document.getElementById('commandHistory').addEventListener('change', e => {
+      const selected = e.target.value;
+      if (selected) document.getElementById('commandInput').value = selected;
+    });
+
+    document.getElementById('copyLogs').addEventListener('click', () => {
+      const output = document.getElementById('output');
+      output.select();
+      document.execCommand('copy');
+    });
+
+    document.getElementById('exportLogs').addEventListener('click', () => {
+      const text = document.getElementById('output').value;
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'modem_logs.txt';
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    document.getElementById('clearLogs').addEventListener('click', () => {
+      document.getElementById('output').value = '';
+    });
+
+    document.querySelectorAll('.preset-buttons button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('commandInput').value = btn.getAttribute('data-cmd');
+        document.getElementById('sendBtn').click();
+      });
+    });
+
+    document.getElementById('ctrlZBtn').addEventListener('click', async () => {
+      if (!writer) return;
+      await writer.write(String.fromCharCode(26)); // Send Ctrl+Z (ASCII 26)
+      const timestamp = new Date().toLocaleTimeString();
+      logOutput(`[${timestamp}] > [Ctrl+Z]`, true);
+    });
+
+    async function autoDetectModem() {
+      //    Commands    completed on connection
+      const commands = ['AT', 'ATI'];
+      for (const cmd of commands) {
+        await writer.write(cmd + '\r');
+        logOutput(cmd);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    async function readLoop() {
+      while (port.readable && keepReading) {
+        try {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) processIncomingData(value);
+        } catch (err) {
+          logOutput('Read error: ' + err);
+        }
+      }
+    }
+
+    function processIncomingData(data) {
+      buffer += data;
+      
+      // Split buffer into lines using common line endings
+      const lines = buffer.split(/\r\n|\r|\n/);
+      
+      // Keep the last incomplete line in buffer
+      buffer = lines.pop() || '';
+      
+      // Process complete lines, filtering out empty lines
+      const nonEmptyLines = lines.filter(line => line.trim() !== '');
+      
+      nonEmptyLines.forEach(line => {
+        // Indent responses to align with command timestamp length
+        const indent = '             '; // 13 spaces to match "[HH:MM:SS AM] > " length
+        logOutput(`${indent}${line}`);
+      });
+      
+      // Add blank line after processing response lines
+      if (nonEmptyLines.length > 0) {
+        logOutput('');
+      }
+    }
+
+    function logOutput(text, isCommand = false) {
+      const output = document.getElementById('output');
+      output.value += `${text}\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function addToHistory(cmd) {
+      if (!history.includes(cmd)) {
+        history.push(cmd);
+        const option = document.createElement('option');
+        option.value = cmd;
+        option.textContent = cmd;
+        document.getElementById('commandHistory').appendChild(option);
+      }
+    }
+
+    window.addEventListener('beforeunload', async () => {
+      keepReading = false;
+      if (reader) await reader.cancel();
+      if (writer) await writer.close();
+      if (port) await port.close();
+    });
+  </script>
+</body>
+</html>
