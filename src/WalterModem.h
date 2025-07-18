@@ -2936,7 +2936,7 @@ private:
     /**
      * @brief We remember the configured watchdog timeout.
      */
-    static inline uint8_t _watchdogTimeout = false;
+    static inline uint16_t _watchdogTimeout = false;
 #ifdef ARDUINO
     /**
      * @brief The hardware serial peripheral used to talk to the modem.
@@ -3959,13 +3959,13 @@ public:
      * call tickleWatchdog before the timeout expires. This helps you guard against programming
      * errors, although it is still possible a part of your code never gets executed while
      * always tickling the watchdog in time. It also guards against bugs in the walter modem
-     * library that would cause it to block for too long. The minimum supported timeout is 40
-     * seconds. Note that a watchdog timer may be set in the compile options, triggered by a
+     * library that would cause it to block for too long. A minimum timeout of 300 is enforced.
+     * Note that a watchdog timer may be set in the compile options, triggered by a
      * starting idle task. This is usually sufficient for simple programs.
      *
      * @return True on success, false on error.
      */
-    static bool begin(HardwareSerial *uart, uint8_t watchdogTimeout = 0);
+    static bool begin(HardwareSerial *uart, uint16_t watchdogTimeout = 0);
 #else
     /**
      * @brief Initialize the modem.
@@ -3979,13 +3979,13 @@ public:
      * call tickleWatchdog before the timeout expires. This helps you guard against programming
      * errors, although it is still possible a part of your code never gets executed while
      * always tickling the watchdog in time. It also guards against bugs in the walter modem
-     * library that would cause it to block for too long. The minimum supported timeout is 40
-     * seconds. Note that a watchdog timer may be set in the compile options, triggered by a
+     * library that would cause it to block for too long. A minimum timeout of 300 is enforced.
+     * Note that a watchdog timer may be set in the compile options, triggered by a
      * starting idle task. This is usually sufficient for simple programs.
      *
      * @return True on success, false on error.
      */
-    static bool begin(uart_port_t uartNo, uint8_t watchdogTimeout = 0);
+    static bool begin(uart_port_t uartNo, uint16_t watchdogTimeout = 0);
 #endif
 #pragma endregion
 
