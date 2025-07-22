@@ -434,14 +434,14 @@ void modem_setup() {
     regState = modem.getNetworkRegState();
     while (!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
              regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING)) {
-      if (count >= 1800) {
+      if (count > 300) {
         Serial.println("Error: Could not connect to the network, going to reboot");
         delay(1000);
         ESP.restart();
         return;
       }
 
-      count += 1;
+      count++;
       delay(1000);
       regState = modem.getNetworkRegState();
     }
