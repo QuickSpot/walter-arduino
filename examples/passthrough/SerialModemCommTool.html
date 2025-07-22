@@ -1,12 +1,15 @@
-
 <!DOCTYPE html>
+<!--
+  Serial Modem Comm Tool v1.1
+  ---------------------------------------------------------
+  Use with: https://github.com/QuickSpot/walter-arduino/tree/main/examples/passthrough
 
-<!-- 
-     It can be used with:  
-     https://github.com/QuickSpot/walter-arduino/tree/main/examples/passthrough
+  Customization:
+    - Add preset command buttons in the .preset-buttons section.
+    - Change initial auto-detect commands in autoDetectModem().
+    - Request new features or changes via GitHub Issues or use AI!
 
-     To add your own buttons or change initial commands, look below.  
-     Or ask an AI to do it.
+  This is free and unencumbered software released into the public domain.
 -->
 
 <html lang="en">
@@ -84,50 +87,74 @@
     .ctrl-z-btn:hover {
       background-color: #d32f2f !important;
     }
+    /* Reduced prominence for disclaimer */
+    .disclaimer {
+      background: #fafafa;
+      color: #6c757d;
+      border: 1px dashed #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 28px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h2>Serial Modem Comm Tool</h2>
+
+    <!-- Connect Button -->
     <button id="connectBtn">Connect to Modem</button>
 
-    <!-- 
-	    Your own custom commands can be added here, 
-	    start a new div for a new row
-	    <button data-cmd="Button Command">Button Display</button>
-    -->
-
+    <!-- Preset AT Command Buttons -->
     <div class="preset-buttons">
       <button data-cmd="AT">AT</button>
       <button data-cmd="ATI">ATI</button>
       <button data-cmd="AT+CSQ">AT+CSQ</button>
       <button data-cmd="AT+CGMI">AT+CGMI</button>
+      <!-- Add your custom preset buttons here -->
     </div>
 
-    <!-- -->
-
+    <!-- Ctrl+Z Button (for SMS/command end) -->
     <button id="ctrlZBtn" class="ctrl-z-btn">Ctrl+Z</button>
 
+    <!-- Command History Dropdown -->
     <label for="commandHistory">Command History:</label>
     <select id="commandHistory">
       <option value="">-- Select Previous Command --</option>
     </select>
 
+    <!-- Manual Command Input -->
     <label for="commandInput">Send AT Command:</label>
     <input type="text" id="commandInput" placeholder="e.g. AT, ATI, AT+CSQ" />
     <button id="sendBtn">Send Command</button>
 
+    <!-- Output/Logs -->
     <label for="output">Modem Response:</label>
     <textarea id="output" rows="10" readonly></textarea>
 
+    <!-- Log Actions -->
     <div class="actions">
       <button id="copyLogs">Copy Logs</button>
       <button id="exportLogs">Export Logs</button>
       <button id="clearLogs">Clear Logs</button>
     </div>
+
+    <!-- Browser Disclaimer -->
+    <div class="disclaimer">
+      <strong>Note:</strong>
+      This tool uses the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank" rel="noopener">Web Serial API</a> and is supported only in Chromium-based desktop browsers (like Google Chrome and Microsoft Edge).<br>
+      It will not work in Firefox, Safari, Internet Explorer, or most mobile browsers.<br>
+      For best results, use the latest version of Chrome or Edge.
+    </div>
   </div>
 
   <script>
+    // ---------------------------------------------------------
+    // Serial connection and UI state
+    // ---------------------------------------------------------
     let port;
     let writer;
     let reader;
@@ -135,16 +162,20 @@
     let buffer = '';
     const history = [];
 
+    // ---------------------------------------------------------
+    // Serial Port: Connect
+    // ---------------------------------------------------------
     document.getElementById('connectBtn').addEventListener('click', async () => {
       try {
         port = await navigator.serial.requestPort();
-	await port.open({ baudRate: 115200 });
+        await port.open({ baudRate: 115200 });
 
         const textDecoder = new TextDecoderStream();
         const textEncoder = new TextEncoderStream();
 
-        const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
-        const writableStreamClosed = textEncoder.readable.pipeTo(port.writable);
+        // Pipe port streams
+        port.readable.pipeTo(textDecoder.writable);
+        textEncoder.readable.pipeTo(port.writable);
 
         reader = textDecoder.readable.getReader();
         writer = textEncoder.writable.getWriter();
@@ -157,6 +188,9 @@
       }
     });
 
+    // ---------------------------------------------------------
+    // Send Command (manual input)
+    // ---------------------------------------------------------
     document.getElementById('sendBtn').addEventListener('click', async () => {
       const commandInput = document.getElementById('commandInput');
       const command = commandInput.value;
@@ -165,14 +199,20 @@
       const timestamp = new Date().toLocaleTimeString();
       logOutput(`[${timestamp}] > ${command}`, true);
       addToHistory(command);
-      commandInput.value = ''; // Clear the input after sending
+      commandInput.value = '';
     });
 
+    // ---------------------------------------------------------
+    // Command History: select previous command
+    // ---------------------------------------------------------
     document.getElementById('commandHistory').addEventListener('change', e => {
       const selected = e.target.value;
       if (selected) document.getElementById('commandInput').value = selected;
     });
 
+    // ---------------------------------------------------------
+    // Log Actions: Copy, Export, Clear
+    // ---------------------------------------------------------
     document.getElementById('copyLogs').addEventListener('click', () => {
       const output = document.getElementById('output');
       output.select();
@@ -194,6 +234,9 @@
       document.getElementById('output').value = '';
     });
 
+    // ---------------------------------------------------------
+    // Preset Button Click: fill and send command
+    // ---------------------------------------------------------
     document.querySelectorAll('.preset-buttons button').forEach(btn => {
       btn.addEventListener('click', () => {
         document.getElementById('commandInput').value = btn.getAttribute('data-cmd');
@@ -201,15 +244,20 @@
       });
     });
 
+    // ---------------------------------------------------------
+    // Ctrl+Z Button: send ASCII 26
+    // ---------------------------------------------------------
     document.getElementById('ctrlZBtn').addEventListener('click', async () => {
       if (!writer) return;
-      await writer.write(String.fromCharCode(26)); // Send Ctrl+Z (ASCII 26)
+      await writer.write(String.fromCharCode(26)); // Ctrl+Z (ASCII 26)
       const timestamp = new Date().toLocaleTimeString();
       logOutput(`[${timestamp}] > [Ctrl+Z]`, true);
     });
 
+    // ---------------------------------------------------------
+    // Auto-detect modem: send initial commands on connect
+    // ---------------------------------------------------------
     async function autoDetectModem() {
-      //    Commands    completed on connection
       const commands = ['AT', 'ATI'];
       for (const cmd of commands) {
         await writer.write(cmd + '\r');
@@ -218,6 +266,9 @@
       }
     }
 
+    // ---------------------------------------------------------
+    // Read serial loop: incoming data
+    // ---------------------------------------------------------
     async function readLoop() {
       while (port.readable && keepReading) {
         try {
@@ -230,36 +281,36 @@
       }
     }
 
+    // ---------------------------------------------------------
+    // Process and display incoming serial data
+    // ---------------------------------------------------------
     function processIncomingData(data) {
       buffer += data;
-      
-      // Split buffer into lines using common line endings
+      // Split buffer into lines, keep incomplete line
       const lines = buffer.split(/\r\n|\r|\n/);
-      
-      // Keep the last incomplete line in buffer
       buffer = lines.pop() || '';
-      
-      // Process complete lines, filtering out empty lines
+      // Only display non-empty lines
       const nonEmptyLines = lines.filter(line => line.trim() !== '');
-      
       nonEmptyLines.forEach(line => {
-        // Indent responses to align with command timestamp length
-        const indent = '             '; // 13 spaces to match "[HH:MM:SS AM] > " length
+        // Indent response to align with command timestamp
+        const indent = '             ';
         logOutput(`${indent}${line}`);
       });
-      
-      // Add blank line after processing response lines
-      if (nonEmptyLines.length > 0) {
-        logOutput('');
-      }
+      if (nonEmptyLines.length > 0) logOutput('');
     }
 
+    // ---------------------------------------------------------
+    // Output/log utility
+    // ---------------------------------------------------------
     function logOutput(text, isCommand = false) {
       const output = document.getElementById('output');
       output.value += `${text}\n`;
       output.scrollTop = output.scrollHeight;
     }
 
+    // ---------------------------------------------------------
+    // Command history utility
+    // ---------------------------------------------------------
     function addToHistory(cmd) {
       if (!history.includes(cmd)) {
         history.push(cmd);
@@ -270,6 +321,9 @@
       }
     }
 
+    // ---------------------------------------------------------
+    // Clean up serial on close/unload
+    // ---------------------------------------------------------
     window.addEventListener('beforeunload', async () => {
       keepReading = false;
       if (reader) await reader.cancel();
@@ -278,4 +332,3 @@
     });
   </script>
 </body>
-</html>
