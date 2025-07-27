@@ -119,8 +119,8 @@ bool waitForNetwork() {
   int timeout = 0;
   while (!lteConnected()) {
     vTaskDelay(pdMS_TO_TICKS(1000));
-    timeout += 1000;
-    if (timeout > 300000)
+    timeout++;
+    if (timeout > 300)
       return false;
   }
   Serial.println("Connected to the network");

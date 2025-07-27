@@ -124,9 +124,9 @@ bool waitForNetwork() {
   /* Wait for the network to become available */
   int timeout = 0;
   while (!lteConnected()) {
-    delay(100);
-    timeout += 100;
-    if (timeout > 300000)
+    delay(1000);
+    timeout++;
+    if (timeout > 300)
       return false;
   }
   Serial.println("Connected to the network");
