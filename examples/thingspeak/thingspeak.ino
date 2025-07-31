@@ -106,8 +106,8 @@ bool waitForNetwork() {
   int timeout = 0;
   while (!lteConnected()) {
     delay(1000);
-    timeout++;
-    if (timeout > 300) {
+    timeout += 1000;
+    if (timeout > 900000) {
       ESP.restart();
       return false;
     }
