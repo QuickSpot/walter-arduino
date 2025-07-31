@@ -3832,7 +3832,7 @@ void WalterModem::sleep(uint32_t sleepTime, bool lightSleep)
 #ifdef ARDUINO
         _uart->setPins(
             WALTER_MODEM_PIN_RX, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_CTS, WALTER_MODEM_PIN_RTS);
-        _uart->setHwFlowCtrlMode();
+        _uart->setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS, UART_BUF_THRESHOLD);
 #else
         uart_set_pin(
             _uartNo,
