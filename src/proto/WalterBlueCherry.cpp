@@ -224,6 +224,8 @@ bool WalterModem::_blueCherryCoapSend()
                 return true;
             }
 
+            vTaskDelay(pdMS_TO_TICKS(10));
+
             if (difftime(time(NULL), _blueCherry.lastTransmissionTime) >= timeout) {
                 break; // retransmit or give up
             }
@@ -414,7 +416,10 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
     _blueCherry.messageInLen = 0;
 
     if (_blueCherrySocketConnect()) {
-        _blueCherryCoapSend();
+        if (_blueCherryCoapSend()) {
+             // Reset Publish Buffer if successfull
+            _blueCherry.messageOutLen = WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE;
+        }
     } else {
         _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
     }
@@ -457,7 +462,6 @@ bool WalterModem::blueCherrySync(WalterModemRsp *rsp)
         /* on wrap around, skip msg id 0 which we use as a special/error value */
         _blueCherry.curMessageId++;
     }
-    _blueCherry.messageOutLen = WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE;
 
     if (_blueCherry.emitErrorEvent) {
         uint8_t blueCherryErrorEventCode = WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR;
