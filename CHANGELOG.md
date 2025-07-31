@@ -146,7 +146,7 @@ This is the Changelog for WalterModem
 
 - feat(http): added support for extra header line ([#106](https://github.com/QuickSpot/walter-esp-idf/pull/106))
 - feat(bluecherry psm example): BlueCherry example update with deepsleep and PSM ([#109](https://github.com/QuickSpot/walter-esp-idf/pull/109))
-feat(bluecherry-coap-restructure): bluecherry coap messages via udp modem sockets ([#62](https://github.com/QuickSpot/walter-arduino/pull/62))
+- feat(bluecherry-coap-restructure): bluecherry coap messages via udp modem sockets ([#62](https://github.com/QuickSpot/walter-arduino/pull/62))
 
 
 ### Bug Fixes
@@ -156,3 +156,26 @@ feat(bluecherry-coap-restructure): bluecherry coap messages via udp modem socket
 - fix(examples): add socket config tls ([#111](https://github.com/QuickSpot/walter-esp-idf/pull/111))
 - fix(socket-tls-examples): updated examples to disable tls by default ([#63](https://github.com/QuickSpot/walter-arduino/pull/63))
 - fix(bluecherry): bluecherry port was not properly set (replaced by CONFIG macro)
+
+## [v1.4.1](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.4.1)
+
+### Features
+
+- feat(socket): socketGetState, _socketUpdateStates ([#117](https://github.com/QuickSpot/walter-esp-idf/pull/117))
+- feat(socket): add socket resume ([#118](https://github.com/QuickSpot/walter-esp-idf/pull/118))
+
+### Bug Fixes
+
+- fix(bluecherry-example): Remove delay before deep sleep ([#68](https://github.com/QuickSpot/walter-arduino/pull/68))
+- fix(bluecherry, parser): reworked bluecherry reconnect implementation and RX parser logic ([#69](https://github.com/QuickSpot/walter-arduino/pull/69))
+- fix(parser): ignoring unused variables in sscanf ([#70](https://github.com/QuickSpot/walter-arduino/pull/70))
+- fix(watchdogt): wdt upgraded to uint16_t type ([#71](https://github.com/QuickSpot/walter-arduino/pull/71))
+- fix(parser): warning logs based on time out or error, showing retry attempt ([#73](https://github.com/QuickSpot/walter-arduino/pull/73))
+- fix(parser): expected payload size as fallback to received payload length parser ([#74](https://github.com/QuickSpot/walter-arduino/pull/74))
+- fix(socket): socket->dataAvailable was accidentally removed ([#75](https://github.com/QuickSpot/walter-arduino/pull/75))
+- fix(examples): timeout refactor on network connection logic ([#77](https://github.com/QuickSpot/walter-arduino/pull/77))
+- fix(examples) timeout network connection refactor ([#78](https://github.com/QuickSpot/walter-arduino/pull/78))
+
+- fix(example): removed excess bluecherry init after sync fail ([#119](https://github.com/QuickSpot/walter-esp-idf/pull/119))
+- fix(example): default coap profile = 1 ([#120](https://github.com/QuickSpot/walter-esp-idf/pull/120))
+- fix(examples): updated timeout on network connection logic ([#121](https://github.com/QuickSpot/walter-esp-idf/pull/121))
