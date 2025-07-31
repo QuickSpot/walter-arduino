@@ -109,9 +109,20 @@ CONFIG_INT(WALTER_MODEM_CMD_TIMEOUT_MS, 300000)
 CONFIG_INT(WALTER_MODEM_MAX_EVENT_DURATION_MS, 500)
 
 /**
- * @brief uart buffer size
+ * @brief UART buffer size.
+ * The size of the UART hardware FIFO buffer.
  */
 CONFIG_INT(UART_BUF_SIZE, 128)
+
+/**
+ * @brief UART buffer threshold.
+ * When the hardware UART buffer reaches a certain threshold,
+ * an interrupt will get triggered.
+ * We had issues with a lower treshold, which would seem to indicate that we're not processing
+ * something fast enough, in order to deal with the more frequent interrupts.
+ * We need to test this hypothesis.
+ */
+CONFIG_INT(UART_BUF_THRESHOLD, 122)
 #pragma endregion
 
 /**
@@ -3571,7 +3582,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
     _uart->setPins(
         WALTER_MODEM_PIN_RX, WALTER_MODEM_PIN_TX, WALTER_MODEM_PIN_CTS, WALTER_MODEM_PIN_RTS);
 
-    _uart->setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS,UART_BUF_SIZE * 0.8);
+    _uart->setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS,UART_BUF_THRESHOLD);
     _uart->onReceive(_handleRxData);
 #else
     //the initialization is done this way because otherwise we get warnings
@@ -3582,7 +3593,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
     uart_config.parity = UART_PARITY_DISABLE;
     uart_config.stop_bits = UART_STOP_BITS_1;
     uart_config.flow_ctrl = UART_HW_FLOWCTRL_CTS_RTS;
-    uart_config.rx_flow_ctrl_thresh = (uint8_t)(UART_BUF_SIZE * 0.8);
+    uart_config.rx_flow_ctrl_thresh = (uint8_t)(UART_BUF_THRESHOLD);
     uart_config.source_clk = UART_SCLK_DEFAULT;
 
     _uartNo = uartNo;
@@ -3829,7 +3840,7 @@ void WalterModem::sleep(uint32_t sleepTime, bool lightSleep)
             WALTER_MODEM_PIN_RX,
             WALTER_MODEM_PIN_RTS,
             WALTER_MODEM_PIN_CTS);
-        uart_set_hw_flow_ctrl(_uartNo, UART_HW_FLOWCTRL_CTS_RTS, 122);
+        uart_set_hw_flow_ctrl(_uartNo, UART_HW_FLOWCTRL_CTS_RTS, UART_BUF_THRESHOLD);
 #endif
     } else {
         _sleepPrepare();
