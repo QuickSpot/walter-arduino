@@ -179,3 +179,11 @@ This is the Changelog for WalterModem
 - fix(example): removed excess bluecherry init after sync fail ([#119](https://github.com/QuickSpot/walter-esp-idf/pull/119))
 - fix(example): default coap profile = 1 ([#120](https://github.com/QuickSpot/walter-esp-idf/pull/120))
 - fix(examples): updated timeout on network connection logic ([#121](https://github.com/QuickSpot/walter-esp-idf/pull/121))
+
+## [v1.4.2](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.4.2)
+
+### Bug Fixes
+
+- fix(bluecherry): task delay and publish buffer ([#82](https://github.com/QuickSpot/walter-arduino/pull/82))
+
+- fix(uart): hardware flow control threshold ([#123](https://github.com/QuickSpot/walter-esp-idf/pull/123))
