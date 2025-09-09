@@ -53,7 +53,7 @@
 #include <esp_mac.h>
 
 #define AWS_MQTTS_PORT 8883
-#define AWS_MQTTS_HOSTNAME ""
+#define AWS_MQTTS_ENDPOINT ""
 #define AWS_MQTTS_TOPIC ""
 #define AWS_MQTTS_CLIENT_ID ""
 
@@ -225,7 +225,7 @@ void setup() {
   Serial.begin(115200);
   delay(5000);
 
-  Serial.println("Walter modem MQTT example v1.0.0\r\n");
+  Serial.println("Walter modem AWS IoT example v1.0.0\r\n");
 
   esp_read_mac(incomingBuf, ESP_MAC_WIFI_STA);
   sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X", incomingBuf[0],
@@ -259,7 +259,7 @@ void setup() {
     return;
   }
 
-  if (modem.mqttConnect(AWS_MQTTS_HOSTNAME, AWS_MQTTS_PORT)) {
+  if (modem.mqttConnect(AWS_MQTTS_ENDPOINT, AWS_MQTTS_PORT)) {
     Serial.println("MQTTS connection succeeded");
   } else {
     Serial.println("Error: MQTTS connection failed");
