@@ -21,9 +21,7 @@ To run this example you will need the following items:
    * [Install](https://www.quickspot.io/documentation.html#/walter-modem/setup/arduino) the modem library
    * [Setup](https://www.quickspot.io/documentation.html#/developer-toolchains/arduino) the Arduino IDE for Walter
 
-2. Install a tool to view MQTT messages (optional for debugging), e.g. [MQTT Explorer](https://mqtt-explorer.com/).
-
-3. Set up your **AWS IoT Core environment**:
+2. Set up your **AWS IoT Core environment**:
 
    * Create an IoT Thing
    * Attach a policy allowing `iot:Connect`, `iot:Publish`, `iot:Subscribe`, `iot:Receive`
@@ -42,7 +40,7 @@ Before flashing the example, configure the TLS certificates and endpoint:
 
   ```cpp
   #define AWS_MQTTS_PORT PORT (typically 8883)
-  #define AWS_MQTTS_HOSTNAME "AWS HOSTNAME"
+  #define AWS_MQTTS_ENDPOINT "AWS ENDPOINT"
   #define AWS_MQTTS_TOPIC "AWS TOPIC"
   #define AWS_MQTTS_CLIENT_ID "AWS CLIENT ID"
 
@@ -63,4 +61,4 @@ Before flashing the example, configure the TLS certificates and endpoint:
 4. Walter will connect to the AWS IoT Core MQTT broker over TLS (port 8883).
 
 5. You should see messages with Walter’s MAC address and counter values appearing on the topic.
-    You can monitor these messages in the AWS IoT MQTT test client or in tools like MQTT Explorer.
+    You can monitor these messages in the AWS IoT MQTT test client.
