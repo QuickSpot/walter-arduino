@@ -53,7 +53,7 @@
 #include <esp_mac.h>
 
 #define MQTTS_PORT 8883
-#define MQTTS_HOST ""
+#define MQTTS_HOST "broker.emqx.io"
 #define MQTTS_TOPIC "walter-tls-test-topic"
 #define MQTTS_CLIENT_ID "walter-client"
 #define MQTTS_USERNAME ""
@@ -61,28 +61,35 @@
 
 /**
  * @brief Root CA certificate in PEM format.
+ * 
+ * @note Example: https://www.emqx.com/en/mqtt/public-mqtt5-broker
  *
  * Used to validate the server's TLS certificate.
  */
 const char ca_cert[] PROGMEM  = R"EOF(
-  -----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----)EOF";
-
-/**
- * @brief Client certificate in PEM format.
- *
- * Used by the modem to authenticate itself to the server.
- */
-const char client_cert[] PROGMEM = R"EOF(
-  -----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----)EOF";
-
-/**
- * @brief Client private key in PEM format.
- *
- * Used by the modem for TLS mutual authentication.
- * Keep this private and secure.
- */
-const char client_private_key[] PROGMEM = R"EOF(
-  -----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----)EOF";
+-----BEGIN CERTIFICATE-----
+MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
+MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
+d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
+QTAeFw0wNjExMTAwMDAwMDBaFw0zMTExMTAwMDAwMDBaMGExCzAJBgNVBAYTAlVT
+MRUwEwYDVQQKEwxEaWdpQ2VydCBJbmMxGTAXBgNVBAsTEHd3dy5kaWdpY2VydC5j
+b20xIDAeBgNVBAMTF0RpZ2lDZXJ0IEdsb2JhbCBSb290IENBMIIBIjANBgkqhkiG
+9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4jvhEXLeqKTTo1eqUKKPC3eQyaKl7hLOllsB
+CSDMAZOnTjC3U/dDxGkAV53ijSLdhwZAAIEJzs4bg7/fzTtxRuLWZscFs3YnFo97
+nh6Vfe63SKMI2tavegw5BmV/Sl0fvBf4q77uKNd0f3p4mVmFaG5cIzJLv07A6Fpt
+43C/dxC//AH2hdmoRBBYMql1GNXRor5H4idq9Joz+EkIYIvUX7Q6hL+hqkpMfT7P
+T19sdl6gSzeRntwi5m3OFBqOasv+zbMUZBfHWymeMr/y7vrTC0LUq7dBMtoM1O/4
+gdW7jVg/tRvoSSiicNoxBN33shbyTApOB6jtSj1etX+jkMOvJwIDAQABo2MwYTAO
+BgNVHQ8BAf8EBAMCAYYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUA95QNVbR
+TLtm8KPiGxvDl7I90VUwHwYDVR0jBBgwFoAUA95QNVbRTLtm8KPiGxvDl7I90VUw
+DQYJKoZIhvcNAQEFBQADggEBAMucN6pIExIK+t1EnE9SsPTfrgT1eXkIoyQY/Esr
+hMAtudXH/vTBH1jLuG2cenTnmCmrEbXjcKChzUyImZOMkXDiqw8cvpOp/2PV5Adg
+06O/nVsJ8dWO41P0jmP6P6fbtGbfYmbW0W5BjfIttep3Sp+dWOIrWcBAI+0tKIJF
+PnlUkiaY4IBIqDfv8NZ5YBberOgOzW6sRBc4L0na4UU+Krk2U886UAb3LujEV0ls
+YSEY1QSteDwsOoBrp+uvFRTp2InBuThs4pFsiv9kuXclVzDAGySj4dzp30d8tbQk
+CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=
+-----END CERTIFICATE-----
+)EOF";
 
 /**
  * The TLS profile to use for the application (1 is reserved for BlueCherry)
@@ -198,22 +205,12 @@ bool setupTLSProfile(void) {
     Serial.println("Error: CA cert upload failed");
     return false;
   }
-  if (!modem.tlsWriteCredential(false, 11, client_cert)) {
-    Serial.println("Error: client cert upload failed");
-    return false;
-  }
-  if (!modem.tlsWriteCredential(true, 1, client_private_key)) {
-    Serial.println("Error: private key upload failed");
-    return false;
-  }
 
   if (modem.tlsConfigProfile(
-          MQTT_TLS_PROFILE,
+          MQTTS_TLS_PROFILE,
           WALTER_MODEM_TLS_VALIDATION_CA,
           WALTER_MODEM_TLS_VERSION_12,
-          12,
-          11,
-          1)) {
+          12)) {
     Serial.println("TLS profile configured");
   } else {
     Serial.println("Error: TLS profile configuration failed");
@@ -254,7 +251,7 @@ void setup() {
   }
 
   /* Configure MQTT with TLS profile (MQTTS) */
-  if (modem.mqttConfig(MQTTS_CLIENT_ID, MQTTS_USERNAME, MQTTS_PASSWORD, MQTT_TLS_PROFILE)) {
+  if (modem.mqttConfig(MQTTS_CLIENT_ID, MQTTS_USERNAME, MQTTS_PASSWORD, MQTTS_TLS_PROFILE)) {
     Serial.println("MQTTS configuration succeeded");
   } else {
     Serial.println("Error: MQTTS configuration failed");
