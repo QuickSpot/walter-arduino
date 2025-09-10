@@ -57,7 +57,7 @@ bool WalterModem::_mqttSubscribeRaw(
 {
     _runCmd(
         arr("AT+SQNSMQTTSUBSCRIBE=0,", _atStr(topicString), ",", _atNum(qos)),
-        NULL,
+        "+SQNSMQTTONSUBSCRIBE:0,",
         rsp,
         mqttResubscribeCallback,
         args);
@@ -176,12 +176,18 @@ bool WalterModem::mqttSubscribe(
             _strncpy_s(_mqttTopics[i].topic, topicString, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
 
             break;
+        } else if (!strncmp(topicString, _mqttTopics[i].topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE - 1)) {
+            /*Topic already in use*/
+            _returnState(WALTER_MODEM_STATE_OK);
+            break;
         }
     }
 
     if (index < 0) {
         _currentTopic = NULL;
-        rsp->data.mqttResponse.mqttStatus = WALTER_MODEM_MQTT_UNAVAILABLE;
+        if (rsp) {
+            rsp->data.mqttResponse.mqttStatus = WALTER_MODEM_MQTT_UNAVAILABLE;
+        }
         _returnState(WALTER_MODEM_STATE_ERROR);
     }
 
