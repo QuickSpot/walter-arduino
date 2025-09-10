@@ -176,7 +176,7 @@ bool WalterModem::mqttSubscribe(
             _strncpy_s(_mqttTopics[i].topic, topicString, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
 
             break;
-        } else if (!strncmp(topicString, _mqttTopics[i].topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE)) {
+        } else if (!strncmp(topicString, _mqttTopics[i].topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE - 1)) {
             /*Topic already in use*/
             _returnState(WALTER_MODEM_STATE_OK);
             break;
