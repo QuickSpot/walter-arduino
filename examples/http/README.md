@@ -3,7 +3,7 @@
 ## Purpose
 
 This example demonstrates how Walter can send and receive requests using **HTTP**.
-Walter will make a HTTPS GET and POST request to a remote webserver.
+Walter will make a HTTP GET and POST request to a remote webserver.
 
 ## Required Hardware
 
@@ -27,9 +27,9 @@ Before flashing the example, configure the routes and credentials:
 
   ```cpp
   #define HTTP_PORT 80
-  #define HTTP_HOST "httpbin.org"
-  #define HTTP_GET_ENDPOINT "/get"
-  #define HTTP_POST_ENDPOINT "/post"
+  #define HTTP_HOST "quickspot.io"
+  #define HTTP_GET_ENDPOINT "/hello/get"
+  #define HTTP_POST_ENDPOINT "/hello/post"
   ```
 
 ## Running the example
