@@ -52,9 +52,9 @@
 #include <HardwareSerial.h>
 
 #define HTTP_PORT 80
-#define HTTP_HOST "httpbin.org"
-#define HTTP_GET_ENDPOINT "/get"
-#define HTTP_POST_ENDPOINT "/post"
+#define HTTP_HOST "quickspot.io"
+#define HTTP_GET_ENDPOINT "/hello/get"
+#define HTTP_POST_ENDPOINT "/hello/post"
 
 /**
  * @brief HTTP profile
@@ -97,13 +97,16 @@ bool lteConnected()
  */
 bool waitForNetwork(int timeout_sec = 300)
 {
+  Serial.print("Connecting to the network...");
   int time = 0;
   while(!lteConnected()) {
+    Serial.print(".");
     delay(1000);
     time++;
     if(time > timeout_sec)
       return false;
   }
+  Serial.println();
   Serial.println("Connected to the network");
   return true;
 }

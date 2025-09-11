@@ -1,4 +1,4 @@
-# Walter HTTPS querry example
+# Walter HTTP query example
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Before flashing the example, configure the routes and credentials:
   #define HTTP_POST_ENDPOINT "/post"
   ```
 
-## Running the Example
+## Running the example
 
 1. Connect the LTE antenna to Walter.
    **Warning:** Running without the antenna connected may damage the radio frontend.
