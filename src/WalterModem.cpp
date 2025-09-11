@@ -2300,7 +2300,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd *cmd, WalterModemBuffer *buff)
          */
         if (cmd->data && cmd->dataSize >= buff->size - 2) {
             memcpy(cmd->data, buff->data + 3, buff->size - 3);
-            cmd->data[buff->size - 2] = '\0';
+            cmd->data[buff->size - 3] = '\0';
         } else {
             ESP_LOGW("WalterModem", "Unable to store HTTP payload (buffer to small)");
             result = WALTER_MODEM_STATE_NO_MEMORY;

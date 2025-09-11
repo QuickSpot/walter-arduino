@@ -1,0 +1,23 @@
+BasedOnStyle: LLVM
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 100
+SortIncludes: Never
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: true
+  AfterControlStatement: false
+SpaceBeforeParens: Never
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+PointerAlignment: Left
+SpaceAfterCStyleCast: true
+Cpp11BracedListStyle: false
+SpaceBeforeCpp11BracedList: true
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortBlocksOnASingleLine: false
+BreakBeforeBinaryOperators: None
