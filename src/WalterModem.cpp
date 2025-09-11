@@ -987,6 +987,10 @@ WalterModemBuffer *WalterModem::_getFreeBuffer(void)
         }
     }
 
+    if (chosenBuf == NULL) {
+        ESP_LOGE("WalterModem", "No free buffers");
+    }
+
     return chosenBuf;
 }
 
@@ -1489,7 +1493,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd *cmd, bool queueError)
                 if (timedOut) {
                     ESP_LOGW("WalterModem", "Command time-out (TX) Attempt %u of %u", cmd->attempt, cmd->maxAttempts);
                 } else {
-                    ESP_LOGW("WalterModem", "Command ERROR (TX) Attempt %u of %u", cmd->attempt, cmd->maxAttempts);
+                    ESP_LOGD("WalterModem", "Command ERROR (TX) Attempt %u of %u", cmd->attempt, cmd->maxAttempts);
                 }
                 _resetParseRxFlags();
                 if (cmd->attempt >= cmd->maxAttempts) {

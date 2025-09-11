@@ -105,7 +105,18 @@ bool WalterModem::mqttConfig(
         buf->size += sprintf((char*) buf->data + buf->size, ",%u", tlsProfileId);
     }
     
-    _runCmd(arr((const char*) buf->data), "OK", rsp, cb, args);
+    _runCmd(
+        arr((const char*) buf->data),
+        "OK",
+        rsp,
+        cb,
+        args,
+        NULL,
+        NULL,
+        WALTER_MODEM_CMD_TYPE_TX_WAIT,
+        NULL,
+        0,
+        buf);
     _returnAfterReply();
 }
 
