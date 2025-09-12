@@ -223,9 +223,6 @@ bool udpSendBasicInfoPacket()
   float temp = temperatureRead();
   uint16_t rawTemp = (temp + 50) * 100;
 
-  /* Attempt to get the latest cell information */
-  modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp);
-
   /* Construct the Basic info Packet */
   dataBuf[6] = rawTemp >> 8;
   dataBuf[7] = rawTemp & 0xFF;
@@ -250,6 +247,9 @@ bool udpSendBasicInfoPacket()
     Serial.println("Error: UDP send basic info packet failed");
     return false;
   }
+
+  /* Attempt to get the latest cell information (for next packet) */
+  modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp);
 
   Serial.println("UDP send basic info packet succeeded");
   return true;
