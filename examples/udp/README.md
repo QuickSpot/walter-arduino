@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This example will make Walter construct two data packets and send it to our demo
+This example will make Walter construct a data packet and send it to our demo
 [server](http://walterdemo.quickspot.io/) every 30 seconds.
 
 ## Required hardware
