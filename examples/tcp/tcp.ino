@@ -52,9 +52,9 @@
 #include <esp_mac.h>
 
 #define TCP_PORT 1999
-#define TCP_HOST "94.110.152.111"
+#define TCP_HOST "walterdemo.quickspot.io"
 
-#define BASIC_INFO_PACKET_SIZE 22
+#define BASIC_INFO_PACKET_SIZE 24
 
 /**
  * @brief The modem instance.
@@ -223,6 +223,11 @@ bool tcpSendBasicInfoPacket()
   float temp = temperatureRead();
   uint16_t rawTemp = (temp + 50) * 100;
 
+  uint8_t rat = -1;
+  if(modem.getRAT(&rsp)) {
+    rat = (uint8_t) rsp.data.rat;
+  }
+
   /* Construct the Basic info Packet */
   dataBuf[6] = rawTemp >> 8;
   dataBuf[7] = rawTemp & 0xFF;
@@ -240,6 +245,8 @@ bool tcpSendBasicInfoPacket()
   dataBuf[19] = rsp.data.cellInformation.cid & 0xFF;
   dataBuf[20] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
   dataBuf[21] = (uint8_t) (rsp.data.cellInformation.rsrq * -1);
+  dataBuf[22] = rat;
+  dataBuf[23] = 0xFF;
 
   Serial.println("Sending basic info packet");
 
@@ -248,7 +255,7 @@ bool tcpSendBasicInfoPacket()
     return false;
   }
 
-  /* Attempt to get the latest cell information for the next cycle */
+  /* Attempt to get the latest cell information (for next packet) */
   modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp);
 
   Serial.println("TCP send basic info packet succeeded");
