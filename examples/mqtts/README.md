@@ -1,20 +1,19 @@
-# Walter MQTTS Example
+# Walter MQTTS example
 
 ## Purpose
 
 This example demonstrates how Walter can securely connect using **MQTT with TLS certificates**.
 Walter will publish a counter value along with its MAC address to the MQTT broker on the topic.
+It will subscribe to the same topic for incoming messages.
 
-## Required Hardware
+## Required hardware
 
 To run this example you will need the following items:
 
-* Walter
-* An LTE antenna
-* A SIM card with data plan
-* USB-C cable to flash Walter
-
-## Required Software
+- Walter
+- An LTE antenna
+- A SIM card
+- USB-C cable to flash Walter
 
 1. Follow the instructions in the [documentation](https://www.quickspot.io/index.html) to:
 
@@ -23,7 +22,7 @@ To run this example you will need the following items:
 
 ## Configuration
 
-Before flashing the example, configure the TLS certificates and credentials:
+Before flashing the example, configure the default settings:
 
 * In the example sketch, update the following:
 
@@ -32,11 +31,11 @@ Before flashing the example, configure the TLS certificates and credentials:
    #define MQTTS_HOST "broker.emqx.io"
    #define MQTTS_TOPIC "walter-tls-test-topic"
    #define MQTTS_CLIENT_ID "walter-client"
-   #define MQTTS_USERNAME
-   #define MQTTS_PASSWORD
+   #define MQTTS_USERNAME "" // Not required for example
+   #define MQTTS_PASSWORD "" // Not required for example
 
    // Using the CA certificate from https://www.emqx.com/en/mqtt/public-mqtt5-broker
-   const char ca_cert[] PROGMEM  = R"EOF(
+   const char ca_cert[] PROGMEM = R"EOF(
    -----BEGIN CERTIFICATE-----
    MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
    MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
@@ -62,7 +61,7 @@ Before flashing the example, configure the TLS certificates and credentials:
    )EOF";
   ```
 
-## Running the Example
+## Running the example
 
 1. Connect the LTE antenna to Walter.
    **Warning:** Running without the antenna connected may damage the radio frontend.
@@ -71,7 +70,4 @@ Before flashing the example, configure the TLS certificates and credentials:
 
 3. Flash the example sketch to Walter.
 
-4. Walter will connect to the MQTT broker over TLS (port 8883).
-
-5. You should see messages with Walter’s MAC address and counter values appearing on the topic.
-    You can monitor these messages on a subscribed client.
+4. You should see requests being performed, and the responses being logged.
