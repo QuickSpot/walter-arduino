@@ -58,12 +58,12 @@
 
 /**
  * @brief Root CA certificate in PEM format.
- * 
+ *
  * @note Example uses LetsEncrypt Root
  *
  * Used to validate the server's TLS certificate.
  */
-const char ca_cert[] PROGMEM  = R"EOF(
+const char ca_cert[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
@@ -245,18 +245,16 @@ bool lteConnect()
  * - true if the credentials were successfully written and the profile configured.
  * - false otherwise.
  */
-bool setupTLSProfile(void) {
+bool setupTLSProfile(void)
+{
 
-  if (!modem.tlsWriteCredential(false, 12, ca_cert)) {
+  if(!modem.tlsWriteCredential(false, 12, ca_cert)) {
     Serial.println("Error: CA cert upload failed");
     return false;
   }
 
-  if (modem.tlsConfigProfile(
-          HTTPS_TLS_PROFILE,
-          WALTER_MODEM_TLS_VALIDATION_CA,
-          WALTER_MODEM_TLS_VERSION_12,
-          12)) {
+  if(modem.tlsConfigProfile(HTTPS_TLS_PROFILE, WALTER_MODEM_TLS_VALIDATION_CA,
+                            WALTER_MODEM_TLS_VERSION_12, 12)) {
     Serial.println("TLS profile configured");
   } else {
     Serial.println("Error: TLS profile configuration failed");
@@ -310,7 +308,7 @@ bool httpsGet(const char* path)
  * @brief Perform an HTTPS POST request with a body.
  */
 bool httpsPost(const char* path, const uint8_t* body, size_t bodyLen,
-              const char* mimeType = "application/json")
+               const char* mimeType = "application/json")
 {
   char ctBuf[32] = { 0 };
 
@@ -390,7 +388,7 @@ void loop()
     // Example POST
     const char jsonBody[] = "{\"hello\":\"walter\"}";
     if(!httpsPost(HTTPS_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
-                 "application/json")) {
+                  "application/json")) {
       Serial.println("HTTPS POST failed, restarting...");
       delay(1000);
       ESP.restart();
