@@ -1,7 +1,7 @@
 /**
  * @file tcp.ino
  * @author Daan Pape <daan@dptechnics.com>
- * @date 12 September 2025
+ * @date 28 Apr 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -43,43 +43,18 @@
  *
  * @section DESCRIPTION
  *
- * This example demonstrates how to configure the modem in Walter to send sample
- * data to the Walter Demo server on walterdemo.quickspot.io.
+ * This file contains a sketch which uses the modem in Walter to make a
+ * connection to a network and upload data packets to the Walter demo server.
  */
 
 #include <HardwareSerial.h>
 #include <WalterModem.h>
 #include <esp_mac.h>
 
-/**
- * @brief Cellular APN for SIM card. Leave empty to autodetect APN.
- */
-CONFIG(CELLULAR_APN, const char*, "")
+#define TCP_PORT 1999
+#define TCP_HOST "94.110.152.111"
 
-/**
- * @brief Time delay in ms of data sent to the Walter demo server.
- */
-CONFIG_UINT16(SEND_DELAY_MS, 10000)
-
-/**
- * @brief The address of the Walter demo server.
- */
-CONFIG(SERV_ADDR, const char*, "example.com")
-
-/**
- * @brief The UDP port of the Walter demo server.
- */
-CONFIG_INT(SERV_PORT, 80)
-
-/**
- * @brief ESP-IDF log prefix.
- */
-static constexpr const char* TAG = "socket_example";
-
-/**
- * @brief The serial interface to talk to the modem.
- */
-#define ModemSerial Serial2
+#define BASIC_INFO_PACKET_SIZE 22
 
 /**
  * @brief The modem instance.
@@ -89,20 +64,30 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-WalterModemRsp rsp;
+WalterModemRsp rsp = {};
 
 /**
- * @brief The buffer to transmit to the demo server. The first 6 bytes will be
+ * @brief The socket identifier (1-6)
+ *
+ * @note At least one socket should be available/reserved for BlueCherry.
+ */
+uint8_t socketId = -1;
+
+/**
+ * @brief The buffer to transmit to the TCP server. The first 6 bytes will be
  * the MAC address of the Walter this code is running on.
  */
-uint8_t dataBuf[1500] = { 0 };
-
-uint16_t dataAvailable = 0;
+uint8_t dataBuf[8] = { 0 };
 
 /**
- * @brief This function checks if we are connected to the lte network
+ * @brief The counter used in the ping packets.
+ */
+uint16_t counter = 0;
+
+/**
+ * @brief This function checks if we are connected to the LTE network
  *
- * @return True when connected, False otherwise
+ * @return true when connected, false otherwise
  */
 bool lteConnected()
 {
@@ -112,41 +97,78 @@ bool lteConnected()
 }
 
 /**
- * @brief This function waits for the modem to be connected to the Lte network.
- * @return true if the connected, else false on timeout.
+ * @brief This function waits for the modem to be connected to the LTE network.
+ *
+ * @param timeout_sec The amount of seconds to wait before returning a time-out.
+ *
+ * @return true if connected, false on time-out.
  */
-bool waitForNetwork()
+bool waitForNetwork(int timeout_sec = 300)
 {
-  /* Wait for the network to become available */
-  int timeout = 0;
+  Serial.print("Connecting to the network...");
+  int time = 0;
   while(!lteConnected()) {
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    timeout++;
-    if(timeout > 300)
+    Serial.print(".");
+    delay(1000);
+    time++;
+    if(time > timeout_sec)
       return false;
   }
+  Serial.println();
   Serial.println("Connected to the network");
   return true;
 }
 
 /**
+ * @brief Disconnect from the LTE network.
+ *
+ * This function will disconnect the modem from the LTE network and block until
+ * the network is actually disconnected. After the network is disconnected the
+ * GNSS subsystem can be used.
+ *
+ * @return true on success, false on error.
+ */
+bool lteDisconnect()
+{
+  /* Set the operational state to minimum */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+    Serial.println("Successfully set operational state to MINIMUM");
+  } else {
+    Serial.println("Error: Could not set operational state to MINIMUM");
+    return false;
+  }
+
+  /* Wait for the network to become available */
+  WalterModemNetworkRegState regState = modem.getNetworkRegState();
+  while(regState != WALTER_MODEM_NETWORK_REG_NOT_SEARCHING) {
+    delay(100);
+    regState = modem.getNetworkRegState();
+  }
+
+  Serial.println("Disconnected from the network");
+  return true;
+}
+
+/**
  * @brief This function tries to connect the modem to the cellular network.
- * @return true if the connection attempt is successful, else false.
+ *
+ * @return true on success, false on error.
  */
 bool lteConnect()
 {
+  /* Set the operational state to NO RF */
   if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
   } else {
-    Serial.println("Could not set operational state to NO RF");
+    Serial.println("Error: Could not set operational state to NO RF");
     return false;
   }
 
   /* Create PDP context */
-  if(modem.definePDPContext(1, CELLULAR_APN)) {
+  if(modem.definePDPContext()) {
     Serial.println("Created PDP context");
   } else {
-    Serial.println("Could not create PDP context");
+    Serial.println("Error: Could not create PDP context");
     return false;
   }
 
@@ -154,103 +176,163 @@ bool lteConnect()
   if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
     Serial.println("Successfully set operational state to FULL");
   } else {
-    Serial.println("Could not set operational state to FULL");
+    Serial.println("Error: Could not set operational state to FULL");
     return false;
   }
 
   /* Set the network operator selection to automatic */
   if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println("Network selection mode to was set to automatic");
+    Serial.println("Network selection mode was set to automatic");
   } else {
-    Serial.println("Could not set the network selection mode to automatic");
+    Serial.println("Error: Could not set the network selection mode to automatic");
     return false;
   }
 
   return waitForNetwork();
 }
 
+/**
+ * @brief Socket event handler
+ *
+ * Handles status changes and incoming TCP messages.
+ * @note This callback is invoked from the modem driver’s event context.
+ *       It must never block or call modem methods directly.
+ *       Use it only to set flags or copy data for later processing.
+ *
+ * @param ev          Event type (e.g. WALTER_MODEM_SOCKET_EVENT_RING for incoming messages)
+ * @param socketId    ID of the socket that triggered the event
+ * @param dataReceived Number of bytes received
+ * @param dataBuffer  Pointer to received data
+ * @param args        User argument pointer passed to socketSetEventHandler
+ */
+void tcpSocketEventHandler(WalterModemSocketEvent ev, int socketId, uint16_t dataReceived,
+                           uint8_t* dataBuffer, void* args)
+{
+  if(ev == WALTER_MODEM_SOCKET_EVENT_RING) {
+    Serial.printf("Received TCP message (%u bytes) on socket %d\r\n", dataReceived, socketId);
+    Serial.printf("Payload:\r\n%.*s\r\n", dataReceived, reinterpret_cast<const char*>(dataBuffer));
+  }
+}
+
+/**
+ * @brief Send a basic info packet to walterdemo
+ */
+bool tcpSendBasicInfoPacket()
+{
+  /* Read the temperature of Walter */
+  float temp = temperatureRead();
+  uint16_t rawTemp = (temp + 50) * 100;
+
+  /* Construct the Basic info Packet */
+  dataBuf[6] = rawTemp >> 8;
+  dataBuf[7] = rawTemp & 0xFF;
+  dataBuf[8] = counter >> 8;
+  dataBuf[9] = counter & 0xFF;
+  dataBuf[10] = rsp.data.cellInformation.cc >> 8;
+  dataBuf[11] = rsp.data.cellInformation.cc & 0xFF;
+  dataBuf[12] = rsp.data.cellInformation.nc >> 8;
+  dataBuf[13] = rsp.data.cellInformation.nc & 0xFF;
+  dataBuf[14] = rsp.data.cellInformation.tac >> 8;
+  dataBuf[15] = rsp.data.cellInformation.tac & 0xFF;
+  dataBuf[16] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
+  dataBuf[17] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
+  dataBuf[18] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
+  dataBuf[19] = rsp.data.cellInformation.cid & 0xFF;
+  dataBuf[20] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
+  dataBuf[21] = (uint8_t) (rsp.data.cellInformation.rsrq * -1);
+
+  Serial.println("Sending basic info packet");
+
+  if(!modem.socketSend(dataBuf, BASIC_INFO_PACKET_SIZE)) {
+    Serial.println("Error: TCP send basic info packet failed");
+    return false;
+  }
+
+  /* Attempt to get the latest cell information for the next cycle */
+  modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp);
+
+  Serial.println("TCP send basic info packet succeeded");
+  return true;
+}
+
+/**
+ * @brief The main Arduino setup method.
+ */
 void setup()
 {
   Serial.begin(115200);
   delay(5000);
 
-  ESP_LOGI(TAG, "Walter UDP Socket example v1");
+  Serial.printf("\r\n\r\n=== WalterModem TCP example ===\r\n\r\n");
 
-  /* Get the MAC address for board validation */
-  esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1],
-                dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
-
-  /* Initialize the modem */
-  if(WalterModem::begin(&ModemSerial)) {
-    Serial.println("Successfully initialized modem");
+  /* Start the modem */
+  if(WalterModem::begin(&Serial2)) {
+    Serial.println("Successfully initialized the modem");
   } else {
-    Serial.println("Error: Could not initialize modem");
+    Serial.println("Error: Could not initialize the modem");
     return;
   }
 
-  /* Connect the modem to the lte network */
+  /* Connect the modem to the LTE network */
   if(!lteConnect()) {
-    Serial.println("Error: Could Not Connect to LTE");
+    Serial.println("Error: Could not connect to LTE");
     return;
   }
 
-  /* Construct a socket */
+  /* Retrieve and print the board MAC address */
+  esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
+  Serial.printf("Board MAC: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1], dataBuf[2],
+                dataBuf[3], dataBuf[4], dataBuf[5]);
+
+  /* Set the TCP socket event handler */
+  modem.socketSetEventHandler(tcpSocketEventHandler, NULL);
+
+  /* Configure a new socket */
   if(modem.socketConfig(&rsp)) {
-    Serial.println("Created a new socket");
+    Serial.println("Successfully configured a new socket");
+
+    /* Utilize the socket id if you have more then one socket */
+    /* If not specified in the methods, the modem will use the previous socket id */
+    socketId = rsp.data.socketId;
   } else {
-    Serial.println("Error: Could not create a new socket");
-    return;
-  }
-  /* Construct a socket */
-  if(modem.socketConfigExtended(&rsp)) {
-    Serial.println("Defined socket extended config params");
-  } else {
-    Serial.println("Error: Could not define socket extended config params");
+    Serial.println("Error: Could not configure a new socket");
     return;
   }
 
-  /* disable socket tls as the demo server does not use it */
+  /* Disable TLS (the demo TCP server does not use it) */
   if(modem.socketConfigSecure(false)) {
-    Serial.print("Configured TLS\r\n");
+    Serial.println("Successfully set socket to insecure mode");
   } else {
-    Serial.print("Could not configure TLS\r\n");
+    Serial.println("Error: Could not disable socket TLS");
     return;
   }
 
-  /* Connect to the demo server */
-  if(modem.socketDial(SERV_ADDR, SERV_PORT, 0, NULL, NULL, NULL, WALTER_MODEM_SOCKET_PROTO_TCP)) {
-    Serial.printf("Connected to UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
+  /* Connect (dial) to the TCP test server */
+  if(modem.socketDial(TCP_HOST, TCP_PORT, 0, NULL, NULL, NULL, WALTER_MODEM_SOCKET_PROTO_TCP)) {
+    Serial.printf("Successfully dialed TCP server %s:%d\r\n", TCP_HOST, TCP_PORT);
   } else {
-    Serial.println("Error: Could not connect demo socket");
+    Serial.println("Error: Could not dial TCP server");
     return;
   }
 }
 
+/**
+ * @brief The main Arduino loop method.
+ */
 void loop()
 {
-  if(modem.socketSend((char*) "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")) {
-    Serial.println("Transmitted GET request");
-  } else {
-    Serial.println("Could not transmit GET request");
-    ESP.restart();
-  }
+  static unsigned long lastSend = 0;
+  const unsigned long sendInterval = 30000;
 
-  vTaskDelay(pdMS_TO_TICKS(SEND_DELAY_MS));
-  while(modem.socketAvailable() > 0) {
-    // 1500 is the max amount of bytes the modem can read at a time.
-    uint16_t dataToRead = (modem.socketAvailable() > 1500) ? 1500 : modem.socketAvailable();
+  if(millis() - lastSend >= sendInterval) {
+    lastSend = millis();
 
-    Serial.print("Reading: ");
-    Serial.print(dataToRead);
-    Serial.println(" bytes");
-
-    if(modem.socketReceive(dataToRead, sizeof(dataBuf), dataBuf)) {
-      Serial.print("Remaining: ");
-      Serial.print(modem.socketAvailable());
-      Serial.print(" | Data: ");
-      Serial.write(dataBuf, dataToRead);
-      Serial.println();
+    if(!tcpSendBasicInfoPacket()) {
+      Serial.println("TCP send failed, restarting...");
+      delay(1000);
+      ESP.restart();
     }
+    counter++;
+    Serial.println();
   }
 }
