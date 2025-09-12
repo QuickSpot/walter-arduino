@@ -300,7 +300,7 @@ bool httpsGet(const char* path)
     Serial.println("Error: HTTPS GET query failed");
     return false;
   }
-  Serial.println("HTTPS GET Successfully sent");
+  Serial.println("HTTPS GET successfully sent");
   return waitForHttpsResponse(MODEM_HTTPS_PROFILE, ctBuf);
 }
 
@@ -320,7 +320,7 @@ bool httpsPost(const char* path, const uint8_t* body, size_t bodyLen,
     Serial.println("Error: HTTPS POST failed");
     return false;
   }
-  Serial.println("HTTPS POST Successfully sent");
+  Serial.println("HTTPS POST successfully sent");
   return waitForHttpsResponse(MODEM_HTTPS_PROFILE, ctBuf);
 }
 
@@ -332,7 +332,7 @@ void setup()
   Serial.begin(115200);
   delay(5000);
 
-  Serial.printf("\r\n\r\n=== WalterModem HTTPS Example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem HTTPS example ===\r\n\r\n");
 
   /* Start the modem */
   if(WalterModem::begin(&Serial2)) {

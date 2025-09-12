@@ -1,9 +1,9 @@
-# Walter HTTPS query example
+# Walter HTTPS example
 
 ## Purpose
 
 This example demonstrates how Walter can send and receive requests using
-**HTTP with TLS certificates (HTTPS)**.
+**HTTP over TLS (HTTPS)**.
 Walter will make a HTTPS GET and POST request to a remote webserver.
 
 ## Required Hardware

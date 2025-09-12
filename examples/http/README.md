@@ -1,4 +1,4 @@
-# Walter HTTP query example
+# Walter HTTP example
 
 ## Purpose
 
