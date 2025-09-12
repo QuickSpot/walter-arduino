@@ -2,8 +2,10 @@
 
 ## Purpose
 
-This example will make Walter construct a data packet and send it to our demo
-[server](http://walterdemo.quickspot.io/) every 30 seconds.
+This example demonstrates how to **set up a bidirectional UDP connection** using Walter.
+Walter constructs a data packet and sends it to a remote endpoint every 30 seconds.
+For demonstration, we use the [Quickspot demo server](http://walterdemo.quickspot.io/) as the endpoint,
+but you can replace this with any compatible UDP server in your own application.
 
 ## Required hardware
 
