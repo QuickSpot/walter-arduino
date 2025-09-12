@@ -1,8 +1,10 @@
-# Walter modem udp socket example
+# Walter TCP example
 
 ## Purpose
 
-This example will make Walter fetch the example.com website.
+This example will make Walter construct a data packet and send it to our demo
+[server](http://walterdemo.quickspot.io/) every 30 seconds.
+
 ## Required hardware
 
 To run this example you will need the following items:
@@ -14,16 +16,18 @@ To run this example you will need the following items:
 
 ## Required software
 
-Please follow the instructions from the [documentation](https://www.quickspot.io/index.html)
-to [install](https://www.quickspot.io/documentation.html#/walter-modem/setup/arduino) the modem library and [setup](https://www.quickspot.io/documentation.html#/developer-toolchains/arduino) the Arduino IDE for use with Walter.
+1. Follow the instructions in the [documentation](https://www.quickspot.io/index.html) to:
 
-## Run the example
+   * [Install](https://www.quickspot.io/documentation.html#/walter-modem/setup/arduino) the modem library
+   * [Setup](https://www.quickspot.io/documentation.html#/developer-toolchains/arduino) the Arduino IDE for Walter
 
-Make sure to connect the LTE antenna to Walter. Running the example without the
-antenna connected could damage the radio frontend of the modem. Also insert the
-SIM card before starting the sketch.
+## Running the example
 
-You should now be able to see your Walter pop up on the
-[Walter Demo](http://walterdemo.quickspot.io/) website. Walter identifies itself
-to the demo server using his MAC address. You should see the last sent ping
-counter value update every time Walter sends out a message.
+1. Connect the LTE antenna to Walter.
+   **Warning:** Running without the antenna connected may damage the radio frontend.
+
+2. Insert the SIM card.
+
+3. Flash the example sketch to Walter.
+
+4. You should see requests being performed, and the responses being logged.
