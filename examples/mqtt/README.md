@@ -2,8 +2,9 @@
 
 ## Purpose
 
-This example will make Walter count and send the counter value and mac string to the MQTT broker.
-on the `walter-mqtt-test-topic`  topic.
+This example demonstrates how Walter can connect using **MQTT**.
+Walter will publish a counter value along with its MAC address to the MQTT broker on the topic.
+It will subscribe to the same topic for incoming messages.
 
 ## Required hardware
 
@@ -14,17 +15,31 @@ To run this example you will need the following items:
 - A SIM card
 - USB-C cable to flash Walter
 
-## Required Software
+1. Follow the instructions in the [documentation](https://www.quickspot.io/index.html) to:
 
-Please follow the instructions from the [documentation](https://www.quickspot.io/index.html)
-to [install](https://www.quickspot.io/documentation.html#/walter-modem/setup/arduino) the modem library and [setup](https://www.quickspot.io/documentation.html#/developer-toolchains/arduino) the Arduino IDE for use with Walter.
+   * [Install](https://www.quickspot.io/documentation.html#/walter-modem/setup/arduino) the modem library
+   * [Setup](https://www.quickspot.io/documentation.html#/developer-toolchains/arduino) the Arduino IDE for Walter
 
-You will also need a tool to view the MQTT messages, we recommend [MQTT explorer](https://mqtt-explorer.com/)
+## Configuration
 
-## Run the example
+Before flashing the example, configure the default settings:
 
-Make sure to connect the LTE antenna to Walter. Running the example without the
-antenna connected could damage the radio frontend of the modem. Also insert the
-SIM card before starting the sketch.
+* In the example sketch, update the following:
 
-You should now be able to see your Walters mac pop up under the `walter-mqtt-test-topic`  topic.
+  ```cpp
+    #define MQTT_PORT 1883
+    #define MQTT_HOST "broker.emqx.io"
+    #define MQTT_TOPIC "walter-test-topic"
+    #define MQTT_CLIENT_ID "walter-client"
+  ```
+
+## Running the example
+
+1. Connect the LTE antenna to Walter.
+   **Warning:** Running without the antenna connected may damage the radio frontend.
+
+2. Insert the SIM card.
+
+3. Flash the example sketch to Walter.
+
+4. You should see requests being performed, and the responses being logged.
