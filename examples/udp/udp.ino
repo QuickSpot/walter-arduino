@@ -1,5 +1,5 @@
 /**
- * @file udp_socket.ino
+ * @file udp.ino
  * @author Daan Pape <daan@dptechnics.com>
  * @date 28 Apr 2025
  * @copyright DPTechnics bv
@@ -44,7 +44,7 @@
  * @section DESCRIPTION
  *
  * This file contains a sketch which uses the modem in Walter to make a
- * connection to a network and upload counter values to the Walter demo server.
+ * connection to a network and upload data packets to the Walter demo server.
  */
 
 #include <HardwareSerial.h>
@@ -52,10 +52,9 @@
 #include <esp_mac.h>
 
 #define UDP_PORT 1999
-#define UDP_HOST "94.110.152.111"
+#define UDP_HOST "walterdemo.quickspot.io"
 
-#define BASIC_INFO_PACKET_SIZE 21
-#define COUNTER_PACKET_SIZE 8
+#define BASIC_INFO_PACKET_SIZE 22
 
 /**
  * @brief The modem instance.
@@ -216,74 +215,44 @@ void udpSocketEventHandler(WalterModemSocketEvent ev, int socketId, uint16_t dat
 }
 
 /**
- * @brief Send a counter packet to walterdemo
- */
-bool udpSendCounterPacket()
-{
-  dataBuf[6] = counter >> 8;
-  dataBuf[7] = counter & 0xFF;
-
-  Serial.printf("Sending counter value (%u)\r\n", counter);
-  if(modem.socketSend(dataBuf, COUNTER_PACKET_SIZE)) {
-    Serial.println("UDP send counter value succeeded");
-    return true;
-  }
-  Serial.println("Error: UDP send counter value failed");
-  return false;
-}
-
-/**
  * @brief Send a basic info packet to walterdemo
  */
 bool udpSendBasicInfoPacket()
 {
   /* Read the temperature of Walter */
   float temp = temperatureRead();
+  uint16_t rawTemp = (temp + 50) * 100;
 
   /* Attempt to get the latest cell information */
   modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp);
 
   /* Construct the Basic info Packet */
-  uint16_t rawTemp = (temp + 50) * 100;
-
-  /* temperature(2 bytes) */
   dataBuf[6] = rawTemp >> 8;
   dataBuf[7] = rawTemp & 0xFF;
+  dataBuf[8] = counter >> 8;
+  dataBuf[9] = counter & 0xFF;
+  dataBuf[10] = rsp.data.cellInformation.cc >> 8;
+  dataBuf[11] = rsp.data.cellInformation.cc & 0xFF;
+  dataBuf[12] = rsp.data.cellInformation.nc >> 8;
+  dataBuf[13] = rsp.data.cellInformation.nc & 0xFF;
+  dataBuf[14] = rsp.data.cellInformation.tac >> 8;
+  dataBuf[15] = rsp.data.cellInformation.tac & 0xFF;
+  dataBuf[16] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
+  dataBuf[17] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
+  dataBuf[18] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
+  dataBuf[19] = rsp.data.cellInformation.cid & 0xFF;
+  dataBuf[20] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
+  dataBuf[21] = (uint8_t) (rsp.data.cellInformation.rsrq * -1);
 
-  /* MCC (2 bytes) */
-  dataBuf[8] = rsp.data.cellInformation.cc >> 8;
-  dataBuf[9] = rsp.data.cellInformation.cc & 0xFF;
+  Serial.println("Sending basic info packet");
 
-  /* MNC (2 bytes) */
-  dataBuf[10] = rsp.data.cellInformation.nc >> 8;
-  dataBuf[11] = rsp.data.cellInformation.nc & 0xFF;
-
-  /* TAC (2 bytes) */
-  dataBuf[12] = rsp.data.cellInformation.tac >> 8;
-  dataBuf[13] = rsp.data.cellInformation.tac & 0xFF;
-
-  // Cell ID (4 bytes, big-endian)
-  dataBuf[14] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
-  dataBuf[15] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
-  dataBuf[16] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
-  dataBuf[17] = rsp.data.cellInformation.cid & 0xFF;
-
-  // RSRP (1 byte, negative value stored as positive magnitude)
-  dataBuf[18] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
-
-  // RSRQ (1 byte, same treatment; if you want a separate field)
-  dataBuf[19] = (uint8_t) (rsp.data.cellInformation.rsrq * -1);
-
-  Serial.printf("Sending counter B = %u\r\n", counter);
-
-  // update the send length: header (assumed 6 bytes) + 14 payload = 20
-  if(modem.socketSend(dataBuf, BASIC_INFO_PACKET_SIZE)) {
-    Serial.println("UDP send (B) succeeded");
-    return true;
+  if(!modem.socketSend(dataBuf, BASIC_INFO_PACKET_SIZE)) {
+    Serial.println("Error: UDP send basic info packet failed");
+    return false;
   }
 
-  Serial.println("Error: UDP send (B) failed");
-  return false;
+  Serial.println("UDP send basic info packet succeeded");
+  return true;
 }
 
 /**
@@ -359,14 +328,6 @@ void loop()
     lastSend = millis();
 
     if(!udpSendBasicInfoPacket()) {
-      Serial.println("UDP send failed, restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-
-    delay(1000);
-
-    if(!udpSendCounterPacket()) {
       Serial.println("UDP send failed, restarting...");
       delay(1000);
       ESP.restart();
