@@ -1,9 +1,10 @@
-# Walter HTTPS querry example
+# Walter HTTPS example
 
 ## Purpose
 
-This example demonstrates how Walter can securely connect using **HTTP with TLS certificates**.
-Walter will make a HTTPS GET request to a webserver.
+This example demonstrates how Walter can send and receive requests using
+**HTTP over TLS (HTTPS)**.
+Walter will make a HTTPS GET and POST request to a remote webserver.
 
 ## Required Hardware
 
@@ -21,16 +22,17 @@ To run this example you will need the following items:
 
 ## Configuration
 
-Before flashing the example, configure the TLS certificates and credentials:
+Before flashing the example, configure the routes and credentials:
 
 * In the example sketch, update the following:
 
   ```cpp
   #define HTTPS_PORT 443
   #define HTTPS_HOST "quickspot.io"
-  #define HTTPS_ENDPOINT "/hello.txt"
+  #define HTTPS_GET_ENDPOINT "/hello/get"
+  #define HTTPS_POST_ENDPOINT "/hello/post"
 
-  // Using the CA Root certificate from LetsEncrypt
+   // Using the CA Root certificate from LetsEncrypt
   const char ca_cert[] PROGMEM  = R"EOF(
   -----BEGIN CERTIFICATE-----
   MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
@@ -66,7 +68,7 @@ Before flashing the example, configure the TLS certificates and credentials:
   )EOF";
   ```
 
-## Running the Example
+## Running the example
 
 1. Connect the LTE antenna to Walter.
    **Warning:** Running without the antenna connected may damage the radio frontend.
@@ -75,6 +77,4 @@ Before flashing the example, configure the TLS certificates and credentials:
 
 3. Flash the example sketch to Walter.
 
-4. Walter will connect to the webserver over TLS (port 443).
-
-5. You should see requests being performed, and the responses being logged.
+4. You should see requests being performed, and the responses being logged.
