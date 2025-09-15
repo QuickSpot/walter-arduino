@@ -9,27 +9,27 @@
  *
  * Copyright (C) 2023, DPTechnics bv
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  *   1. Redistributions of source code must retain the above copyright notice,
  *      this list of conditions and the following disclaimer.
- * 
+ *
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
  *      documentation and/or other materials provided with the distribution.
- * 
+ *
  *   3. Neither the name of DPTechnics bv nor the names of its contributors may
  *      be used to endorse or promote products derived from this software
  *      without specific prior written permission.
- * 
+ *
  *   4. This software, with or without modification, must only be used with a
  *      Walter board from DPTechnics bv.
- * 
+ *
  *   5. Any software provided in binary form under this license must not be
  *      reverse engineered, decompiled, modified and/or disassembled.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY DPTECHNICS BV “AS IS” AND ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -42,19 +42,19 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * @section DESCRIPTION
- * 
+ *
  * This file contains a sketch which connects to LTE to download GNSS assistance
  * data, gets a GNSS fix and uploads the position to the Walter demo server.
  */
 
+#include <WalterModem.h>
 #include <inttypes.h>
 #include <esp_mac.h>
-#include <WalterModem.h>
 
 /**
- * @brief The address of the server to upload the data to. 
+ * @brief The address of the server to upload the data to.
  */
-#define SERV_ADDR "64.225.64.140"
+#define SERV_ADDR "walterdemo.quickspot.io"
 
 /**
  * @brief The UDP port on which the server is listening.
@@ -103,89 +103,129 @@ WalterModemGNSSFix posFix = {};
 uint8_t dataBuf[PACKET_SIZE] = { 0 };
 
 /**
- * @brief Connect to the LTE network.
- * 
- * This function will connect the modem to the LTE network. This function will
- * block until the modem is attached.
- * 
- * @return True on success, false on error.
+ * @brief This function checks if we are connected to the LTE network
+ *
+ * @return true when connected, false otherwise
  */
-bool lteConnect()
+bool lteConnected()
 {
-  /* Set the operational state to full */
-  if(!modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
-    Serial.print("Could not set operational state to FULL\r\n");
-    return false;
-  }
-
-  /* Set the network operator selection to automatic */
-  if(!modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.print("Could not set the network selection mode to automatic\r\n");
-    return false;
-  }
-
-  /* Wait for the network to become available */
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
-  while(!(regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
-          regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING))
-  {
-    delay(1000);
-    regState = modem.getNetworkRegState();
-  }
+  return (regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
+          regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING);
+}
 
-  /* Stabilization time */
-  Serial.print("Connected to the network\r\n");
+/**
+ * @brief This function waits for the modem to be connected to the LTE network.
+ *
+ * @param timeout_sec The amount of seconds to wait before returning a time-out.
+ *
+ * @return true if connected, false on time-out.
+ */
+bool waitForNetwork(int timeout_sec = 300)
+{
+  Serial.print("Connecting to the network...");
+  int time = 0;
+  while(!lteConnected()) {
+    Serial.print(".");
+    delay(1000);
+    time++;
+    if(time > timeout_sec)
+      return false;
+  }
+  Serial.println();
+  Serial.println("Connected to the network");
   return true;
 }
 
 /**
  * @brief Disconnect from the LTE network.
- * 
+ *
  * This function will disconnect the modem from the LTE network and block until
  * the network is actually disconnected. After the network is disconnected the
  * GNSS subsystem can be used.
- * 
- * @return True on success, false on error.
+ *
+ * @return true on success, false on error.
  */
 bool lteDisconnect()
 {
   /* Set the operational state to minimum */
-  if(!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.print("Could not set operational state to MINIMUM\r\n");
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+    Serial.println("Successfully set operational state to MINIMUM");
+  } else {
+    Serial.println("Error: Could not set operational state to MINIMUM");
     return false;
   }
 
   /* Wait for the network to become available */
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
-  while(regState != WALTER_MODEM_NETWORK_REG_NOT_SEARCHING)
-  {
+  while(regState != WALTER_MODEM_NETWORK_REG_NOT_SEARCHING) {
     delay(100);
     regState = modem.getNetworkRegState();
   }
 
-  Serial.print("Disconnected from the network\r\n");
+  Serial.println("Disconnected from the network");
   return true;
 }
 
 /**
+ * @brief This function tries to connect the modem to the cellular network.
+ *
+ * @return true on success, false on error.
+ */
+bool lteConnect()
+{
+  /* Set the operational state to NO RF */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
+    Serial.println("Successfully set operational state to NO RF");
+  } else {
+    Serial.println("Error: Could not set operational state to NO RF");
+    return false;
+  }
+
+  /* Create PDP context */
+  if(modem.definePDPContext()) {
+    Serial.println("Created PDP context");
+  } else {
+    Serial.println("Error: Could not create PDP context");
+    return false;
+  }
+
+  /* Set the operational state to full */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
+    Serial.println("Successfully set operational state to FULL");
+  } else {
+    Serial.println("Error: Could not set operational state to FULL");
+    return false;
+  }
+
+  /* Set the network operator selection to automatic */
+  if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
+    Serial.println("Network selection mode was set to automatic");
+  } else {
+    Serial.println("Error: Could not set the network selection mode to automatic");
+    return false;
+  }
+
+  return waitForNetwork();
+}
+
+/**
  * @brief Check the assistance data in the modem response.
- * 
- * This function checks the availability of assistance data in the modem's 
+ *
+ * This function checks the availability of assistance data in the modem's
  * response. This function also sets a flag if any of the assistance databases
  * should be updated.
- * 
+ *
  * @param rsp The modem response to check.
  * @param updateAlmanac Pointer to the flag to set when the almanac should be
- * updated. 
+ * updated.
  * @param updateEphemeris Pointer to the flag to set when ephemeris should be
  * updated.
- * 
+ *
  * @return None.
  */
-void checkAssistanceData(
-  WalterModemRsp *rsp,
-  bool *updateAlmanac = NULL,
-  bool *updateEphemeris = NULL)
+void checkAssistanceData(WalterModemRsp* rsp, bool* updateAlmanac = NULL,
+                         bool* updateEphemeris = NULL)
 {
   if(updateAlmanac != NULL) {
     *updateAlmanac = false;
@@ -198,7 +238,7 @@ void checkAssistanceData(
   Serial.print("Almanac data is ");
   if(rsp->data.gnssAssistance.almanac.available) {
     Serial.printf("available and should be updated within %ds\r\n",
-      rsp->data.gnssAssistance.almanac.timeToUpdate);
+                  rsp->data.gnssAssistance.almanac.timeToUpdate);
     if(updateAlmanac != NULL) {
       *updateAlmanac = rsp->data.gnssAssistance.almanac.timeToUpdate <= 0;
     }
@@ -212,7 +252,7 @@ void checkAssistanceData(
   Serial.print("Real-time ephemeris data is ");
   if(rsp->data.gnssAssistance.realtimeEphemeris.available) {
     Serial.printf("available and should be updated within %ds\r\n",
-      rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate);
+                  rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate);
     if(updateEphemeris != NULL) {
       *updateEphemeris = rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate <= 0;
     }
@@ -225,17 +265,17 @@ void checkAssistanceData(
 }
 
 /**
- * @brief This function will update GNSS assistance data when needed.
- * 
- * This funtion will check if the current real-time ephemeris data is good
- * enough to get a fast GNSS fix. If not the function will attach to the LTE 
- * network to download newer assistance data.
- * 
- * @return True on success, false on error.
+ * @brief Update GNSS assistance data if needed.
+ *
+ * Checks the GNSS almanac and real-time ephemeris validity and, if required,
+ * connects to the LTE network to download fresh assistance data. Ensures the
+ * system clock is synchronized before updating.
+ *
+ * @return True on success, false on error (e.g., LTE connection or modem
+ *         command failed).
  */
 bool updateGNSSAssistance()
 {
-  bool lteConnected = false;
   WalterModemRsp rsp = {};
 
   lteDisconnect();
@@ -250,9 +290,7 @@ bool updateGNSSAssistance()
       return false;
     }
 
-    lteConnected = true;
-
-    /* 
+    /*
      * Wait for the modem to synchronize time with the LTE network, try 5 times
      * with a delay of 500ms.
      */
@@ -260,8 +298,7 @@ bool updateGNSSAssistance()
       modem.gnssGetUTCTime(&rsp);
 
       if(rsp.data.clock.epochTime > 4) {
-        Serial.printf("Synchronized clock with network: %"PRIi64"\r\n",
-          rsp.data.clock.epochTime);
+        Serial.printf("Synchronized clock with network: %" PRIi64 "\r\n", rsp.data.clock.epochTime);
         break;
       } else if(i == 4) {
         Serial.print("Could not sync time with network\r\n");
@@ -274,8 +311,7 @@ bool updateGNSSAssistance()
 
   /* Check the availability of assistance data */
   if(!modem.gnssGetAssistanceStatus(&rsp) ||
-     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
-  {
+     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
     Serial.print("Could not request GNSS assistance status\r\n");
     return false;
   }
@@ -285,7 +321,7 @@ bool updateGNSSAssistance()
   checkAssistanceData(&rsp, &updateAlmanac, &updateEphemeris);
 
   if(!(updateAlmanac || updateEphemeris)) {
-    if(lteConnected) {
+    if(lteConnected()) {
       if(!lteDisconnect()) {
         Serial.print("Could not disconnect from the LTE network\r\n");
         return false;
@@ -295,7 +331,7 @@ bool updateGNSSAssistance()
     return true;
   }
 
-  if(!lteConnected) {
+  if(!lteConnected()) {
     if(!lteConnect()) {
       Serial.print("Could not connect to LTE network\r\n");
       return false;
@@ -310,23 +346,20 @@ bool updateGNSSAssistance()
   }
 
   if(updateEphemeris) {
-    if(!modem.gnssUpdateAssistance(
-      WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS))
-    {
+    if(!modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS)) {
       Serial.print("Could not update real-time ephemeris data\r\n");
       return false;
     }
   }
 
   if(!modem.gnssGetAssistanceStatus(&rsp) ||
-    rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA)
-  {
+     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
     Serial.print("Could not request GNSS assistance status\r\n");
     return false;
   }
 
   checkAssistanceData(&rsp);
-  
+
   if(!lteDisconnect()) {
     Serial.print("Could not disconnect from the LTE network\r\n");
     return false;
@@ -337,16 +370,16 @@ bool updateGNSSAssistance()
 
 /**
  * @brief Connect to an UDP socket.
- * 
- * This function will set-up the modem and connect an UDP socket. The LTE 
+ *
+ * This function will set-up the modem and connect an UDP socket. The LTE
  * connection must be active before this function can be called.
- * 
+ *
  * @param ip The IP address of the server to connect to.
  * @param port The port to connect to.
- * 
+ *
  * @return True on success, false on error.
  */
-bool socketConnect(const char *ip, uint16_t port)
+bool socketConnect(const char* ip, uint16_t port)
 {
   /* Construct a socket */
   if(modem.socketConfig()) {
@@ -377,17 +410,17 @@ bool socketConnect(const char *ip, uint16_t port)
 
 /**
  * @brief This function is called when a fix attempt finished.
- * 
+ *
  * This function is called by Walter's modem library as soon as a fix attempt
  * has finished. This function should be handled as an interrupt and should be
  * as short as possible as it is called within the modem data thread.
- * 
+ *
  * @param fix The fix data.
  * @param args Optional arguments, a NULL pointer in this case.
- * 
+ *
  * @return None.
  */
-void fixHandler(const WalterModemGNSSFix *fix, void *args)
+void fixHandler(const WalterModemGNSSFix* fix, void* args)
 {
   memcpy(&posFix, fix, sizeof(WalterModemGNSSFix));
   fixRcvd = true;
@@ -395,9 +428,9 @@ void fixHandler(const WalterModemGNSSFix *fix, void *args)
 
 /**
  * @brief Set up the system.
- * 
+ *
  * This function will set up the system and initialize the modem.
- * 
+ *
  * @return None.
  */
 void setup()
@@ -409,13 +442,8 @@ void setup()
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
-    dataBuf[0],
-    dataBuf[1],
-    dataBuf[2],
-    dataBuf[3],
-    dataBuf[4],
-    dataBuf[5]);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1],
+                dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
 
   /* Modem initialization */
   if(modem.begin(&ModemSerial)) {
@@ -505,18 +533,18 @@ void loop()
 
     int j = 0;
     while(!fixRcvd) {
-        Serial.print(".");
-        if (j >= 300) {
-            Serial.println("");
-            Serial.println("Timed out while waiting for GNSS fix");
-            delay(1000);
-            ESP.restart();
-            break;
-        }
-        j++;
-        delay(500);
+      Serial.print(".");
+      if(j >= 300) {
+        Serial.println("");
+        Serial.println("Timed out while waiting for GNSS fix");
+        delay(1000);
+        ESP.restart();
+        break;
+      }
+      j++;
+      delay(500);
     }
-    
+
     Serial.println("");
 
     if(posFix.estimatedConfidence <= MAX_GNSS_CONFIDENCE) {
@@ -532,16 +560,13 @@ void loop()
   }
 
   Serial.printf("GNSS fix attempt finished:\r\n"
-    "  Confidence: %.02f\r\n"
-    "  Latitude: %.06f\r\n"
-    "  Longitude: %.06f\r\n"
-    "  Satcount: %d\r\n"
-    "  Good sats: %d\r\n",
-    posFix.estimatedConfidence,
-    posFix.latitude,
-    posFix.longitude,
-    posFix.satCount,
-    abovedBTreshold);
+                "  Confidence: %.02f\r\n"
+                "  Latitude: %.06f\r\n"
+                "  Longitude: %.06f\r\n"
+                "  Satcount: %d\r\n"
+                "  Good sats: %d\r\n",
+                posFix.estimatedConfidence, posFix.latitude, posFix.longitude, posFix.satCount,
+                abovedBTreshold);
 
   /* Read the temperature of Walter */
   float temp = temperatureRead();
@@ -549,7 +574,7 @@ void loop()
 
   float lat = posFix.latitude;
   float lon = posFix.longitude;
-  
+
   if(posFix.estimatedConfidence > MAX_GNSS_CONFIDENCE) {
     posFix.satCount = 0xFF;
     lat = 0.0;
@@ -577,13 +602,12 @@ void loop()
   if(!modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
     Serial.println("Could not request cell information");
   } else {
-    Serial.printf("Connected on band %u using operator %s (%u%02u)",
-      rsp.data.cellInformation.band, rsp.data.cellInformation.netName,
-      rsp.data.cellInformation.cc, rsp.data.cellInformation.nc);
-    Serial.printf(" and cell ID %u.\r\n",
-      rsp.data.cellInformation.cid);
-    Serial.printf("Signal strength: RSRP: %.2f, RSRQ: %.2f.\r\n",
-      rsp.data.cellInformation.rsrp, rsp.data.cellInformation.rsrq);
+    Serial.printf("Connected on band %u using operator %s (%u%02u)", rsp.data.cellInformation.band,
+                  rsp.data.cellInformation.netName, rsp.data.cellInformation.cc,
+                  rsp.data.cellInformation.nc);
+    Serial.printf(" and cell ID %u.\r\n", rsp.data.cellInformation.cid);
+    Serial.printf("Signal strength: RSRP: %.2f, RSRQ: %.2f.\r\n", rsp.data.cellInformation.rsrp,
+                  rsp.data.cellInformation.rsrq);
   }
 
   dataBuf[18] = rsp.data.cellInformation.cc >> 8;
