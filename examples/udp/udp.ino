@@ -218,7 +218,7 @@ void udpSocketEventHandler(WalterModemSocketEvent ev, int socketId, uint16_t dat
 /**
  * @brief Send a basic info packet to walterdemo
  */
-bool tcpSendBasicInfoPacket()
+bool udpSendBasicInfoPacket()
 {
   uint16_t packet_size = COUNTER_PACKET_SIZE;
 
@@ -344,7 +344,7 @@ void loop()
   if(millis() - lastSend >= sendInterval) {
     lastSend = millis();
 
-    if(!tcpSendBasicInfoPacket()) {
+    if(!udpSendBasicInfoPacket()) {
       Serial.println("UDP send failed, restarting...");
       delay(1000);
       ESP.restart();
