@@ -46,12 +46,10 @@
  * This sketch sends and receives mqtt data using the DPTechnics BlueCherry cloud
  * platform. It also supports OTA updates which are scheduled through the BlueCherry web interface.
  */
-
+#include <BlueCherryZTP.h>
+#include <WalterModem.h>
 #include <Arduino.h>
-#include "esp_mac.h"
-
-#include "WalterModem.h"
-#include "BlueCherryZTP.h"
+#include <esp_mac.h>
 
 // The cellular Access Point Name
 // Leave blank for autodetection
@@ -67,7 +65,7 @@
 #define ModemSerial Serial2
 
 // Buffer to store OTA firmware messages in
-byte otaBuffer[SPI_FLASH_BLOCK_SIZE] = {0};
+byte otaBuffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
 
 // The modem instance
 WalterModem modem;
@@ -77,12 +75,12 @@ WalterModem modem;
  * These can be calculated using e.g.
  * https://www.soracom.io/psm-calculation-tool/
  */
-const char *psmActive = "00000001";
-const char *psmTAU = "00000110";
+const char* psmActive = "00000001";
+const char* psmTAU = "00000110";
 
 // The BlueCherry CA root + intermediate certificate used for CoAP DTLS
 // communication
-const char *bc_ca_cert = "-----BEGIN CERTIFICATE-----\r\n\
+const char* bc_ca_cert = "-----BEGIN CERTIFICATE-----\r\n\
 MIIBlTCCATqgAwIBAgICEAAwCgYIKoZIzj0EAwMwGjELMAkGA1UEBhMCQkUxCzAJ\r\n\
 BgNVBAMMAmNhMB4XDTI0MDMyNDEzMzM1NFoXDTQ0MDQwODEzMzM1NFowJDELMAkG\r\n\
 A1UEBhMCQkUxFTATBgNVBAMMDGludGVybWVkaWF0ZTBZMBMGByqGSM49AgEGCCqG\r\n\
@@ -105,92 +103,125 @@ BAMDA0cAMEQCID7AcgACnXWzZDLYEainxVDxEJTUJFBhcItO77gcHPZUAiAu/ZMO\r\n\
 VYg4UI2D74WfVxn+NyVd2/aXTvSBp8VgyV3odA==\r\n\
 -----END CERTIFICATE-----\r\n";
 
-
-// This function checks if the modem has a cellular connection to the network.
-// Returns true if the modem is connected, else false.
-bool lteConnected() {
+/**
+ * @brief This function checks if we are connected to the LTE network
+ *
+ * @return true when connected, false otherwise
+ */
+bool lteConnected()
+{
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
   return (regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
           regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING);
 }
 
-
-// This function tries to connect the modem to the cellular network.
-// Returns true if the connection attempt is successful, else false.
-bool lteConnect() {
-  // Set the functionality level of the modem to minimum
-  if (!modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
-    Serial.println("Could not set the modem to minimum functionality level");
-    return false;
-  }
-  delay(500);
-
-  // Create a PDP context with specified APN
-  if (!modem.definePDPContext(1, CELLULAR_APN)) {
-    Serial.println("Could not create PDP context");
-    return false;
-  }
-  Serial.println("Attempting to connect to the network...");
-
-  // Set the functionality level of the modem to full
-  if (!modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
-    Serial.println("Error: Could not set the modem to full functionality level");
-    return false;
-  }
-
-  delay(1000);
-
-  // Set the network operator selection to automatic
-  if (modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-      Serial.println("Network selection mode to was set to automatic");
-  } else {
-      Serial.println("Error: Could not set the network selection mode to automatic");
+/**
+ * @brief This function waits for the modem to be connected to the LTE network.
+ *
+ * @param timeout_sec The amount of seconds to wait before returning a time-out.
+ *
+ * @return true if connected, false on time-out.
+ */
+bool waitForNetwork(int timeout_sec = 300)
+{
+  Serial.print("Connecting to the network...");
+  int time = 0;
+  while(!lteConnected()) {
+    Serial.print(".");
+    delay(1000);
+    time++;
+    if(time > timeout_sec)
       return false;
   }
-
-  // Wait (maximum 5 minutes) until successfully registered to the network
-  unsigned short timeout = 300;
-  unsigned short i = 0;
-  while (!lteConnected() && i < timeout) {
-    i++;
-    delay(1000);
-  }
-  if (i >= timeout) {
-    return false;
-  }
-
-  // Show cellular connection information
-  WalterModemRsp rsp = {};
-  if (modem.getRAT(&rsp)) {
-    Serial.printf("Connected to %s ",
-                  rsp.data.rat == WALTER_MODEM_RAT_NBIOT ? "NB-IoT" : "LTE-M");
-  }
-  if (modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
-                               &rsp)) {
-    Serial.printf("on band %u using operator %s (%u%02u)\r\n",
-                  rsp.data.cellInformation.band,
-                  rsp.data.cellInformation.netName, rsp.data.cellInformation.cc,
-                  rsp.data.cellInformation.nc);
-    Serial.printf("Signal strength: RSRP: %.2f, RSRQ: %.2f\r\n",
-                  rsp.data.cellInformation.rsrp, rsp.data.cellInformation.rsrq);
-  }
-
+  Serial.println();
+  Serial.println("Connected to the network");
   return true;
 }
 
+/**
+ * @brief Disconnect from the LTE network.
+ *
+ * This function will disconnect the modem from the LTE network and block until
+ * the network is actually disconnected. After the network is disconnected the
+ * GNSS subsystem can be used.
+ *
+ * @return true on success, false on error.
+ */
+bool lteDisconnect()
+{
+  /* Set the operational state to minimum */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+    Serial.println("Successfully set operational state to MINIMUM");
+  } else {
+    Serial.println("Error: Could not set operational state to MINIMUM");
+    return false;
+  }
+
+  /* Wait for the network to become available */
+  WalterModemNetworkRegState regState = modem.getNetworkRegState();
+  while(regState != WALTER_MODEM_NETWORK_REG_NOT_SEARCHING) {
+    delay(100);
+    regState = modem.getNetworkRegState();
+  }
+
+  Serial.println("Disconnected from the network");
+  return true;
+}
+
+/**
+ * @brief This function tries to connect the modem to the cellular network.
+ *
+ * @return true on success, false on error.
+ */
+bool lteConnect()
+{
+  /* Set the operational state to NO RF */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
+    Serial.println("Successfully set operational state to NO RF");
+  } else {
+    Serial.println("Error: Could not set operational state to NO RF");
+    return false;
+  }
+
+  /* Create PDP context */
+  if(modem.definePDPContext()) {
+    Serial.println("Created PDP context");
+  } else {
+    Serial.println("Error: Could not create PDP context");
+    return false;
+  }
+
+  /* Set the operational state to full */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
+    Serial.println("Successfully set operational state to FULL");
+  } else {
+    Serial.println("Error: Could not set operational state to FULL");
+    return false;
+  }
+
+  /* Set the network operator selection to automatic */
+  if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
+    Serial.println("Network selection mode was set to automatic");
+  } else {
+    Serial.println("Error: Could not set the network selection mode to automatic");
+    return false;
+  }
+
+  return waitForNetwork();
+}
 
 // This function will poll the BlueCherry cloud platform to check if there is an
 // incoming MQTT message or new firmware version available. If a new firmware
 // version is available, the device automatically downloads and reboots with the
 // new firmware.
-void syncBlueCherry() {
+void syncBlueCherry()
+{
   WalterModemRsp rsp = {};
 
   do {
-    if (!modem.blueCherrySync(&rsp)) {
-      Serial.printf(
-          "Error during BlueCherry cloud platform synchronisation: %d\r\n",
-          rsp.data.blueCherry.state);
+    if(!modem.blueCherrySync(&rsp)) {
+      Serial.printf("Error during BlueCherry cloud platform synchronisation: %d\r\n",
+                    rsp.data.blueCherry.state);
       modem.reset();
       lteConnect();
       return;
@@ -204,43 +235,44 @@ void syncBlueCherry() {
         Serial.printf("Incoming message %d/%d:\r\n", msgIdx + 1, rsp.data.blueCherry.messageCount);
         Serial.printf("Topic: %02x\r\n", rsp.data.blueCherry.messages[msgIdx].topic);
         Serial.printf("Data size: %d\r\n", rsp.data.blueCherry.messages[msgIdx].dataSize);
-      
-        for(uint8_t byteIdx = 0; byteIdx < rsp.data.blueCherry.messages[msgIdx].dataSize; byteIdx++) {
+
+        for(uint8_t byteIdx = 0; byteIdx < rsp.data.blueCherry.messages[msgIdx].dataSize;
+            byteIdx++) {
           Serial.printf("%c", rsp.data.blueCherry.messages[msgIdx].data[byteIdx]);
         }
 
         Serial.print("\r\n");
       }
     }
-  } while (!rsp.data.blueCherry.syncFinished);
+  } while(!rsp.data.blueCherry.syncFinished);
 
   Serial.println("Synchronized with BlueCherry cloud platform");
   return;
 }
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
   delay(100);
-  Serial.println("Walter BlueCherry ZTP + OTA + PSM example.");
+  Serial.printf("\r\n\r\n=== WalterModem BlueCherry example ===\r\n\r\n");
 
-  // Modem initialization
-  if (!modem.begin(&ModemSerial)) {
-    Serial.println(
-        "Error: Could not initialize the modem, restarting Walter in 10 seconds");
+  /* Start the modem */
+  if(WalterModem::begin(&Serial2)) {
+    Serial.println("Successfully initialized the modem");
+  } else {
+    Serial.println("Error: Could not initialize the modem");
+    return;
+  }
+
+  modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive);
+
+  // Connect to cellular network
+  if(!lteConnected() && !lteConnect()) {
+    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
+                   "in 10 seconds");
     delay(10000);
     ESP.restart();
   }
-
-  modem.configPSM(WALTER_MODEM_PSM_ENABLE,psmTAU,psmActive);
-
-  // Connect to cellular network
-  if (!lteConnected() && !lteConnect()) {
-    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
-                  "in 10 seconds");
-   delay(10000);
-  ESP.restart();
-  }
-
 
   WalterModemRsp rsp = {};
 
@@ -248,69 +280,65 @@ void setup() {
   if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
     // Initialize the BlueCherry connection
     unsigned short attempt = 0;
-    while (!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
-      if (rsp.data.blueCherry.state ==
-              WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
-          attempt <= 2) {
+    while(!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
+      if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
+         attempt <= 2) {
         Serial.println("Device is not provisioned for BlueCherry "
-                      "communication, starting Zero Touch Provisioning");
+                       "communication, starting Zero Touch Provisioning");
 
-        if (attempt == 0) {
+        if(attempt == 0) {
           // Device is not provisioned yet, initialize BlueCherry zero touch
           // provisioning
-          if (!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert,
-                                    &modem)) {
+          if(!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert, &modem)) {
             Serial.println("Error: Failed to initialize ZTP");
             continue;
           }
 
           // Fetch MAC address
-          uint8_t mac[8] = {0};
+          uint8_t mac[8] = { 0 };
           esp_read_mac(mac, ESP_MAC_WIFI_STA);
-          if (!BlueCherryZTP::addDeviceIdParameter(
-                  BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
-            Serial.println(
-                "Error: Could not add MAC address as ZTP device ID parameter");
+          if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
+            Serial.println("Error: Could not add MAC address as ZTP device ID parameter");
           }
 
           // Fetch IMEI number
-          if (!modem.getIdentity(&rsp)) {
+          if(!modem.getIdentity(&rsp)) {
             Serial.println("Error: Could not fetch IMEI number from modem");
           }
-          if (!BlueCherryZTP::addDeviceIdParameter(
-                  BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI, rsp.data.identity.imei)) {
+          if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI,
+                                                  rsp.data.identity.imei)) {
             Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
           }
         }
         attempt++;
 
         // Request the BlueCherry device ID
-        if (!BlueCherryZTP::requestDeviceId()) {
+        if(!BlueCherryZTP::requestDeviceId()) {
           Serial.println("Error: Could not request device ID");
           continue;
         }
 
         // Generate the private key and CSR
-        if (!BlueCherryZTP::generateKeyAndCsr()) {
+        if(!BlueCherryZTP::generateKeyAndCsr()) {
           Serial.println("Error: Could not generate private key");
         }
         delay(1000);
 
         // Request the signed certificate
-        if (!BlueCherryZTP::requestSignedCertificate()) {
+        if(!BlueCherryZTP::requestSignedCertificate()) {
           Serial.println("Error: Could not request signed certificate");
           continue;
         }
 
         // Store BlueCherry TLS certificates + private key in the modem
-        if (!modem.blueCherryProvision(BlueCherryZTP::getCert(),
-                                      BlueCherryZTP::getPrivKey(), bc_ca_cert)) {
+        if(!modem.blueCherryProvision(BlueCherryZTP::getCert(), BlueCherryZTP::getPrivKey(),
+                                      bc_ca_cert)) {
           Serial.println("Error: Failed to upload the DTLS certificates");
           continue;
         }
       } else {
         Serial.println("Error: Failed to initialize BlueCherry cloud platform, "
-                      "restarting Walter in 10 seconds");
+                       "restarting Walter in 10 seconds");
         delay(10000);
         ESP.restart();
       }
@@ -319,10 +347,11 @@ void setup() {
   }
 }
 
-void loop() {
+void loop()
+{
   // Check if the modem is connected to the cellular network, else try to
   // reconnect
-   if (!lteConnected() && !lteConnect()) {
+  if(!lteConnected() && !lteConnect()) {
     Serial.println("Error: Unable to connect to cellular network, restarting Walter "
                    "in 10 seconds");
     delay(10000);
@@ -332,11 +361,10 @@ void loop() {
   WalterModemRsp rsp = {};
 
   // Send a message containing the measured RSRP value to an MQTT topic
-  if (modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
-                               &rsp)) {
+  if(modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
     char msg[18];
     snprintf(msg, sizeof(msg), "{\"RSRP\": %7.2f}", rsp.data.cellInformation.rsrp);
-    modem.blueCherryPublish(0x84, sizeof(msg)-1, (uint8_t *)msg);
+    modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
   }
 
   // Poll BlueCherry platform if an incoming message or firmware update is available
