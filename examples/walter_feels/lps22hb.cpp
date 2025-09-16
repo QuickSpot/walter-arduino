@@ -41,10 +41,13 @@ LPS22HB::LPS22HB(TwoWire& wire) :
 int LPS22HB::begin()
 {
   if (i2cRead(LPS22HB_WHO_AM_I_REG) != 0xb1) {
+    printf("I died\n");
     end();
     return 0;
   }
 
+  
+  printf("I lived\n");
   _initialized = true;
   return 1;
 }
