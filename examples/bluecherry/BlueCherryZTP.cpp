@@ -76,19 +76,20 @@
 #define ZTP_SERV_DEVID_PATH "devid"
 #define ZTP_SERV_CSR_PATH "sign"
 
-int BlueCherryZTP::_hardwareRandomEntropyFunc(void *data, unsigned char *output,
-                                              size_t len) {
+int BlueCherryZTP::_hardwareRandomEntropyFunc(void* data, unsigned char* output, size_t len)
+{
   esp_fill_random(output, len);
   return 0;
 }
 
-bool BlueCherryZTP::_finishCsrGen(bool result) {
+bool BlueCherryZTP::_finishCsrGen(bool result)
+{
   mbedtls_pk_free(&_mbKey);
   mbedtls_entropy_free(&_mbEntropy);
   mbedtls_ctr_drbg_free(&_mbCtrDrbg);
   mbedtls_x509write_csr_free(&_mbCsr);
 
-  if (!result) {
+  if(!result) {
     _pkeyBuf[0] = '\0';
     _certBuf[0] = '\0';
   }
@@ -96,29 +97,29 @@ bool BlueCherryZTP::_finishCsrGen(bool result) {
   return result;
 }
 
-bool BlueCherryZTP::_seedRandom(bool rfEnabled) {
-  if (!rfEnabled) {
+bool BlueCherryZTP::_seedRandom(bool rfEnabled)
+{
+  if(!rfEnabled) {
     bootloader_random_enable();
   }
 
-  int ret = mbedtls_ctr_drbg_seed(&_mbCtrDrbg, _hardwareRandomEntropyFunc,
-                                  &_mbEntropy, nullptr, 0);
+  int ret = mbedtls_ctr_drbg_seed(&_mbCtrDrbg, _hardwareRandomEntropyFunc, &_mbEntropy, nullptr, 0);
 
-  if (!rfEnabled) {
+  if(!rfEnabled) {
     bootloader_random_disable();
   }
   return ret == 0;
 }
 
-bool BlueCherryZTP::begin(const char *typeId, const uint8_t tlsProfileId,
-                          const char *caCert, const WalterModem *modem) {
-  if (typeId == nullptr || strlen(typeId) != BLUECHERRY_ZTP_ID_LEN ||
-      tlsProfileId == 0|| tlsProfileId == 0 || tlsProfileId > 6 ||
-      caCert == nullptr || modem == nullptr) {
+bool BlueCherryZTP::begin(const char* typeId, const uint8_t tlsProfileId, const char* caCert,
+                          const WalterModem* modem)
+{
+  if(typeId == nullptr || strlen(typeId) != BLUECHERRY_ZTP_ID_LEN || tlsProfileId == 0 ||
+     tlsProfileId == 0 || tlsProfileId > 6 || caCert == nullptr || modem == nullptr) {
     return false;
   }
 
-  if (!modem->blueCherryProvision(nullptr, nullptr, caCert)) {
+  if(!modem->blueCherryProvision(nullptr, nullptr, caCert)) {
     return false;
   }
 
@@ -126,39 +127,50 @@ bool BlueCherryZTP::begin(const char *typeId, const uint8_t tlsProfileId,
   _tlsProfileId = tlsProfileId;
   _modem = modem;
 
-  if (!modem->tlsConfigProfile(tlsProfileId, WALTER_MODEM_TLS_VALIDATION_CA,
-                               WALTER_MODEM_TLS_VERSION_12, 6)) {
+  if(!modem->tlsConfigProfile(tlsProfileId, WALTER_MODEM_TLS_VALIDATION_CA,
+                              WALTER_MODEM_TLS_VERSION_12, 6)) {
     return false;
   }
 
   return true;
 }
 
-const char *BlueCherryZTP::getPrivKey() { return _pkeyBuf; }
+const char* BlueCherryZTP::getPrivKey()
+{
+  return _pkeyBuf;
+}
 
-const unsigned char *BlueCherryZTP::getCsr() { return _csr.buffer; }
+const unsigned char* BlueCherryZTP::getCsr()
+{
+  return _csr.buffer;
+}
 
-size_t BlueCherryZTP::getCsrLen() { return _csr.length; }
+size_t BlueCherryZTP::getCsrLen()
+{
+  return _csr.length;
+}
 
-const char *BlueCherryZTP::getCert() { return _certBuf; }
+const char* BlueCherryZTP::getCert()
+{
+  return _certBuf;
+}
 
-void BlueCherryZTP::resetDeviceId() { _devIdParams.count = 0; }
+void BlueCherryZTP::resetDeviceId()
+{
+  _devIdParams.count = 0;
+}
 
-bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type,
-                                         const char *str) {
-  if (str == nullptr ||
-      _devIdParams.count >= BLUECHERRY_ZTP_MAX_DEVICE_ID_PARAMS) {
+bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type, const char* str)
+{
+  if(str == nullptr || _devIdParams.count >= BLUECHERRY_ZTP_MAX_DEVICE_ID_PARAMS) {
     return false;
   }
 
-  switch (type) {
+  switch(type) {
   case BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI:
-    _devIdParams.param[_devIdParams.count].type =
-        BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI;
-    strncpy(_devIdParams.param[_devIdParams.count].value.imei, str,
-            BLUECHERRY_ZTP_IMEI_LEN);
-    _devIdParams.param[_devIdParams.count].value.imei[BLUECHERRY_ZTP_IMEI_LEN] =
-        '\0';
+    _devIdParams.param[_devIdParams.count].type = BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI;
+    strncpy(_devIdParams.param[_devIdParams.count].value.imei, str, BLUECHERRY_ZTP_IMEI_LEN);
+    _devIdParams.param[_devIdParams.count].value.imei[BLUECHERRY_ZTP_IMEI_LEN] = '\0';
     _devIdParams.count += 1;
     break;
 
@@ -169,19 +181,16 @@ bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type,
   return true;
 }
 
-bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type,
-                                         const unsigned char *blob) {
-  if (blob == nullptr ||
-      _devIdParams.count >= BLUECHERRY_ZTP_MAX_DEVICE_ID_PARAMS) {
+bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type, const unsigned char* blob)
+{
+  if(blob == nullptr || _devIdParams.count >= BLUECHERRY_ZTP_MAX_DEVICE_ID_PARAMS) {
     return false;
   }
 
-  switch (type) {
+  switch(type) {
   case BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC:
-    _devIdParams.param[_devIdParams.count].type =
-        BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC;
-    memcpy(_devIdParams.param[_devIdParams.count].value.mac, blob,
-           BLUECHERRY_ZTP_MAC_LEN);
+    _devIdParams.param[_devIdParams.count].type = BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC;
+    memcpy(_devIdParams.param[_devIdParams.count].value.mac, blob, BLUECHERRY_ZTP_MAC_LEN);
     _devIdParams.count += 1;
     break;
 
@@ -192,16 +201,15 @@ bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type,
   return true;
 }
 
-bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type,
-                                         unsigned long long number) {
-  if (_devIdParams.count >= BLUECHERRY_ZTP_MAX_DEVICE_ID_PARAMS) {
+bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type, unsigned long long number)
+{
+  if(_devIdParams.count >= BLUECHERRY_ZTP_MAX_DEVICE_ID_PARAMS) {
     return false;
   }
 
-  switch (type) {
+  switch(type) {
   case BLUECHERRY_ZTP_DEVICE_ID_TYPE_OOB_CHALLENGE:
-    _devIdParams.param[_devIdParams.count].type =
-        BLUECHERRY_ZTP_DEVICE_ID_TYPE_OOB_CHALLENGE;
+    _devIdParams.param[_devIdParams.count].type = BLUECHERRY_ZTP_DEVICE_ID_TYPE_OOB_CHALLENGE;
     _devIdParams.param[_devIdParams.count].value.oobChallenge = number;
     _devIdParams.count += 1;
     break;
@@ -213,49 +221,50 @@ bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type,
   return true;
 }
 
-bool BlueCherryZTP::requestDeviceId() {
+bool BlueCherryZTP::requestDeviceId()
+{
   int ret;
   WalterModemRsp rsp = {};
   uint8_t cborBuf[256];
   uint8_t coapData[16];
   ZTP_CBOR cbor;
 
-  if (ztp_cbor_init(&cbor, cborBuf, sizeof(cborBuf)) < 0) {
+  if(ztp_cbor_init(&cbor, cborBuf, sizeof(cborBuf)) < 0) {
     printf("Failed to init CBOR buffer\n");
     return false;
   };
 
   // Start the CBOR array
-  if (ztp_cbor_start_array(&cbor, 2) < 0) {
+  if(ztp_cbor_start_array(&cbor, 2) < 0) {
     printf("Failed to start CBOR array\n");
     return false;
   }
 
   // Encode type ID value
-  if (ztp_cbor_encode_string(&cbor, _bcTypeId) < 0) {
+  if(ztp_cbor_encode_string(&cbor, _bcTypeId) < 0) {
     printf("Failed to encode typeId value\n");
     return false;
   }
 
   // Start the CBOR map (key-value pairs)
-  if (ztp_cbor_start_map(&cbor, _devIdParams.count) < 0) {
+  if(ztp_cbor_start_map(&cbor, _devIdParams.count) < 0) {
     printf("Failed to start CBOR map\n");
     return false;
   }
 
-  for (size_t i = 0; i < _devIdParams.count; i++) {
+  for(size_t i = 0; i < _devIdParams.count; i++) {
 
-    int type = (int)_devIdParams.param[i].type;
-    if (ztp_cbor_encode_int(&cbor, type) < 0) {
+    int type = (int) _devIdParams.param[i].type;
+    if(ztp_cbor_encode_int(&cbor, type) < 0) {
       printf("Failed to encode param type (%u)\n", type);
       return false;
     }
 
-    switch (_devIdParams.param[i].type) {
+    switch(_devIdParams.param[i].type) {
     case BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI: {
       // Encode IMEI number (15 characters)
       uint64_t imei = strtoull(_devIdParams.param[i].value.imei, NULL, 10);
-      if (ztp_cbor_encode_uint64(&cbor, imei) < 0) {
+      if(ztp_cbor_encode_uint64(&cbor, imei) < 0) {
         printf("Failed to encode IMEI number\n");
         return false;
       }
@@ -263,8 +272,7 @@ bool BlueCherryZTP::requestDeviceId() {
 
     case BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC: {
       // Encode MAC address (6 bytes)
-      if (ztp_cbor_encode_bytes(
-              &cbor, (uint8_t *)_devIdParams.param[i].value.mac, 6) < 0) {
+      if(ztp_cbor_encode_bytes(&cbor, (uint8_t*) _devIdParams.param[i].value.mac, 6) < 0) {
         printf("Failed to encode MAC address\n");
         return false;
       }
@@ -273,7 +281,7 @@ bool BlueCherryZTP::requestDeviceId() {
     case BLUECHERRY_ZTP_DEVICE_ID_TYPE_OOB_CHALLENGE: {
       // Encode OOB challenge (64 bit unsigned int)
       uint64_t oobChallenge = _devIdParams.param[0].value.oobChallenge;
-      if (ztp_cbor_encode_uint64(&cbor, oobChallenge) < 0) {
+      if(ztp_cbor_encode_uint64(&cbor, oobChallenge) < 0) {
         printf("Failed to encode OOB challenge\n");
         return false;
       }
@@ -285,35 +293,30 @@ bool BlueCherryZTP::requestDeviceId() {
   }
 
   // Send first CoAP
-  if (!_modem->coapCreateContext(COAP_PROFILE, ZTP_SERV_ADDR, ZTP_SERV_PORT,
-                                 _tlsProfileId)) {
+  if(!_modem->coapCreateContext(COAP_PROFILE, ZTP_SERV_ADDR, ZTP_SERV_PORT, _tlsProfileId)) {
     printf("Failed to create ZTP CoAP context\n");
     return false;
   }
 
-  if (!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_SET,
-                              WALTER_MODEM_COAP_OPT_CODE_URI_PATH,
-                              ZTP_SERV_API_VERSION)) {
+  if(!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_SET,
+                             WALTER_MODEM_COAP_OPT_CODE_URI_PATH, ZTP_SERV_API_VERSION)) {
     printf("Failed to configure ZTP CoAP URI path for API version\n");
   }
 
-  if (!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_EXTEND,
-                              WALTER_MODEM_COAP_OPT_CODE_URI_PATH,
-                              ZTP_SERV_DEVID_PATH)) {
+  if(!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_EXTEND,
+                             WALTER_MODEM_COAP_OPT_CODE_URI_PATH, ZTP_SERV_DEVID_PATH)) {
     printf("Failed to configure ZTP CoAP URI path for device id\n");
   }
 
-  if (!_modem->coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
-                            WALTER_MODEM_COAP_SEND_METHOD_GET,
-                            ztp_cbor_size(&cbor), cborBuf)) {
+  if(!_modem->coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
+                           WALTER_MODEM_COAP_SEND_METHOD_GET, ztp_cbor_size(&cbor), cborBuf)) {
     printf("Failed to send ZTP CoAP datagram\n");
     return false;
   }
 
   int i = BLUECHERRY_ZTP_COAP_TIMEOUT;
   printf("Awaiting ZTP CoAP ring.");
-  while (i &&
-         !_modem->coapDidRing(COAP_PROFILE, coapData, sizeof(coapData), &rsp)) {
+  while(i && !_modem->coapDidRing(COAP_PROFILE, coapData, sizeof(coapData), &rsp)) {
     printf(".");
     DELAY(1000);
     i--;
@@ -325,14 +328,14 @@ bool BlueCherryZTP::requestDeviceId() {
   //   return false;
   // }
 
-  if (i < 1) {
+  if(i < 1) {
     printf("Failed to receive response from ZTP COAP server\n");
     return false;
   }
 
-  ret = ztp_cbor_decode_device_id(coapData, rsp.data.coapResponse.length,
-                                  _bcDevId, sizeof(_bcDevId));
-  if (ret < 0) {
+  ret =
+      ztp_cbor_decode_device_id(coapData, rsp.data.coapResponse.length, _bcDevId, sizeof(_bcDevId));
+  if(ret < 0) {
     printf("Failed to decode device id: %d\n", ret);
     return false;
   }
@@ -340,13 +343,13 @@ bool BlueCherryZTP::requestDeviceId() {
   return true;
 }
 
-bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled) {
+bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled)
+{
   int ret;
   uint8_t csrBuf[BLUECHERRY_ZTP_CERT_BUF_SIZE];
 
-  if (_bcTypeId == nullptr ||
-      strlen(_bcTypeId) != BLUECHERRY_ZTP_ID_LEN ||
-      strlen(_bcDevId) != BLUECHERRY_ZTP_ID_LEN) {
+  if(_bcTypeId == nullptr || strlen(_bcTypeId) != BLUECHERRY_ZTP_ID_LEN ||
+     strlen(_bcDevId) != BLUECHERRY_ZTP_ID_LEN) {
     return false;
   }
 
@@ -355,37 +358,35 @@ bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled) {
   mbedtls_ctr_drbg_init(&_mbCtrDrbg);
   mbedtls_x509write_csr_init(&_mbCsr);
 
-  if (!_seedRandom(rfEnabled)) {
+  if(!_seedRandom(rfEnabled)) {
     return _finishCsrGen(false);
   }
 
-  if (mbedtls_pk_setup(&_mbKey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) !=
-      0) {
+  if(mbedtls_pk_setup(&_mbKey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) != 0) {
     return _finishCsrGen(false);
   }
 
-  if (mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(_mbKey),
-                          mbedtls_ctr_drbg_random, &_mbCtrDrbg) != 0) {
+  if(mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(_mbKey), mbedtls_ctr_drbg_random,
+                         &_mbCtrDrbg) != 0) {
     return _finishCsrGen(false);
   }
 
-  if (mbedtls_pk_write_key_pem(&_mbKey, (unsigned char *)_pkeyBuf,
-                               BLUECHERRY_ZTP_PKEY_BUF_SIZE) != 0) {
+  if(mbedtls_pk_write_key_pem(&_mbKey, (unsigned char*) _pkeyBuf, BLUECHERRY_ZTP_PKEY_BUF_SIZE) !=
+     0) {
     return _finishCsrGen(false);
   }
 
   mbedtls_x509write_csr_set_md_alg(&_mbCsr, MBEDTLS_MD_SHA256);
   mbedtls_x509write_csr_set_key(&_mbCsr, &_mbKey);
 
-  snprintf(_subjBuf, BLUECHERRY_ZTP_SUBJ_BUF_SIZE, "C=BE,CN=%s.%s", _bcTypeId,
-           _bcDevId);
-  if (mbedtls_x509write_csr_set_subject_name(&_mbCsr, _subjBuf) != 0) {
+  snprintf(_subjBuf, BLUECHERRY_ZTP_SUBJ_BUF_SIZE, "C=BE,CN=%s.%s", _bcTypeId, _bcDevId);
+  if(mbedtls_x509write_csr_set_subject_name(&_mbCsr, _subjBuf) != 0) {
     return _finishCsrGen(false);
   }
 
   ret = mbedtls_x509write_csr_der(&_mbCsr, csrBuf, BLUECHERRY_ZTP_CERT_BUF_SIZE,
                                   mbedtls_ctr_drbg_random, &_mbCtrDrbg);
-  if (ret < 0) {
+  if(ret < 0) {
     printf("Failed to write CSR: -0x%04X\n", -ret);
     return _finishCsrGen(false);
   }
@@ -397,7 +398,8 @@ bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled) {
   return _finishCsrGen(true);
 }
 
-bool BlueCherryZTP::requestSignedCertificate() {
+bool BlueCherryZTP::requestSignedCertificate()
+{
   int ret;
   WalterModemRsp rsp = {};
   uint8_t buf[BLUECHERRY_ZTP_CERT_BUF_SIZE];
@@ -407,57 +409,52 @@ bool BlueCherryZTP::requestSignedCertificate() {
   ztp_cbor_init(&cbor, buf, BLUECHERRY_ZTP_CERT_BUF_SIZE);
   mbedtls_x509_crt_init(&_mbCrt);
 
-  if (ztp_cbor_encode_bytes(&cbor, _csr.buffer, _csr.length) < 0) {
+  if(ztp_cbor_encode_bytes(&cbor, _csr.buffer, _csr.length) < 0) {
     printf("Failed to encode CSR\n");
     return false;
   }
 
   // Send second CoAP
-  if (!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_SET,
-                              WALTER_MODEM_COAP_OPT_CODE_URI_PATH,
-                              ZTP_SERV_API_VERSION)) {
+  if(!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_SET,
+                             WALTER_MODEM_COAP_OPT_CODE_URI_PATH, ZTP_SERV_API_VERSION)) {
     printf("Failed to configure ZTP CoAP URI path for API version\n");
   }
 
-  if (!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_EXTEND,
-                              WALTER_MODEM_COAP_OPT_CODE_URI_PATH,
-                              ZTP_SERV_CSR_PATH)) {
+  if(!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_EXTEND,
+                             WALTER_MODEM_COAP_OPT_CODE_URI_PATH, ZTP_SERV_CSR_PATH)) {
     printf("Failed to configure ZTP CoAP URI path for CSR signing\n");
   }
 
-  if (!_modem->coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
-                            WALTER_MODEM_COAP_SEND_METHOD_GET,
-                            ztp_cbor_size(&cbor), buf)) {
+  if(!_modem->coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
+                           WALTER_MODEM_COAP_SEND_METHOD_GET, ztp_cbor_size(&cbor), buf)) {
     printf("Failed to send ZTP CoAP datagram\n");
     return false;
   }
 
   int i = BLUECHERRY_ZTP_COAP_TIMEOUT;
   printf("Awaiting ZTP CoAP ring.");
-  while (i &&
-         !_modem->coapDidRing(COAP_PROFILE, coapData, sizeof(coapData), &rsp)) {
+  while(i && !_modem->coapDidRing(COAP_PROFILE, coapData, sizeof(coapData), &rsp)) {
     printf(".");
     DELAY(1000);
     i--;
   }
   printf("\n");
 
-  if (i < 1) {
+  if(i < 1) {
     printf("Failed to receive response from ZTP COAP server\n");
     return false;
   }
 
   size_t decodedSize;
-  ret = ztp_cbor_decode_certificate(coapData, rsp.data.coapResponse.length, buf,
-                                    &decodedSize);
-  if (ret < 0) {
+  ret = ztp_cbor_decode_certificate(coapData, rsp.data.coapResponse.length, buf, &decodedSize);
+  if(ret < 0) {
     printf("Failed to decode certificate: %d\n", ret);
     return false;
   }
 
   // Parse the DER-encoded certificate
   ret = mbedtls_x509_crt_parse_der(&_mbCrt, buf, decodedSize);
-  if (ret < 0) {
+  if(ret < 0) {
     printf("Failed to parse DER certificate, error code: -0x%x\n", -ret);
     mbedtls_x509_crt_free(&_mbCrt);
     return false;
@@ -465,10 +462,10 @@ bool BlueCherryZTP::requestSignedCertificate() {
 
   // Convert the certificate to PEM format
   size_t pemLen;
-  ret = mbedtls_pem_write_buffer(
-      "-----BEGIN CERTIFICATE-----\n", "-----END CERTIFICATE-----\n",
-      _mbCrt.raw.p, _mbCrt.raw.len, buf, BLUECHERRY_ZTP_CERT_BUF_SIZE, &pemLen);
-  if (ret < 0) {
+  ret = mbedtls_pem_write_buffer("-----BEGIN CERTIFICATE-----\n", "-----END CERTIFICATE-----\n",
+                                 _mbCrt.raw.p, _mbCrt.raw.len, buf, BLUECHERRY_ZTP_CERT_BUF_SIZE,
+                                 &pemLen);
+  if(ret < 0) {
     printf("Failed to write PEM: -0x%04X\n", -ret);
     mbedtls_x509_crt_free(&_mbCrt);
     return false;
