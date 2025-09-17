@@ -1,7 +1,7 @@
 /**
  * @file Positioning.ino
- * @author Daan Pape <daan@dptechnics.com>
- * @date 2 Sep 2024
+ * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 17 Sep 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -66,6 +66,13 @@
  * @brief The size in bytes of a minimal sensor + GNSS + cell info packet.
  */
 #define PACKET_SIZE 29
+
+/**
+ * @brief The APN of your cellular provider.
+ *
+ * @note If your SIM card supports it, you can also leave this empty.
+ */
+#define CELLULAR_APN ""
 
 /**
  * @brief All fixes with a confidence below this number are considered ok.
@@ -188,7 +195,7 @@ bool lteConnect()
   }
 
   /* Create PDP context */
-  if(modem.definePDPContext()) {
+  if(modem.definePDPContext(1, CELLULAR_APN)) {
     Serial.println("Created PDP context");
   } else {
     Serial.println("Error: Could not create PDP context");
@@ -459,9 +466,7 @@ bool attemptGNSSFix()
 
   /* Disconnect from the network (Required for GNSS) */
   if(lteConnected && !lteDisconnect()) {
-    Serial.println("Could not disconnect from the LTE network");
-    delay(1000);
-    ESP.restart();
+    Serial.println("Error: Could not disconnect from the LTE network");
     return false;
   }
 
@@ -482,7 +487,7 @@ bool attemptGNSSFix()
 
     /* Request a GNSS fix */
     if(!modem.gnssPerformAction()) {
-      Serial.println("Could not request GNSS fix");
+      Serial.println("Error: Could not request GNSS fix");
       return false;
     }
 
@@ -542,7 +547,7 @@ void setup()
       Serial.println("Switched modem radio technology");
     }
   } else {
-    Serial.println("Could not retrieve radio access technology");
+    Serial.println("Error: Could not retrieve radio access technology");
   }
 
   /* Print some modem information */
@@ -567,7 +572,7 @@ void setup()
 
   /* Configure the GNSS subsystem */
   if(!modem.gnssConfig()) {
-    Serial.println("Could not configure the GNSS subsystem");
+    Serial.println("Error: Could not configure the GNSS subsystem");
     delay(1000);
     ESP.restart();
     return;
@@ -610,7 +615,7 @@ void loop()
 
   /* Force reconnect to the network to get the latest cell information */
   if(!lteConnect()) {
-    Serial.println("Could not connect to the LTE network");
+    Serial.println("Error: Could not connect to the LTE network");
     delay(1000);
     ESP.restart();
     return;
