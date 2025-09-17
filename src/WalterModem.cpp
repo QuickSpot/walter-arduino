@@ -3689,11 +3689,10 @@ void WalterModem::tickleWatchdog(void)
     }
 }
 
-bool WalterModem::sendCmd(const char *cmd)
+bool WalterModem::sendCmd(const char *atCmd, const char *atCmdRsp, WalterModemRsp *rsp, walterModemCb cb, void *args)
 {
-    const char *_cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = {cmd};
-    return _addQueueCmd(_cmdArr, NULL, NULL, NULL, NULL, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX) !=
-        nullptr;
+    _runCmd({atCmd}, atCmdRsp, rsp, cb, args);
+    _returnAfterReply();
 }
 
 bool WalterModem::softReset(WalterModemRsp *rsp, walterModemCb cb, void *args)

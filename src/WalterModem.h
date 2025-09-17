@@ -4008,11 +4008,15 @@ public:
      * This function will send an AT command. The necessary carriage return and line feed will
      * be added to the given command.
      *
-     * @param cmd The AT command to send.
+     * @param atCmd The AT command to send.
+     * @param atCmdRsp The expected AT command response, defaults to "OK".
+     * @param rsp Optional modem response structure to save the result in.
+     * @param cb Optional callback function, if set this function will not block.
+     * @param args Optional argument to pass to the callback.
      *
      * @return True on success, false otherwise.
      */
-    static bool sendCmd(const char *cmd);
+    static bool sendCmd(const char *atCmd, const char *atCmdRsp = "OK", WalterModemRsp *rsp = NULL, walterModemCb cb = NULL, void *args = NULL);
 
     /**
      * @brief Software reset the modem and wait for it to reset, this is required when switching
