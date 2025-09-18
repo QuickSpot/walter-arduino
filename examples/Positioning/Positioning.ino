@@ -636,14 +636,17 @@ void loop()
   float temp = temperatureRead();
   Serial.printf("The temperature of Walter is %.02f degrees Celsius\r\n", temp);
 
+  float lat32 = (float) latestGnssFix.latitude;
+  float lon32 = (float) latestGnssFix.longitude;
+
   /* Construct the minimal sensor + GNSS */
   uint16_t rawTemp = (temp + 50) * 100;
   dataBuf[6] = 0x02;
   dataBuf[7] = rawTemp >> 8;
   dataBuf[8] = rawTemp & 0xFF;
   dataBuf[9] = latestGnssFix.satCount;
-  memcpy(dataBuf + 10, &latestGnssFix.latitude, 4);
-  memcpy(dataBuf + 14, &latestGnssFix.longitude, 4);
+  memcpy(dataBuf + 10, &lat32, 4);
+  memcpy(dataBuf + 14, &lon32, 4);
   dataBuf[18] = rsp.data.cellInformation.cc >> 8;
   dataBuf[19] = rsp.data.cellInformation.cc & 0xFF;
   dataBuf[20] = rsp.data.cellInformation.nc >> 8;
