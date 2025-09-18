@@ -1,14 +1,65 @@
-#include <Arduino.h>
+/**
+ * @file walter_feels.ino
+ * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 18 Sep 2025
+ * @copyright DPTechnics bv
+ * @brief Walter Modem library examples
+ *
+ * @section LICENSE
+ *
+ * Copyright (C) 2023, DPTechnics bv
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *   1. Redistributions of source code must retain the above copyright notice,
+ *      this list of conditions and the following disclaimer.
+ *
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ *   3. Neither the name of DPTechnics bv nor the names of its contributors may
+ *      be used to endorse or promote products derived from this software
+ *      without specific prior written permission.
+ *
+ *   4. This software, with or without modification, must only be used with a
+ *      Walter board from DPTechnics bv.
+ *
+ *   5. Any software provided in binary form under this license must not be
+ *      reverse engineered, decompiled, modified and/or disassembled.
+ *
+ * THIS SOFTWARE IS PROVIDED BY DPTECHNICS BV “AS IS” AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL DPTECHNICS BV OR CONTRIBUTORS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * @section DESCRIPTION
+ *
+ * This file contains a sketch which is used in combination with Walter Feels.
+ * It reads out the internal power management and sensors, connects to LTE to download GNSS
+ * assistance data (if available), gets a GNSS fix and uploads the data to the Walter demo
+ * server. walterdemo.quickspot.io
+ */
+
 #include <HardwareSerial.h>
+#include "WalterFeels.h"
 #include <WalterModem.h>
-#include <Wire.h>
-#include "esp_mac.h"
 #include "esp_sleep.h"
+#include <Arduino.h>
+#include "esp_mac.h"
 #include "hdc1080.h"
 #include "lps22hb.h"
 #include "ltc4015.h"
 #include "scd30.h"
-#include "WalterFeels.h"
+#include <Wire.h>
 
 #define CO2_EN_PIN 13
 #define CO2_SDA_PIN 12
@@ -17,7 +68,7 @@
 /**
  * @brief The address of the server to upload the data to.
  */
-#define SERV_ADDR "walterdemo.quickspot.io"
+#define SERV_ADDR "94.110.152.111"
 
 /**
  * @brief The UDP port on which the server is listening.
@@ -30,24 +81,45 @@
 #define PACKET_SIZE 39
 
 /**
+ * @brief The APN of your cellular provider.
+ *
+ * @note If your SIM card supports it, you can also leave this empty.
+ */
+#define CELLULAR_APN ""
+
+/**
+ * @brief The radio access technology to use - LTEM or NBIOT.
+ *
+ * @note WALTER_MODEM_RAT_LTEM or WALTER_MODEM_RAT_NBIOT are recommended.
+ */
+#define RADIO_TECHNOLOGY WALTER_MODEM_RAT_LTEM
+
+/**
  * @brief All fixes with a confidence below this number are considered ok.
  */
-#define MAX_GNSS_CONFIDENCE 200.0
-
-/**
- * @brief The first RAT to try to connect to.
- */
-#define PREFERRED_RAT WALTER_MODEM_RAT_LTEM
-
-/**
- * @brief Flag used to signal when a fix is received.
- */
-volatile bool fixRcvd = false;
+#define MAX_GNSS_CONFIDENCE 100.0
 
 /**
  * @brief The modem instance.
  */
 WalterModem modem;
+
+/**
+ * @brief The socket identifier (1-6)
+ *
+ * @note At least one socket should be available/reserved for BlueCherry.
+ */
+uint8_t socketId = -1;
+
+/**
+ * @brief Flag used to signal when a fix is received.
+ */
+volatile bool gnssFixRcvd = false;
+
+/**
+ * @brief The last received GNSS fix.
+ */
+WalterModemGNSSFix latestGnssFix = {};
 
 /**
  * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
@@ -56,14 +128,9 @@ WalterModem modem;
 uint8_t dataBuf[PACKET_SIZE] = { 0 };
 
 /**
- * @brief The last received GNSS fix.
- */
-WalterModemGNSSFix posFix = {};
-
-/**
  * @brief The HDC1080 temperature/humidity sensor instance.
  */
-// HDC1080 hdc1080;
+HDC1080 hdc1080;
 
 /**
  * @brief The LPS22HB barometric pressure sensor instance.
@@ -73,17 +140,7 @@ LPS22HB lps22hb(Wire);
 /**
  * @brief The SCD30 CO2 sensor instance.
  */
-// SCD30 scd30;
-
-/**
- * @brief Use UART1 for modem communication.
- */
-HardwareSerial ModemSerial(1);
-
-/**
- * @brief User UART2 for communication with modbus sensors.
- */
-HardwareSerial SensorSerial(2);
+SCD30 scd30;
 
 /**
  * @brief Time duration in seconds indicating how long the ESP should stay in
@@ -186,7 +243,7 @@ bool lteConnect()
   }
 
   /* Create PDP context */
-  if(modem.definePDPContext()) {
+  if(modem.definePDPContext(1, CELLULAR_APN)) {
     Serial.println("Created PDP context");
   } else {
     Serial.println("Error: Could not create PDP context");
@@ -213,282 +270,295 @@ bool lteConnect()
 }
 
 /**
- * @brief Check the assistance data in the modem response.
+ * @brief Inspect GNSS assistance status and optionally set update flags.
  *
- * This function checks the availability of assistance data in the modem's
- * response. This function also sets a flag if any of the assistance databases
- * should be updated.
+ * Prints the availability and recommended update timing for the
+ * almanac and real-time ephemeris databases.  If update flags are provided,
+ * they are set to:
+ *   - true  : update is required (data missing or time-to-update <= 0)
+ *   - false : no update required
  *
- * @param rsp The modem response to check.
- * @param updateAlmanac Pointer to the flag to set when the almanac should be
- * updated.
- * @param updateEphemeris Pointer to the flag to set when ephemeris should be
- * updated.
+ * @param rsp Pointer to modem response object.
+ * @param updateAlmanac   Optional pointer to bool receiving almanac update.
+ * @param updateEphemeris Optional pointer to bool receiving ephemeris update.
  *
- * @return None.
+ * @return true  If assistance status was successfully retrieved and parsed.
+ * @return false If the assistance status could not be retrieved.
  */
-void checkAssistanceData(WalterModemRsp* rsp, bool* updateAlmanac = NULL,
-                         bool* updateEphemeris = NULL)
+bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
+                           bool* updateEphemeris = nullptr)
 {
-  if(updateAlmanac != NULL) {
-    *updateAlmanac = false;
-  }
-
-  if(updateEphemeris != NULL) {
-    *updateEphemeris = false;
-  }
-
-  Serial.print("Almanac data is ");
-  if(rsp->data.gnssAssistance.almanac.available) {
-    Serial.printf("available and should be updated within %ds\r\n",
-                  rsp->data.gnssAssistance.almanac.timeToUpdate);
-    if(updateAlmanac != NULL) {
-      *updateAlmanac = rsp->data.gnssAssistance.almanac.timeToUpdate <= 0;
-    }
-  } else {
-    Serial.print("not available.\r\n");
-    if(updateAlmanac != NULL) {
-      *updateAlmanac = true;
-    }
-  }
-
-  Serial.print("Real-time ephemeris data is ");
-  if(rsp->data.gnssAssistance.realtimeEphemeris.available) {
-    Serial.printf("available and should be updated within %ds\r\n",
-                  rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate);
-    if(updateEphemeris != NULL) {
-      *updateEphemeris = rsp->data.gnssAssistance.realtimeEphemeris.timeToUpdate <= 0;
-    }
-  } else {
-    Serial.print("not available.\r\n");
-    if(updateEphemeris != NULL) {
-      *updateEphemeris = true;
-    }
-  }
-}
-
-/**
- * @brief Update GNSS assistance data if needed.
- *
- * Checks the GNSS almanac and real-time ephemeris validity and, if required,
- * connects to the LTE network to download fresh assistance data. Ensures the
- * system clock is synchronized before updating.
- *
- * @return True on success, false on error (e.g., LTE connection or modem
- *         command failed).
- */
-bool updateGNSSAssistance()
-{
-  WalterModemRsp rsp = {};
-
-  lteDisconnect();
-
-  /* Even with valid assistance data the system clock could be invalid */
-  modem.gnssGetUTCTime(&rsp);
-
-  if(rsp.data.clock.epochTime <= 4) {
-    /* The system clock is invalid, connect to LTE network to sync time */
-    if(!lteConnect()) {
-      Serial.print("Could not connect to LTE network\r\n");
-      return false;
-    }
-
-    /*
-     * Wait for the modem to synchronize time with the LTE network, try 5 times
-     * with a delay of 500ms.
-     */
-    for(int i = 0; i < 5; ++i) {
-      modem.gnssGetUTCTime(&rsp);
-
-      if(rsp.data.clock.epochTime > 4) {
-        Serial.printf("Synchronized clock with network: %" PRIi64 "\r\n", rsp.data.clock.epochTime);
-        break;
-      } else if(i == 4) {
-        Serial.print("Could not sync time with network\r\n");
-        return false;
-      }
-
-      delay(500);
-    }
-  }
-
-  /* Check the availability of assistance data */
-  if(!modem.gnssGetAssistanceStatus(&rsp) ||
-     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
-    Serial.print("Could not request GNSS assistance status\r\n");
+  /* Check assistance data status */
+  if(!modem.gnssGetAssistanceStatus(rsp) ||
+     rsp->type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
+    Serial.println("Could not request GNSS assistance status");
     return false;
   }
 
-  bool updateAlmanac = false;
-  bool updateEphemeris = false;
-  checkAssistanceData(&rsp, &updateAlmanac, &updateEphemeris);
+  /* Default output flags to false if provided */
+  if(updateAlmanac)
+    *updateAlmanac = false;
+  if(updateEphemeris)
+    *updateEphemeris = false;
 
-  if(!(updateAlmanac || updateEphemeris)) {
-    if(lteConnected()) {
-      if(!lteDisconnect()) {
-        Serial.print("Could not disconnect from the LTE network\r\n");
-        return false;
-      }
+  /* Lambda to reduce repetition for each data type */
+  auto report = [](const char* name, const auto& data, bool* updateFlag) {
+    Serial.printf("%s data is ", name);
+    if(data.available) {
+      Serial.printf("available and should be updated within %ds\r\n", data.timeToUpdate);
+      if(updateFlag)
+        *updateFlag = (data.timeToUpdate <= 0);
+    } else {
+      Serial.println("not available.");
+      if(updateFlag)
+        *updateFlag = true;
     }
+  };
 
+  /* Check both data sets */
+  report("Almanac", rsp->data.gnssAssistance.almanac, updateAlmanac);
+  report("Real-time ephemeris", rsp->data.gnssAssistance.realtimeEphemeris, updateEphemeris);
+
+  Serial.println("GNSS assistance data is up to date");
+  return true;
+}
+
+/**
+ * @brief Ensure the GNSS subsystem clock is valid, syncing with LTE if needed.
+ *
+ * If the clock is invalid, this function will attempt to connect to LTE
+ * (if not already connected) and sync the clock up to 5 times.
+ *
+ * @param rsp Pointer to modem response object.
+ *
+ * @return true If the clock is valid or successfully synchronized.
+ * @return false If synchronization fails or LTE connection fails.
+ */
+bool validateGNSSClock(WalterModemRsp* rsp)
+{
+  /* Validate the GNSS subsystem clock */
+  modem.gnssGetUTCTime(rsp);
+  if(rsp->data.clock.epochTime > 4) {
     return true;
   }
 
-  if(!lteConnected()) {
-    if(!lteConnect()) {
-      Serial.print("Could not connect to LTE network\r\n");
-      return false;
-    }
-  }
+  Serial.println("System clock invalid, LTE time sync required");
 
-  if(updateAlmanac) {
-    if(!modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
-      Serial.print("Could not update almanac data\r\n");
-      return false;
-    }
-  }
-
-  if(updateEphemeris) {
-    if(!modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS)) {
-      Serial.print("Could not update real-time ephemeris data\r\n");
-      return false;
-    }
-  }
-
-  if(!modem.gnssGetAssistanceStatus(&rsp) ||
-     rsp.type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
-    Serial.print("Could not request GNSS assistance status\r\n");
+  /* Connect to LTE (required for time sync) */
+  if(!lteConnected() && !lteConnect()) {
+    Serial.println("Error: Could not connect to LTE network");
     return false;
   }
 
-  checkAssistanceData(&rsp);
-
-  if(!lteDisconnect()) {
-    Serial.print("Could not disconnect from the LTE network\r\n");
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * @brief Connect to an UDP socket.
- *
- * This function will set-up the modem and connect an UDP socket. The LTE
- * connection must be active before this function can be called.
- *
- * @param ip The IP address of the server to connect to.
- * @param port The port to connect to.
- *
- * @return True on success, false on error.
- */
-bool socketConnect(const char* ip, uint16_t port)
-{
-  /* Construct a socket */
-  if(modem.socketConfig()) {
-    Serial.print("Created a new socket\r\n");
-  } else {
-    Serial.print("Could not create a new socket\r\n");
-    return false;
-  }
-
-  /* disable socket tls as the demo server does not use it */
-  if(modem.socketConfigSecure(false)) {
-    Serial.print("Configured TLS\r\n");
-  } else {
-    Serial.print("Could not configure TLS\r\n");
-    return false;
-  }
-
-  /* Connect to the UDP test server */
-  if(modem.socketDial(ip, port)) {
-    Serial.printf("Connected to UDP server %s:%d\r\n", ip, port);
-  } else {
-    Serial.print("Could not connect UDP socket\r\n");
-    return false;
-  }
-
-  return true;
-}
-
-void performGnssFix()
-{
-  /* Check clock and assistance data, update if required */
-  if(!updateGNSSAssistance()) {
-    Serial.print("Could not update GNSS assistance data\r\n");
-    delay(1000);
-    ESP.restart();
-    return;
-  }
-
-  /* Try up to 5 times to get a good fix */
+  /* Attempt sync clock up to 5 times */
   for(int i = 0; i < 5; ++i) {
-    fixRcvd = false;
-    if(!WalterModem::gnssPerformAction()) {
-      Serial.print("Could not request GNSS fix\r\n");
-      delay(1000);
-      ESP.restart();
-      return;
+    /* Validate the GNSS subsystem clock */
+    modem.gnssGetUTCTime(rsp);
+    if(rsp->data.clock.epochTime > 4) {
+      Serial.printf("Clock synchronized: %" PRIi64 "\r\n", rsp->data.clock.epochTime);
+      return true;
     }
-    Serial.print("Started GNSS fix\r\n");
-
-    int j = 0;
-    while(!fixRcvd) {
-      Serial.print(".");
-      if(j >= 300) {
-        Serial.println("");
-        Serial.println("Timed out while waiting for GNSS fix");
-        delay(1000);
-        ESP.restart();
-        break;
-      }
-      j++;
-      delay(500);
-    }
-
-    Serial.println("");
-
-    if(posFix.estimatedConfidence > MAX_GNSS_CONFIDENCE) {
-      posFix.satCount = 0;
-      posFix.latitude = 0.0;
-      posFix.longitude = 0.0;
-      Serial.print("Could not get a valid fix\r\n");
-    }
+    delay(2000);
   }
 
-  uint8_t abovedBTreshold = 0;
-  for(int i = 0; i < posFix.satCount; ++i) {
-    if(posFix.sats[i].signalStrength >= 30) {
-      abovedBTreshold += 1;
-    }
-  }
-
-  Serial.printf("GNSS fix attempt finished:\r\n"
-                "  Confidence: %.02f\r\n"
-                "  Latitude: %.06f\r\n"
-                "  Longitude: %.06f\r\n"
-                "  Satcount: %d\r\n"
-                "  Good sats: %d\r\n",
-                posFix.estimatedConfidence, posFix.latitude, posFix.longitude, posFix.satCount,
-                abovedBTreshold);
+  Serial.println("Error: Could not sync time with network. Does the network support NITZ?");
+  return false;
 }
 
 /**
- * @brief This function is called when a fix attempt finished.
+ * @brief Update GNSS assistance data if required.
  *
- * This function is called by Walter's modem library as soon as a fix attempt
- * has finished. This function should be handled as an interrupt and should be
- * as short as possible as it is called within the modem data thread.
+ * Steps performed:
+ *   1. Ensure the system clock is valid (sync with LTE if needed).
+ *   2. Check the status of GNSS assistance data (almanac & ephemeris).
+ *   3. Connect to LTE (if not already) and download any missing data.
+ *
+ * LTE is only connected when necessary.
+ *
+ * @param rsp Pointer to modem response object.
+ *
+ * @return true  Assistance data is valid (or successfully updated).
+ * @return false Failure to sync time, connect LTE, or update assistance data.
+ */
+bool updateGNSSAssistance(WalterModemRsp* rsp)
+{
+  bool updateAlmanac = false;
+  bool updateEphemeris = false;
+
+  /* Get the latest assistance data */
+  if(!checkAssistanceStatus(rsp, &updateAlmanac, &updateEphemeris)) {
+    Serial.println("Error: Could not check GNSS assistance status");
+    return false;
+  }
+
+  /* No update needed */
+  if(!updateAlmanac && !updateEphemeris) {
+    return true;
+  }
+
+  /* Connect to LTE to download assistance data */
+  if(!lteConnected() && !lteConnect()) {
+    Serial.println("Could not connect to LTE network");
+    return false;
+  }
+
+  /* Update almanac data if needed */
+  if(updateAlmanac && !modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
+    Serial.println("Could not update almanac data");
+    return false;
+  }
+
+  /* Update real-time ephemeris data if needed */
+  if(updateEphemeris &&
+     !modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS)) {
+    Serial.println("Could not update real-time ephemeris data");
+    return false;
+  }
+
+  /* Recheck assistance data to ensure its valid */
+  if(!checkAssistanceStatus(rsp)) {
+    Serial.println("Error: Could not check GNSS assistance status");
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * @brief GNSS event handler
+ *
+ * Handles GNSS fix events.
+ * @note This callback is invoked from the modem driver’s event context.
+ *       It must never block or call modem methods directly.
+ *       Use it only to set flags or copy data for later processing.
  *
  * @param fix The fix data.
- * @param args Optional arguments, a NULL pointer in this case.
+ * @param args User argument pointer passed to gnssSetEventHandler
  *
  * @return None.
  */
-void fixHandler(const WalterModemGNSSFix* fix, void* args)
+void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
 {
-  memcpy(&posFix, fix, sizeof(WalterModemGNSSFix));
-  fixRcvd = true;
+  memcpy(&latestGnssFix, fix, sizeof(WalterModemGNSSFix));
+
+  /* Count satellites with good signal strength */
+  uint8_t goodSatCount = 0;
+  for(int i = 0; i < latestGnssFix.satCount; ++i) {
+    if(latestGnssFix.sats[i].signalStrength >= 30) {
+      ++goodSatCount;
+    }
+  }
+  Serial.println();
+  Serial.printf("GNSS fix received:"
+                "  Confidence: %.02f"
+                "  Latitude: %.06f"
+                "  Longitude: %.06f"
+                "  Satcount: %d"
+                "  Good sats: %d\r\n",
+                latestGnssFix.estimatedConfidence, latestGnssFix.latitude, latestGnssFix.longitude,
+                latestGnssFix.satCount, goodSatCount);
+
+  gnssFixRcvd = true;
+}
+
+/**
+ * @brief Socket event handler
+ *
+ * Handles status changes and incoming messages.
+ * @note This callback is invoked from the modem driver’s event context.
+ *       It must never block or call modem methods directly.
+ *       Use it only to set flags or copy data for later processing.
+ *
+ * @param ev          Event type (e.g. WALTER_MODEM_SOCKET_EVENT_RING for incoming messages)
+ * @param socketId    ID of the socket that triggered the event
+ * @param dataReceived Number of bytes received
+ * @param dataBuffer  Pointer to received data
+ * @param args        User argument pointer passed to socketSetEventHandler
+ */
+void socketEventHandler(WalterModemSocketEvent ev, int socketId, uint16_t dataReceived,
+                        uint8_t* dataBuffer, void* args)
+{
+  if(ev == WALTER_MODEM_SOCKET_EVENT_RING) {
+    Serial.printf("Received message (%u bytes) on socket %d\r\n", dataReceived, socketId);
+    Serial.printf("Payload:\r\n%.*s\r\n", dataReceived, reinterpret_cast<const char*>(dataBuffer));
+  }
+}
+
+/**
+ * @brief Attempt to obtain a GNSS position fix with acceptable confidence.
+ *
+ * This function:
+ *   1. Updates GNSS assistance data if needed.
+ *   2. Requests a GNSS fix up to 5 times.
+ *   3. Waits for each fix attempt to complete or time out.
+ *   4. Checks the final fix confidence against MAX_GNSS_CONFIDENCE.
+ *
+ * @return true  If a valid GNSS fix was obtained within the confidence threshold.
+ * @return false If assistance update fails, a fix cannot be requested,
+ *               a timeout occurs, or the final confidence is too low.
+ */
+bool attemptGNSSFix()
+{
+  WalterModemRsp rsp = {};
+
+  if(!validateGNSSClock(&rsp)) {
+    Serial.println("Error: Could not validate GNSS clock");
+    return false;
+  }
+
+  /* Ensure assistance data is current */
+  if(!updateGNSSAssistance(&rsp)) {
+    Serial.println(
+        "Warning: Could not update GNSS assistance data. Continuing without assistance.");
+  }
+
+  /* Disconnect from the network (Required for GNSS) */
+  if(lteConnected && !lteDisconnect()) {
+    Serial.println("Error: Could not disconnect from the LTE network");
+    return false;
+  }
+
+  /* Optional: Reconfigure GNSS with last valid fix - This might speed up consecutive fixes */
+  if(latestGnssFix.estimatedConfidence <= MAX_GNSS_CONFIDENCE) {
+    /* Reconfigure GNSS for potential quick fix */
+    if(modem.gnssConfig(WALTER_MODEM_GNSS_SENS_MODE_HIGH, WALTER_MODEM_GNSS_ACQ_MODE_HOT_START)) {
+      Serial.println("GNSS reconfigured for potential quick fix");
+    } else {
+      Serial.println("Error: Could not reconfigure GNSS");
+    }
+  }
+
+  /* Attempt up to 5 GNSS fixes */
+  const int maxAttempts = 5;
+  for(int attempt = 0; attempt < maxAttempts; ++attempt) {
+    gnssFixRcvd = false;
+
+    /* Request a GNSS fix */
+    if(!modem.gnssPerformAction()) {
+      Serial.println("Error: Could not request GNSS fix");
+      return false;
+    }
+
+    Serial.printf("Started GNSS fix (attempt %d/%d)\r\n", attempt + 1, maxAttempts);
+
+    /* For this example, we block here until the GNSS event handler sets the flag */
+    /* Feel free to build your application code asynchronously */
+    while(!gnssFixRcvd) {
+      Serial.print(".");
+      delay(500);
+    }
+    Serial.println();
+
+    /* If confidence is acceptable, stop trying. Otherwise, try again */
+    if(latestGnssFix.estimatedConfidence <= MAX_GNSS_CONFIDENCE) {
+      Serial.println("Successfully obtained a valid GNSS fix");
+      return true;
+    } else {
+      Serial.printf("GNSS fix confidence %.02f too low, retrying...\r\n",
+                    latestGnssFix.estimatedConfidence);
+    }
+  }
+  return false;
 }
 
 void setup_charger()
@@ -507,19 +577,26 @@ void setup()
   Serial.begin(115200);
   delay(5000);
 
-  Serial.print("Walter Feels\r\n");
-
-  WalterModemRsp rsp = {};
+  Serial.printf("\r\n\r\n=== WalterModem WalterFeels example ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
   Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1],
                 dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
 
-  WalterFeels::set3v3(true);
-  WalterFeels::setI2cBusPower(true);
+  /* Start the modem */
+  if(WalterModem::begin(&Serial2)) {
+    Serial.println("Successfully initialized the modem");
+  } else {
+    Serial.println("Error: Could not initialize the modem");
+    delay(5000);
+    ESP.restart();
+  }
 
   Serial.println("MAIN: Configuring I2C...");
+
+  WalterFeels::set3v3(true);
+  WalterFeels::setI2cBusPower(true);
 
   // Initialize I2C with same pins and frequency
   if(!Wire.begin(WFEELS_PIN_I2C_SDA, WFEELS_PIN_I2C_SCL, 100000)) {
@@ -527,91 +604,96 @@ void setup()
     return;
   }
 
-  // Wire1.begin(CO2_SDA_PIN, CO2_SCL_PIN);
-  // Serial.println("Waiting for CO2 sensor to boot");
-  // delay(100);
+  Wire1.begin(CO2_SDA_PIN, CO2_SCL_PIN);
+  Serial.println("Waiting for CO2 sensor to boot");
+  delay(100);
 
-  // bool co2_sensor_installed = scd30.begin(Wire1);
-  // for(int i = 0; i < 10 && !co2_sensor_installed; ++i) {
-  //   delay(500);
-  //   co2_sensor_installed = scd30.begin(Wire1);
-  // }
+  bool co2_sensor_installed = scd30.begin(Wire1);
+  for(int i = 0; i < 10 && !co2_sensor_installed; ++i) {
+    delay(500);
+    co2_sensor_installed = scd30.begin(Wire1);
+  }
 
-  // if(!co2_sensor_installed) {
-  //   digitalWrite(CO2_EN_PIN, HIGH);
-  //   Serial.println("Warning: No CO2 sensor is installed");
-  // } else {
-  //   Serial.println("Sensirion SCD30 CO2 sensor is installed");
-  // }
+  if(!co2_sensor_installed) {
+    digitalWrite(CO2_EN_PIN, HIGH);
+    Serial.println("Warning: No CO2 sensor is installed");
+  } else {
+    Serial.println("Sensirion SCD30 CO2 sensor is installed");
+  }
 
   Serial.println("MAIN: I2C configured");
 
-  delay(2000);
-
   setup_charger();
-  // hdc1080.begin();
-
-  delay(2000);
+  hdc1080.begin();
   lps22hb.begin();
 
-  /* Initialize the LTE modem library */
-  if(WalterModem::begin(&ModemSerial)) {
-    Serial.println("Modem initialization success");
+  WalterModemRsp rsp = {};
+
+  /* Ensure we are using the preferred RAT */
+  /* This is a reboot-persistent setting */
+  if(modem.getRAT(&rsp)) {
+    if(rsp.data.rat != RADIO_TECHNOLOGY) {
+      modem.setRAT(RADIO_TECHNOLOGY);
+      Serial.println("Switched modem radio technology");
+    }
   } else {
-    Serial.println("Error: Modem initialization fault");
-    delay(1000);
-    ESP.restart();
-    return;
+    Serial.println("Error: Could not retrieve radio access technology");
   }
 
-  // Connect to cellular network
-  if(!lteConnect()) {
-    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
-                   "in 10 seconds");
-    delay(10000);
-    ESP.restart();
-  }
-
-  WalterModem::configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive);
-
-  if(!WalterModem::getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
-    Serial.println("Could not request cell information");
-  } else {
-    Serial.printf("Connected on band %u using operator %s (%u%02u)", rsp.data.cellInformation.band,
-                  rsp.data.cellInformation.netName, rsp.data.cellInformation.cc,
-                  rsp.data.cellInformation.nc);
-    Serial.printf(" and cell ID %u.\r\n", rsp.data.cellInformation.cid);
-    Serial.printf("Signal strength: RSRP: %.2f, RSRQ: %.2f.\r\n", rsp.data.cellInformation.rsrp,
-                  rsp.data.cellInformation.rsrq);
-  }
-
-  if(WalterModem::getIdentity(&rsp)) {
-    Serial.print("Modem identity:\r\n");
+  /* Print some modem information */
+  if(modem.getIdentity(&rsp)) {
+    Serial.println("Modem identity:");
     Serial.printf(" -IMEI: %s\r\n", rsp.data.identity.imei);
     Serial.printf(" -IMEISV: %s\r\n", rsp.data.identity.imeisv);
     Serial.printf(" -SVN: %s\r\n", rsp.data.identity.svn);
   }
 
-  delay(500);
-
-  if(WalterModem::getSIMCardID(&rsp)) {
-    Serial.print("SIM card identity:\r\n");
+  /* Get the SIM card ID */
+  if(modem.getSIMCardID(&rsp)) {
+    Serial.println("SIM card identity:");
     Serial.printf(" -ICCID: %s\r\n", rsp.data.simCardID.iccid);
     Serial.printf(" -eUICCID: %s\r\n", rsp.data.simCardID.euiccid);
   }
 
-  if(WalterModem::getSIMCardIMSI(&rsp)) {
+  /* Get the SIM card IMSI */
+  if(modem.getSIMCardIMSI(&rsp)) {
     Serial.printf("Active IMSI: %s\r\n", rsp.data.imsi);
   }
 
-  if(!WalterModem::gnssConfig()) {
-    Serial.println("Could not configure the GNSS subsystem");
+  /* Configure the GNSS subsystem */
+  if(!modem.gnssConfig()) {
+    Serial.println("Error: Could not configure the GNSS subsystem");
     delay(1000);
     ESP.restart();
     return;
   }
 
-  WalterModem::gnssSetEventHandler(fixHandler);
+  /* Configure a new socket */
+  if(modem.socketConfig(&rsp)) {
+    Serial.println("Successfully configured a new socket");
+
+    /* Utilize the socket id if you have more then one socket */
+    /* If not specified in the methods, the modem will use the previous socket id */
+    socketId = rsp.data.socketId;
+  } else {
+    Serial.println("Error: Could not configure a new socket");
+    return;
+  }
+
+  /* Disable TLS (the demo server does not use it) */
+  if(modem.socketConfigSecure(false)) {
+    Serial.println("Successfully set socket to insecure mode");
+  } else {
+    Serial.println("Error: Could not disable socket TLS");
+    return;
+  }
+
+  /* Configure Power Saving Mode */
+  modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive);
+  /* Set the GNSS fix event handler */
+  modem.gnssSetEventHandler(gnssEventHandler, NULL);
+  /* Set the TCP socket event handler */
+  modem.socketSetEventHandler(socketEventHandler, NULL);
 
   /* Init modem and charger on initial boot */
   // if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
@@ -621,12 +703,10 @@ void setup()
   //   WalterFeels::setI2cBusPower(false);
   // }
 
-  /* Initialize the sensors and read values */
-
-  float temp = 0; // hdc1080.readTemperature();
-  float hum = 0;  // hdc1080.readHumidity();
+  float temp = hdc1080.readTemperature();
+  float hum = hdc1080.readHumidity();
   float pressure = lps22hb.readPressure();
-  uint16_t co2ppm = 0; // co2_sensor_installed ? scd30.getCO2() : 0;
+  uint16_t co2ppm = co2_sensor_installed ? scd30.getCO2() : 0;
 
   Serial.printf("Sensor data, temp: %.02fC, hum: %.02f%%, press: %.02fhPa, co2: %d\r\n", temp, hum,
                 pressure, co2ppm);
@@ -640,11 +720,27 @@ void setup()
   uint16_t chargeCurrent = LTC4015::get_charge_current() * 1000;
   uint16_t chargeCount = LTC4015::get_qcount();
 
-  /* Disable 3.3V and I2C bus power */
-  WalterFeels::set3v3(false);
-  WalterFeels::setI2cBusPower(false);
+  attemptGNSSFix();
 
-  performGnssFix();
+  /* Force reconnect to the network to get the latest cell information */
+  if(!lteConnect()) {
+    Serial.println("Error: Could not connect to the LTE network");
+    delay(1000);
+    ESP.restart();
+    return;
+  }
+
+  /* Get the latest cell information */
+  if(!modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
+    Serial.println("Error: Could not request cell information");
+  } else {
+    Serial.printf("Connected on band %u using operator %s (%u%02u)", rsp.data.cellInformation.band,
+                  rsp.data.cellInformation.netName, rsp.data.cellInformation.cc,
+                  rsp.data.cellInformation.nc);
+    Serial.printf(" and cell ID %u.\r\n", rsp.data.cellInformation.cid);
+    Serial.printf("Signal strength: RSRP: %.2f, RSRQ: %.2f.\r\n", rsp.data.cellInformation.rsrp,
+                  rsp.data.cellInformation.rsrq);
+  }
 
   /* Construct UDP packet and transmit */
   uint16_t rawTemperature = temp * 100;
@@ -652,6 +748,8 @@ void setup()
   uint16_t rawPressure = pressure * 100;
   float batteryCharge = (float) chargeCount * 100 / 65535;
   uint16_t rawBatteryCharge = batteryCharge * 100;
+  float lat32 = (float) latestGnssFix.latitude;
+  float lon32 = (float) latestGnssFix.longitude;
 
   dataBuf[6] = rawTemperature >> 8;
   dataBuf[7] = rawTemperature & 0xFF;
@@ -677,30 +775,35 @@ void setup()
   dataBuf[27] = chargeCurrent & 0xFF;
   dataBuf[28] = rawBatteryCharge >> 8;
   dataBuf[29] = rawBatteryCharge & 0xFF;
-  dataBuf[30] = posFix.satCount;
-  memcpy(dataBuf + 31, &posFix.latitude, 4);
-  memcpy(dataBuf + 35, &posFix.longitude, 4);
+  dataBuf[30] = latestGnssFix.satCount;
+  memcpy(dataBuf + 31, &lat32, 4);
+  memcpy(dataBuf + 35, &lon32, 4);
 
   Serial.println("Transmitting Walter Feels data packet");
 
-  if(!socketConnect(SERV_ADDR, SERV_PORT)) {
-    Serial.print("Could not connect to UDP server socket\r\n");
+  /* Connect (dial) to the demo test server */
+  if(modem.socketDial(SERV_ADDR, SERV_PORT)) {
+    Serial.printf("Successfully dialed demo server %s:%d\r\n", SERV_ADDR, SERV_PORT);
+  } else {
+    Serial.println("Error: Could not dial demo server");
     delay(1000);
     ESP.restart();
     return;
   }
 
+  /* Transmit the packet */
   if(!modem.socketSend(dataBuf, PACKET_SIZE)) {
-    Serial.print("Could not transmit data\r\n");
+    Serial.println("Error: Could not transmit data");
     delay(1000);
     ESP.restart();
     return;
   }
 
-  delay(5000);
+  delay(2000);
 
+  /* Close the socket */
   if(!modem.socketClose()) {
-    Serial.print("Could not close the socket\r\n");
+    Serial.println("Error: Could not close the socket");
     delay(1000);
     ESP.restart();
     return;
