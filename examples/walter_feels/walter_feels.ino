@@ -68,7 +68,7 @@
 /**
  * @brief The address of the server to upload the data to.
  */
-#define SERV_ADDR "94.110.152.111"
+#define SERV_ADDR "walterdemo.quickspot.io"
 
 /**
  * @brief The UDP port on which the server is listening.
