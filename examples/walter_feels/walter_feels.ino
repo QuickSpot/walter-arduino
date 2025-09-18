@@ -138,6 +138,11 @@ HDC1080 hdc1080;
 LPS22HB lps22hb(Wire);
 
 /**
+ * @breif the LTC4015 battery controller instance.
+ */
+LTC4015 ltc4015;
+
+/**
  * @brief The SCD30 CO2 sensor instance.
  */
 SCD30 scd30;
@@ -563,13 +568,13 @@ bool attemptGNSSFix()
 
 void setup_charger()
 {
-  LTC4015::initialize(3, 4);
-  LTC4015::suspend_charging();
-  LTC4015::enable_force_telemetry();
+  ltc4015.initialize(3, 4);
+  ltc4015.suspend_charging();
+  ltc4015.enable_force_telemetry();
   delay(1000);
-  LTC4015::start_charging();
-  LTC4015::enable_mppt();
-  LTC4015::enable_coulomb_counter();
+  ltc4015.start_charging();
+  ltc4015.enable_mppt();
+  ltc4015.enable_coulomb_counter();
 }
 
 void setup()
@@ -695,14 +700,6 @@ void setup()
   /* Set the TCP socket event handler */
   modem.socketSetEventHandler(socketEventHandler, NULL);
 
-  /* Init modem and charger on initial boot */
-  // if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
-  //   WalterFeels::setI2cBusPower(false);
-  //   LTC4015::initialize();
-  //   LTC4015::enable_coulomb_counter();
-  //   WalterFeels::setI2cBusPower(false);
-  // }
-
   float temp = hdc1080.readTemperature();
   float hum = hdc1080.readHumidity();
   float pressure = lps22hb.readPressure();
@@ -711,14 +708,14 @@ void setup()
   Serial.printf("Sensor data, temp: %.02fC, hum: %.02f%%, press: %.02fhPa, co2: %d\r\n", temp, hum,
                 pressure, co2ppm);
 
-  uint16_t chargeStatus = LTC4015::read_word(LTC4015_REG_CHARGE_STATUS);
-  uint16_t chargerState = LTC4015::read_word(LTC4015_REG_CHARGER_STATE);
-  uint16_t inputVoltage = LTC4015::get_input_voltage() * 1000;
-  uint16_t inputCurrent = LTC4015::get_input_current() * 1000;
-  uint16_t systemVoltage = LTC4015::get_system_voltage() * 1000;
-  uint16_t batteryVoltage = LTC4015::get_battery_voltage() * 1000;
-  uint16_t chargeCurrent = LTC4015::get_charge_current() * 1000;
-  uint16_t chargeCount = LTC4015::get_qcount();
+  uint16_t chargeStatus = ltc4015.read_word(LTC4015_REG_CHARGE_STATUS);
+  uint16_t chargerState = ltc4015.read_word(LTC4015_REG_CHARGER_STATE);
+  uint16_t inputVoltage = ltc4015.get_input_voltage() * 1000;
+  uint16_t inputCurrent = ltc4015.get_input_current() * 1000;
+  uint16_t systemVoltage = ltc4015.get_system_voltage() * 1000;
+  uint16_t batteryVoltage = ltc4015.get_battery_voltage() * 1000;
+  uint16_t chargeCurrent = ltc4015.get_charge_current() * 1000;
+  uint16_t chargeCount = ltc4015.get_qcount();
 
   attemptGNSSFix();
 
