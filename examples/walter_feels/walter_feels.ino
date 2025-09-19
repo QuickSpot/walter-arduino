@@ -76,9 +76,9 @@
 #define SERV_PORT 1999
 
 /**
- * @brief The size in bytes of a minimal sensor + GNSS packet.
+ * @brief The size in bytes of a Walter Feels + GNSS + Cellinfo packet.
  */
-#define PACKET_SIZE 39
+#define PACKET_SIZE 51
 
 /**
  * @brief The APN of your cellular provider.
@@ -719,6 +719,12 @@ void setup()
 
   attemptGNSSFix();
 
+  /* Get the RAT */
+  uint8_t rat = -1;
+  if(modem.getRAT(&rsp)) {
+    rat = (uint8_t) rsp.data.rat;
+  }
+
   /* Force reconnect to the network to get the latest cell information */
   if(!lteConnect()) {
     Serial.println("Error: Could not connect to the LTE network");
@@ -739,7 +745,7 @@ void setup()
                   rsp.data.cellInformation.rsrq);
   }
 
-  /* Construct UDP packet and transmit */
+  /* Construct Walter Feels packet and transmit */
   uint16_t rawTemperature = temp * 100;
   uint16_t rawHumidity = hum * 100;
   uint16_t rawPressure = pressure * 100;
@@ -775,6 +781,18 @@ void setup()
   dataBuf[30] = latestGnssFix.satCount;
   memcpy(dataBuf + 31, &lat32, 4);
   memcpy(dataBuf + 35, &lon32, 4);
+  dataBuf[39] = rsp.data.cellInformation.cc >> 8;
+  dataBuf[40] = rsp.data.cellInformation.cc & 0xFF;
+  dataBuf[41] = rsp.data.cellInformation.nc >> 8;
+  dataBuf[42] = rsp.data.cellInformation.nc & 0xFF;
+  dataBuf[43] = rsp.data.cellInformation.tac >> 8;
+  dataBuf[44] = rsp.data.cellInformation.tac & 0xFF;
+  dataBuf[45] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
+  dataBuf[46] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
+  dataBuf[47] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
+  dataBuf[48] = rsp.data.cellInformation.cid & 0xFF;
+  dataBuf[49] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
+  dataBuf[50] = rat;
 
   Serial.println("Transmitting Walter Feels data packet");
 
