@@ -63,9 +63,9 @@
 #define SERV_PORT 1999
 
 /**
- * @brief The size in bytes of a minimal sensor + GNSS + cell info packet.
+ * @brief The size in bytes of a minimal sensor + GNSS + cellinfo packet.
  */
-#define PACKET_SIZE 29
+#define PACKET_SIZE 30
 
 /**
  * @brief The APN of your cellular provider.
@@ -613,6 +613,12 @@ void loop()
 
   attemptGNSSFix();
 
+  /* Get the RAT */
+  uint8_t rat = -1;
+  if(modem.getRAT(&rsp)) {
+    rat = (uint8_t) rsp.data.rat;
+  }
+
   /* Force reconnect to the network to get the latest cell information */
   if(!lteConnect()) {
     Serial.println("Error: Could not connect to the LTE network");
@@ -639,7 +645,7 @@ void loop()
   float lat32 = (float) latestGnssFix.latitude;
   float lon32 = (float) latestGnssFix.longitude;
 
-  /* Construct the minimal sensor + GNSS */
+  /* Construct the minimal sensor + GNSS + Cellinfo */
   uint16_t rawTemp = (temp + 50) * 100;
   dataBuf[6] = 0x02;
   dataBuf[7] = rawTemp >> 8;
@@ -658,6 +664,7 @@ void loop()
   dataBuf[26] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
   dataBuf[27] = rsp.data.cellInformation.cid & 0xFF;
   dataBuf[28] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
+  dataBuf[29] = rat;
 
   /* Connect (dial) to the demo test server */
   if(modem.socketDial(SERV_ADDR, SERV_PORT)) {
