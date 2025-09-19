@@ -46,91 +46,82 @@
 #include <WalterDefines.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
-    #pragma region PRIVATE_METHODS
-void WalterModem::_dispatchEvent(const WalterModemGNSSFix *fix)
+#pragma region PRIVATE_METHODS
+void WalterModem::_dispatchEvent(const WalterModemGNSSFix* fix)
 {
-    WalterModemEventHandler *handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_GNSS;
-    if (handler->gnssHandler == nullptr) {
-        return;
+  WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_GNSS;
+  if(handler->gnssHandler == nullptr) {
+    return;
+  }
+
+  auto start = std::chrono::steady_clock::now();
+  handler->gnssHandler(fix, handler->args);
+  _checkEventDuration(start);
+}
+#pragma endregion
+
+#pragma region PUBLIC_METHODS
+bool WalterModem::gnssConfig(WalterModemGNSSSensMode sensMode, WalterModemGNSSAcqMode acqMode,
+                             WalterModemGNSSLocMode locMode, WalterModemRsp* rsp, walterModemCb cb,
+                             void* args)
+{
+  _runCmd(arr("AT+LPGNSSCFG=", _digitStr(locMode), ",", _digitStr(sensMode), ",2,,1,",
+              _digitStr(acqMode)),
+          "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+
+bool WalterModem::gnssGetAssistanceStatus(WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+LPGNSSASSISTANCE?"), "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+
+bool WalterModem::gnssUpdateAssistance(WalterModemGNSSAssistanceType type, WalterModemRsp* rsp,
+                                       walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+LPGNSSASSISTANCE=", _digitStr(type)), "+LPGNSSASSISTANCE:", rsp, cb, args);
+  _returnAfterReply();
+}
+
+bool WalterModem::gnssPerformAction(WalterModemGNSSAction action, WalterModemRsp* rsp,
+                                    walterModemCb cb, void* args)
+{
+  auto gnssActionStr = [](WalterModemGNSSAction action) {
+    switch(action) {
+    case WALTER_MODEM_GNSS_ACTION_GET_SINGLE_FIX:
+      return "single";
+
+    case WALTER_MODEM_GNSS_ACTION_CANCEL:
+      return "stop";
     }
+    return "";
+  };
 
-    auto start = std::chrono::steady_clock::now();
-    handler->gnssHandler(fix, handler->args);
-    _checkEventDuration(start);
+  _runCmd(arr("AT+LPGNSSFIXPROG=\"", gnssActionStr(action), "\""), "OK", rsp, cb, args);
+  _returnAfterReply();
 }
-    #pragma endregion
-
-    #pragma region PUBLIC_METHODS
-bool WalterModem::gnssConfig(
-    WalterModemGNSSSensMode sensMode,
-    WalterModemGNSSAcqMode acqMode,
-    WalterModemGNSSLocMode locMode,
-    WalterModemRsp *rsp,
-    walterModemCb cb,
-    void *args)
+bool WalterModem::gnssSetUTCTime(uint64_t epochTime, WalterModemRsp* rsp, walterModemCb cb,
+                                 void* args)
 {
-    _runCmd(
-        arr("AT+LPGNSSCFG=",
-            _digitStr(locMode),
-            ",",
-            _digitStr(sensMode),
-            ",2,,1,",
-            _digitStr(acqMode)),
-        "OK",
-        rsp,
-        cb,
-        args);
-    _returnAfterReply();
-}
+  char utcTimeStr[32] = { 0 };
 
-bool WalterModem::gnssGetAssistanceStatus(WalterModemRsp *rsp, walterModemCb cb, void *args)
+  if(!timeToStr(epochTime, utcTimeStr, sizeof(utcTimeStr))) {
+    return false; // conversion failed
+  }
+
+  _runCmd(arr("AT+LPGNSSUTCTIME=", _atStr(utcTimeStr)), "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+bool WalterModem::gnssGetUTCTime(WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-    _runCmd(arr("AT+LPGNSSASSISTANCE?"), "OK", rsp, cb, args);
-    _returnAfterReply();
+  _runCmd(arr("AT+LPGNSSUTCTIME?"), "OK", rsp, cb, args);
+  _returnAfterReply();
 }
-
-bool WalterModem::gnssUpdateAssistance(
-    WalterModemGNSSAssistanceType type, WalterModemRsp *rsp, walterModemCb cb, void *args)
+void WalterModem::gnssSetEventHandler(walterModemGNSSEventHandler handler, void* args)
 {
-    _runCmd(arr("AT+LPGNSSASSISTANCE=", _digitStr(type)), "+LPGNSSASSISTANCE:", rsp, cb, args);
-    _returnAfterReply();
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].gnssHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].args = args;
 }
-
-bool WalterModem::gnssPerformAction(
-    WalterModemGNSSAction action, WalterModemRsp *rsp, walterModemCb cb, void *args)
-{
-    auto gnssActionStr = [](WalterModemGNSSAction action) {
-        switch (action) {
-        case WALTER_MODEM_GNSS_ACTION_GET_SINGLE_FIX:
-            return "single";
-
-        case WALTER_MODEM_GNSS_ACTION_CANCEL:
-            return "stop";
-        }
-        return "";
-    };
-
-    _runCmd(arr("AT+LPGNSSFIXPROG=\"", gnssActionStr(action), "\""), "OK", rsp, cb, args);
-    _returnAfterReply();
-}
-bool WalterModem::gnssSetUTCTime(uint64_t epochTime, WalterModemRsp *rsp, walterModemCb cb, void *args){
-    char utcTimeStr[32] = {0};
-
-    if (!timeToStr(epochTime, utcTimeStr, sizeof(utcTimeStr))) {
-        return false; // conversion failed
-    }
-
-    _runCmd(arr("AT+LPGNSSUTCTIME=",_atStr(utcTimeStr)), "OK", rsp, cb, args);
-    _returnAfterReply();
-}
-bool WalterModem::gnssGetUTCTime(WalterModemRsp *rsp, walterModemCb cb, void *args){
-    _runCmd(arr("AT+LPGNSSUTCTIME?"), "OK", rsp, cb, args);
-    _returnAfterReply();
-}
-void WalterModem::gnssSetEventHandler(walterModemGNSSEventHandler handler, void *args)
-{
-    _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].gnssHandler = handler;
-    _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].args = args;
-}
-    #pragma endregion
+#pragma endregion
 #endif
