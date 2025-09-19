@@ -265,6 +265,8 @@ bool udpSendBasicInfoPacket()
     return false;
   }
 
+  delay(2000);
+
   /* Attempt to get the latest cell information (for next packet) */
   modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp);
 
