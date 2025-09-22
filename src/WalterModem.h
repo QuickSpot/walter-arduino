@@ -3426,15 +3426,6 @@ private:
    */
   static void _parseRxData(char* rxData, size_t len);
 
-  /**
-   * @brief This function resets the payload receiving flags.
-   */
-  static void _resetParseRxFlags();
-  /**
-   * @brief This function checks if a full payload was received, if so it queues it and sends the
-   * appropriate return RX command.
-   */
-  static bool _checkPayloadComplete();
 #ifdef ARDUINO
   /**
    * @brief Handle and parse modem RX data.
