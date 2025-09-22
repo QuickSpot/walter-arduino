@@ -985,7 +985,7 @@ void WalterModem::_queueRxBuffer()
          * consumer.
          */
         _parserData.buf->free = true;
-        // ESP_LOGW("WalterParser", "unable to queue the buffer");
+        ESP_LOGW("WalterParser", "unable to queue the buffer");
       }
     }
 
@@ -996,12 +996,10 @@ void WalterModem::_queueRxBuffer()
 size_t WalterModem::_getCRLFPosition(const char* rxData, size_t len)
 {
   const char* lfPtr = (const char*) memchr(rxData, '\n', len);
-
-  if(lfPtr != NULL && lfPtr > rxData) {
+  if(lfPtr != nullptr) {
     return (size_t) (lfPtr - rxData);
   }
-
-  return 0;
+  return SIZE_MAX; // no CRLF found
 }
 
 bool WalterModem::_checkPayloadComplete()
@@ -1106,32 +1104,51 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
     return;
   char* dataStart = rxData;
   size_t dataLen = len;
-  /* remove the leading CRLF*/
-  if(_parserData.buf == NULL) {
-    if(dataStart[0] == '\r') {
-      /* remove the leading \r */
-      dataLen--;
-      dataStart++;
-    }
-    if(dataStart[0] == '\n') {
-      /* remove the leading \n */
-      dataLen--;
-      dataStart++;
-    }
-  }
 
   /* we have the possebility to receive 'ghost' data from the UART in that case ignore it */
   if(dataLen <= 0 || dataLen > UART_BUF_SIZE)
     return;
 
-  // ESP_LOGV("WalterParser", "rxData (%u bytes): \r\n '%.*s'\n", dataLen, dataLen, dataStart);
+  /* Log the raw UART data when compiled with DEBUG or higher */
+#if CONFIG_LOG_DEFAULT_LEVEL >= ESP_LOG_DEBUG
+  printf("rxData (%u bytes): ", dataLen);
+  for(size_t i = 0; i < dataLen; i++) {
+    unsigned char c = dataStart[i];
+    if(c == '\r')
+      printf("\\r");
+    else if(c == '\n')
+      printf("\\n");
+    else if(c < 32 || c > 126)
+      printf("\\x%02X", c);
+    else
+      putchar(c);
+  }
+  printf("\n");
+#endif
 
-  size_t CRLFPos = _getCRLFPosition(
-      dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
-  bool hasTripleChevron =
-      memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
+  // remove leading CR/LF if buffer is empty
+  if(_parserData.buf == nullptr) {
+    if(dataStart[0] == '\r') {
+      dataLen--;
+      dataStart++;
+    }
+    if(dataStart[0] == '\n') {
+      dataLen--;
+      dataStart++;
+    }
+  }
 
-  if(_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
+  /* we try and get the ending CRLF to know if we have a full message */
+  size_t CRLFPos = _getCRLFPosition(dataStart, dataLen);
+  if(CRLFPos == SIZE_MAX) {
+    ESP_LOGD("WalterParser", "Partial rxData detected (no CRLF): '%.*s'", (int) dataLen, dataStart);
+  }
+
+  /* <<< is the start of the HTTP response */
+  bool hasTripleChevron = memmem(dataStart, dataLen, "<<<", 3) != nullptr;
+
+  if(_foundCRLF || CRLFPos != SIZE_MAX || hasTripleChevron) {
+
     if(_receivingPayload || hasTripleChevron) {
       /* We are receiving more payload data*/
       _receivingPayload = true;
@@ -1140,14 +1157,16 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       _checkPayloadComplete();
     } else {
       /* We have received a full message!*/
-      _addATBytesToBuffer(dataStart, CRLFPos);
+      size_t chunkLen = (CRLFPos != SIZE_MAX) ? CRLFPos : dataLen;
+
+      _addATBytesToBuffer(dataStart, chunkLen);
 
       if(_expectingPayload()) {
         /* We are expecting payload data to be received after this */
         _receivingPayload = true;
       }
 
-      if(!_foundCRLF && CRLFPos > 0 && _receivedPayloadSize > 0) {
+      if(!_foundCRLF && CRLFPos != SIZE_MAX && _receivedPayloadSize > 0) {
         /* We are receiving payload data */
         /* We need to keep append the CRLFPos for correct _receivExpected usage */
         _receivedPayloadSize += CRLFPos;
@@ -1159,7 +1178,11 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
         /* A full message has been found so queue it */
         _queueRxBuffer();
         _resetParseRxFlags();
-        _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
+
+        // only recurse if there is remaining data
+        if(CRLFPos != SIZE_MAX && CRLFPos + 1 < dataLen) {
+          _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
+        }
       }
     }
   } else if(dataLen > 0) {
