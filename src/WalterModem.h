@@ -3402,12 +3402,15 @@ private:
   static void _queueRxBuffer();
 
   /**
-   * @brief returns the CRLF position
+   * @brief Returns the position of the first encountered `\r` or `\n` character
    *
    * @param data The incoming data buffer.
    * @param len The number of bytes in the rxData buffer.
+   * @param pos (optional) The amount of bytes before the first CRLF (`\r` or `\n`).
+   *
+   * @return true if `\r\n` was found consecutively. false if only one or none where found.
    */
-  static size_t _getCRLFPosition(const char* rxData, size_t len);
+  static bool _getCRLFPosition(const char* rxData, size_t len, size_t* pos = nullptr);
 
   /**
    * @brief Check the parser buffer for a message containing payload data.

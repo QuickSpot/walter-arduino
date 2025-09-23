@@ -993,13 +993,27 @@ void WalterModem::_queueRxBuffer()
   }
 }
 
-size_t WalterModem::_getCRLFPosition(const char* rxData, size_t len)
+bool WalterModem::_getCRLFPosition(const char* rxData, size_t len, size_t* pos)
 {
+  const char* crPtr = (const char*) memchr(rxData, '\r', len);
   const char* lfPtr = (const char*) memchr(rxData, '\n', len);
-  if(lfPtr != nullptr) {
-    return (size_t) (lfPtr - rxData);
+
+  if(pos != nullptr) {
+    if(crPtr) {
+      *pos = (size_t) (crPtr - rxData);
+    } else if(lfPtr) {
+      *pos = (size_t) (lfPtr - rxData);
+    } else {
+      *pos = SIZE_MAX;
+    }
   }
-  return SIZE_MAX; // no CRLF found
+
+  /* return true only if we found a "\r\n" pair consecutively */
+  if(crPtr && (size_t) (crPtr - rxData) + 1 < len && rxData[(crPtr - rxData) + 1] == '\n') {
+    return true;
+  }
+
+  return false;
 }
 
 bool WalterModem::_expectingPayload()
@@ -1055,22 +1069,23 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
   char* ptr = rxData;
   size_t size = len;
 
-  /* Trim leading CR/LF if buffer is fresh */
-  if(!_parserData.buf) {
-    while(size && (*ptr == '\r' || *ptr == '\n')) {
-      ptr++;
-      size--;
-    }
-    if(size == 0)
-      return;
-  }
-
   /* Main processing loop: parse until all bytes consumed */
   for(size_t offset = 0; offset < size;) {
     const char* chunk = ptr + offset;
     size_t remaining = size - offset, chunkLen = 0;
 
-    /* Receiving binary payload: just drain required bytes */
+    /* A new buffer can never start with a CRLF, so if necessary, we strip it here */
+    /* This will not affect payload data as it will already have a buffer reserved */
+    if(!_parserData.buf) {
+      while(remaining && (*chunk == '\r' || *chunk == '\n')) {
+        chunk++;
+        remaining--;
+      }
+      if(remaining == 0)
+        break;
+    }
+
+    /* Receiving binary payload */
     if(_receivingPayload) {
       chunkLen = (_receivedPayloadSize > remaining) ? remaining : _receivedPayloadSize;
       _addATBytesToBuffer(chunk, chunkLen);
@@ -1078,43 +1093,54 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       offset += chunkLen;
       if(_receivedPayloadSize == 0) {
         _receivingPayload = false;
-        /* Mark end of payload (queueProcessor ignores this, just for consistency) */
-        _addATBytesToBuffer("\r\n", 2);
         _queueRxBuffer();
       }
       continue;
     }
 
-    /* AT-command text mode */
-    size_t crlfPos = _getCRLFPosition(chunk, remaining); /* Get the position of the first \n */
+    /* Receiving AT-command text */
+    size_t crlfPos;
+    _getCRLFPosition(chunk, remaining, &crlfPos); /* Get the position of the first \r OR \n */
     bool hasCRLF = (crlfPos != SIZE_MAX);
-    chunkLen = hasCRLF ? crlfPos : remaining;
-
-    if(chunkLen)
-      _addATBytesToBuffer(chunk, chunkLen);
-
     if(hasCRLF) {
-      offset += chunkLen + 1;   /* Skip \n CRLF */
-      if(_expectingPayload()) { /* Transition to binary payload mode */
-        /* queueProcessor uses \r\n CRLF as start-payload marker (\r already present in buffer) */
-        _addATBytesToBuffer("\n", 1);
-        _receivingPayload = true;
-      } else {
-        if(chunkLen) {
-          _queueRxBuffer();
-        }
-      }
+      chunkLen = crlfPos + 2;
+      if(chunkLen > remaining)
+        chunkLen = remaining;
     } else {
-      offset += chunkLen;
-      /* Check for special prompts (e.g. "> " or ">>>") */
+      chunkLen = remaining;
+    }
+
+    _addATBytesToBuffer(chunk, chunkLen);
+    offset += chunkLen;
+
+    /* Check if the \r\n CRLF is present. This lets us know if the full message was parsed */
+    /* If not present, we assume the message was split by the UART buffer, so we continue until we
+     * can "stitch" the message(s) back together */
+    if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size)) {
+
+      /* Check for special prompts (e.g. "> " or ">>>") which don't use CRLF's */
       bool prompt2 = (_parserData.buf && _parserData.buf->size >= 2 &&
                       _parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ');
       bool prompt3 =
           (_parserData.buf && _parserData.buf->size >= 3 && _parserData.buf->data[0] == '>' &&
            _parserData.buf->data[1] == '>' && _parserData.buf->data[2] == '>');
-      if(prompt2 || prompt3)
+      if(prompt2 || prompt3) {
         _queueRxBuffer();
+      }
+
+      continue;
     }
+
+    /* If binnary payload is expected after the CRLF, set the flag */
+    if(_expectingPayload()) {
+      _receivingPayload = true;
+      continue;
+    }
+
+    /* Finally, queue the buffer if we are sure it is complete */
+    /* Optionally strip the ending CRLF \r\n because the rspProcessor doesn't use it */
+    _parserData.buf->size -= 2;
+    _queueRxBuffer();
   }
 }
 
