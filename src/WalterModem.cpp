@@ -1044,19 +1044,15 @@ bool WalterModem::_expectingPayload()
 
 void WalterModem::_parseRxData(char* rxData, size_t len)
 {
-  if(len == 0 || _hardwareReset)
-    return;
-
-  if(len > UART_BUF_SIZE)
+  if(len == 0 || _hardwareReset || len > UART_BUF_SIZE)
     return;
 
   char* ptr = rxData;
   size_t size = len;
 
-  /* Raw UART logger if compiled on verbose log level. */
-  /* TODO: Arduino serial tends to cause panic when serial is too active */
+  /* Verbose raw UART logger (may panic on heavy Serial usage) */
 #if CONFIG_LOG_DEFAULT_LEVEL == ESP_LOG_VERBOSE
-  printf("\r\n");
+  printf("\n");
   printf("modem uart rx (%u bytes): ", (unsigned) size);
   for(size_t i = 0; i < size; i++) {
     unsigned char c = ptr[i];
@@ -1072,25 +1068,21 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
   printf("\n");
 #endif
 
-  /* Drop "Ghost Bytes" if not in receiving payload mode */
+  /* Drop non-printable "ghost bytes" when not receiving payload */
   if(!_receivingPayload) {
     size_t w = 0;
     for(size_t i = 0; i < size; i++) {
       unsigned char c = (unsigned char) ptr[i];
-      if(c >= 32 || c == '\r' || c == '\n') {
+      if(c >= 32 || c == '\r' || c == '\n')
         ptr[w++] = ptr[i];
-      } else {
-        ESP_LOGD("WalterParser", "Dropped ghost byte 0x%02X", c);
-      }
     }
-    size = w;
-    if(size == 0)
+    if((size = w) == 0)
       return;
   }
 
-  /* Remove leading CRLF if we are starting with a fresh buffer */
-  if(_parserData.buf == nullptr) {
-    while(size > 0 && (*ptr == '\r' || *ptr == '\n')) {
+  /* Trim leading CR/LF if buffer is fresh */
+  if(!_parserData.buf) {
+    while(size && (*ptr == '\r' || *ptr == '\n')) {
       ptr++;
       size--;
     }
@@ -1098,67 +1090,50 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       return;
   }
 
-  // -----------------------------------------------------------
-  // Main processing loop
-  // -----------------------------------------------------------
-  size_t offset = 0;
-  while(offset < size) {
+  /* Main processing loop: parse until all bytes consumed */
+  for(size_t offset = 0; offset < size;) {
     const char* chunk = ptr + offset;
-    size_t remaining = size - offset;
-    size_t chunkLen;
+    size_t remaining = size - offset, chunkLen = 0;
 
-    /* If we are receiving binary payload data */
+    /* Receiving binary payload: just drain required bytes */
     if(_receivingPayload) {
-      bool payloadRemaining = _receivedPayloadSize > remaining;
-      chunkLen = payloadRemaining ? remaining : _receivedPayloadSize;
-
+      chunkLen = (_receivedPayloadSize > remaining) ? remaining : _receivedPayloadSize;
       _addATBytesToBuffer(chunk, chunkLen);
       _receivedPayloadSize -= chunkLen;
       offset += chunkLen;
-
       if(_receivedPayloadSize == 0) {
         _receivingPayload = false;
         _queueRxBuffer();
       }
       continue;
+    }
 
-    } else {
-      // Position of first '\n' in remaining data
-      size_t crlfPos = _getCRLFPosition(chunk, remaining);
-      bool hasTripleChevron = memmem(chunk, remaining, "<<<", 3) != nullptr;
-      bool hasCRLF = (crlfPos != SIZE_MAX);
-      chunkLen = hasCRLF ? crlfPos : remaining;
+    /* AT-command text mode */
+    size_t crlfPos = _getCRLFPosition(chunk, remaining);
+    bool hasCRLF = (crlfPos != SIZE_MAX);
+    chunkLen = hasCRLF ? crlfPos : remaining;
 
-      // Append chunk (up to CRLF or all remaining if partial)
-      if(chunkLen > 0) {
-        _addATBytesToBuffer(chunk, chunkLen);
-      }
+    if(chunkLen)
+      _addATBytesToBuffer(chunk, chunkLen);
 
-      if(hasCRLF) {
-        offset += chunkLen + 1; // skip CRLF
-
-        // Break here if the current buffered message expects binary payload next
-        if(_expectingPayload()) {
-          _receivingPayload = true;
-        }
-
-        _queueRxBuffer();
-        continue;
+    if(hasCRLF) {
+      offset += chunkLen + 1;   /* Skip CR/LF */
+      if(_expectingPayload()) { /* Transition to binary payload mode */
+        _addATBytesToBuffer("\r\n", 2);
+        _receivingPayload = true;
       } else {
-        offset += chunkLen;
-
-        // No CRLF found -> partial message or prompt
-        // Append what we have and check prompt conditions
-        bool dataPrompt = (_parserData.buf && _parserData.buf->size >= 2 &&
-                           _parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ');
-        bool httpPrompt =
-            (_parserData.buf && _parserData.buf->size >= 3 && _parserData.buf->data[0] == '>' &&
-             _parserData.buf->data[1] == '>' && _parserData.buf->data[2] == '>');
-        if(dataPrompt || httpPrompt) {
-          _queueRxBuffer();
-        }
-        continue;
+        _queueRxBuffer();
       }
+    } else {
+      offset += chunkLen;
+      /* Check for special prompts (e.g. "> " or ">>>") */
+      bool prompt2 = (_parserData.buf && _parserData.buf->size >= 2 &&
+                      _parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ');
+      bool prompt3 =
+          (_parserData.buf && _parserData.buf->size >= 3 && _parserData.buf->data[0] == '>' &&
+           _parserData.buf->data[1] == '>' && _parserData.buf->data[2] == '>');
+      if(prompt2 || prompt3)
+        _queueRxBuffer();
     }
   }
 }
@@ -2604,7 +2579,20 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
      * If data and dataSize are null, we cannot store the result. We can only hope the user
      * is using a callback which has access to the raw buffer.
      */
-    if(cmd->data != nullptr) {
+
+    if(!cmd) {
+      ESP_LOGE("TEST", "CMD IS NULL");
+    }
+    if(!cmd->data) {
+      ESP_LOGE("TEST", "CMD->DATA IS NULL");
+    }
+    if(!payload) {
+      ESP_LOGE("TEST", "PAYLOAD IS NULL");
+    }
+    if(!dataReceived) {
+      ESP_LOGE("TEST", "DATARECEIVED IS NULL");
+    }
+    if(cmd->data) {
       memcpy(cmd->data, payload, dataReceived);
     }
   } else if(_buffStartsWith(buff, "+SQNSS: ")) {
