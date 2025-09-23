@@ -1039,6 +1039,11 @@ bool WalterModem::_expectingPayload()
     return true;
   }
 
+  // Check for "+SQNSNVR: "
+  if(strncmp((const char*) _parserData.buf, "+SQNSNVR: ", strlen("+SQNSNVR: ")) == 0) {
+    return true;
+  }
+
   return false;
 }
 
@@ -1049,36 +1054,6 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
 
   char* ptr = rxData;
   size_t size = len;
-
-  /* Verbose raw UART logger (may panic on heavy Serial usage) */
-#if CONFIG_LOG_DEFAULT_LEVEL == ESP_LOG_VERBOSE
-  printf("\n");
-  printf("modem uart rx (%u bytes): ", (unsigned) size);
-  for(size_t i = 0; i < size; i++) {
-    unsigned char c = ptr[i];
-    if(c == '\r')
-      printf("\\r");
-    else if(c == '\n')
-      printf("\\n");
-    else if(c < 32 || c > 126)
-      printf("\\x%02X", c);
-    else
-      putchar(c);
-  }
-  printf("\n");
-#endif
-
-  /* Drop non-printable "ghost bytes" when not receiving payload */
-  if(!_receivingPayload) {
-    size_t w = 0;
-    for(size_t i = 0; i < size; i++) {
-      unsigned char c = (unsigned char) ptr[i];
-      if(c >= 32 || c == '\r' || c == '\n')
-        ptr[w++] = ptr[i];
-    }
-    if((size = w) == 0)
-      return;
-  }
 
   /* Trim leading CR/LF if buffer is fresh */
   if(!_parserData.buf) {
@@ -1103,13 +1078,15 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       offset += chunkLen;
       if(_receivedPayloadSize == 0) {
         _receivingPayload = false;
+        /* Mark end of payload (queueProcessor ignores this, just for consistency) */
+        _addATBytesToBuffer("\r\n", 2);
         _queueRxBuffer();
       }
       continue;
     }
 
     /* AT-command text mode */
-    size_t crlfPos = _getCRLFPosition(chunk, remaining);
+    size_t crlfPos = _getCRLFPosition(chunk, remaining); /* Get the position of the first \n */
     bool hasCRLF = (crlfPos != SIZE_MAX);
     chunkLen = hasCRLF ? crlfPos : remaining;
 
@@ -1117,12 +1094,15 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       _addATBytesToBuffer(chunk, chunkLen);
 
     if(hasCRLF) {
-      offset += chunkLen + 1;   /* Skip CR/LF */
+      offset += chunkLen + 1;   /* Skip \n CRLF */
       if(_expectingPayload()) { /* Transition to binary payload mode */
-        _addATBytesToBuffer("\r\n", 2);
+        /* queueProcessor uses \r\n CRLF as start-payload marker (\r already present in buffer) */
+        _addATBytesToBuffer("\n", 1);
         _receivingPayload = true;
       } else {
-        _queueRxBuffer();
+        if(chunkLen) {
+          _queueRxBuffer();
+        }
       }
     } else {
       offset += chunkLen;
@@ -2579,19 +2559,6 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
      * If data and dataSize are null, we cannot store the result. We can only hope the user
      * is using a callback which has access to the raw buffer.
      */
-
-    if(!cmd) {
-      ESP_LOGE("TEST", "CMD IS NULL");
-    }
-    if(!cmd->data) {
-      ESP_LOGE("TEST", "CMD->DATA IS NULL");
-    }
-    if(!payload) {
-      ESP_LOGE("TEST", "PAYLOAD IS NULL");
-    }
-    if(!dataReceived) {
-      ESP_LOGE("TEST", "DATARECEIVED IS NULL");
-    }
     if(cmd->data) {
       memcpy(cmd->data, payload, dataReceived);
     }
@@ -3232,7 +3199,6 @@ bool WalterModem::_tlsIsCredentialPresent(bool isPrivateKey, uint8_t slotIdx)
   void* args = NULL;
 
   const char* keyType = isPrivateKey ? "privatekey" : "certificate";
-  _receivingPayload = true;
   _runCmd(arr("AT+SQNSNVR=", _atStr(keyType), ",", _atNum(slotIdx)), "+SQNSNVR: ", rsp, cb, args);
   _returnAfterReply();
 }
