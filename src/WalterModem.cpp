@@ -1016,8 +1016,55 @@ bool WalterModem::_getCRLFPosition(const char* rxData, size_t len, size_t* pos)
   return false;
 }
 
+bool WalterModem::_checkPayloadComplete()
+{
+  char* data = reinterpret_cast<char*>(_parserData.buf->data);
+  size_t size = _parserData.buf->size;
+
+  auto handleMatch = [&](size_t offset) -> bool {
+    size_t remaining = size - offset;
+    const uint8_t* chunk = _parserData.buf->data + offset;
+
+    /* Cut the end-payload marker chunk off from this buffer */
+    _parserData.buf->size -= remaining;
+    /* Optionally also strip the ending CRLF \r\n because the rspProcessor doesn't use it */
+    _parserData.buf->size -= 2;
+    _queueRxBuffer();
+
+    /* Strip the CR/LF from the beginning of the end-payload marker chunk */
+    while(remaining && (*chunk == '\r' || *chunk == '\n')) {
+      ++chunk;
+      --remaining;
+    }
+
+    /* Add the end-payload marker chunk to a fresh buffer */
+    if(remaining > 0) {
+      _addATBytesToBuffer(reinterpret_cast<const char*>(chunk), remaining);
+    }
+
+    return true;
+  };
+
+  if(void* p = memmem(data, size, "\r\nOK\r\n", 6)) {
+    return handleMatch(static_cast<size_t>(static_cast<char*>(p) - data));
+  }
+
+  if(void* p = memmem(data, size, "\r\nERROR\r\n", 9)) {
+    return handleMatch(static_cast<size_t>(static_cast<char*>(p) - data));
+  }
+
+  if(void* p = memmem(data, size, "\r\n+CME ERROR: ", 12)) {
+    return handleMatch(static_cast<size_t>(static_cast<char*>(p) - data));
+  }
+
+  return false;
+}
+
 bool WalterModem::_expectingPayload()
 {
+  /* Fallback if no payload size is defined (e.g. for AT+SQNSNVR) */
+  _receivedPayloadSize = SIZE_MAX;
+
   // Check for "+SQNSRECV: "
   if(strncmp((const char*) _parserData.buf, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
     // Check for "+SQNSRECV: <ignored>,<length>"
@@ -1080,13 +1127,17 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       while(remaining && (*chunk == '\r' || *chunk == '\n')) {
         chunk++;
         remaining--;
+        offset++;
       }
       if(remaining == 0)
         break;
     }
 
-    /* Receiving binary payload */
-    if(_receivingPayload) {
+    bool payloadSizeKnown = (_receivedPayloadSize != SIZE_MAX);
+
+    /* Receiving binary payload with a known total size */
+    /* Here we count the amount of bytes to read, and add them to the buffer. Queue when complete */
+    if(_receivingPayload && payloadSizeKnown) {
       chunkLen = (_receivedPayloadSize > remaining) ? remaining : _receivedPayloadSize;
       _addATBytesToBuffer(chunk, chunkLen);
       _receivedPayloadSize -= chunkLen;
@@ -1098,22 +1149,36 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       continue;
     }
 
-    /* Receiving AT-command text */
+    /* Receiving messages with undefined size (AT-commands, URCs, payloads with unknown size) */
+    /* We keep appending the message to the buffer until the CRLF is found. Queue when complete */
     size_t crlfPos;
-    _getCRLFPosition(chunk, remaining, &crlfPos); /* Get the position of the first \r OR \n */
-    bool hasCRLF = (crlfPos != SIZE_MAX);
-    if(hasCRLF) {
-      chunkLen = crlfPos + 2;
-      if(chunkLen > remaining)
-        chunkLen = remaining;
+    if(_getCRLFPosition(chunk, remaining, &crlfPos)) {
+      /* If we found a full CRLF, we can read until the end of it */
+      chunkLen += crlfPos + 2;
     } else {
-      chunkLen = remaining;
+      if(crlfPos != SIZE_MAX) {
+        /* If we found a CR or LF, but not the full CRLF, we read until the found position */
+        chunkLen += crlfPos + 1;
+      } else {
+        /* If no CR or LF found, we read all remaining bytes */
+        chunkLen = remaining;
+      }
     }
 
     _addATBytesToBuffer(chunk, chunkLen);
     offset += chunkLen;
 
-    /* Check if the \r\n CRLF is present. This lets us know if the full message was parsed */
+    /* We need to check if the CRLF symbol is part of the payload, or if it marks the end */
+    if(_receivingPayload && !payloadSizeKnown) {
+
+      /* If the payload is not yet complete, we continue adding to the buffer without queueing */
+      if(!_checkPayloadComplete()) {
+        continue;
+      }
+      _receivingPayload = false;
+    }
+
+    /* Check if the full \r\n CRLF is already present in the buffer */
     /* If not present, we assume the message was split by the UART buffer, so we continue until we
      * can "stitch" the message(s) back together */
     if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size)) {

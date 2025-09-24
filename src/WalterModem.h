@@ -3413,6 +3413,17 @@ private:
   static bool _getCRLFPosition(const char* rxData, size_t len, size_t* pos = nullptr);
 
   /**
+   * @brief Checks if the current parser buffer contains a predefined end-of-payload marker.
+   *
+   * end-of-payload markers: "\r\nOK\r\n", "\r\nERROR\r\n", or "\r\n+CME ERROR: ".
+   * If found, the payload is segmented, optional CRLF is stripped, the buffer is queued,
+   * and any leftover marker bytes are added to a new buffer for further parsing.
+   *
+   * @return true if a complete payload was detected and handled; false otherwise.
+   */
+  static bool _checkPayloadComplete();
+
+  /**
    * @brief Check the parser buffer for a message containing payload data.
    *
    * @return true if addintional payload data is expected, false otherwise.
