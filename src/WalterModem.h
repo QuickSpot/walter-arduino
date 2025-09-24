@@ -3402,15 +3402,32 @@ private:
   static void _queueRxBuffer();
 
   /**
-   * @brief Returns the position of the first encountered `\r` or `\n` character
+   * @brief Returns the position of the first CRLF character(s) in a buffer.
    *
-   * @param data The incoming data buffer.
-   * @param len The number of bytes in the rxData buffer.
-   * @param pos (optional) The amount of bytes before the first CRLF (`\r` or `\n`).
+   * This function searches the buffer for carriage return (`\r`) and/or line feed (`\n`)
+   * characters. Its behavior depends on the `findWhole` parameter:
    *
-   * @return true if `\r\n` was found consecutively. false if only one or none where found.
+   * - If `findWhole` is false:
+   *     - Finds the first occurrence of either `\r` or `\n`.
+   *     - Sets `pos` to the index of that first character (if provided).
+   *     - Returns true only if a `\r\n` pair occurs consecutively starting at the first `\r`.
+   *
+   * - If `findWhole` is true:
+   *     - Searches for the first full `\r\n` pair.
+   *     - Sets `pos` to the index of the `\r` in that pair (if provided).
+   *     - Returns true if a full `\r\n` pair is found, false otherwise.
+   *
+   * @param rxData Pointer to the incoming data buffer.
+   * @param len Number of bytes in the rxData buffer.
+   * @param findWhole Whether to search for the full "\r\n" pair (true) or just the first CR or LF
+   * (false).
+   * @param pos Optional pointer to store the position of the first found character or pair. Will be
+   *            set to SIZE_MAX if nothing is found.
+   *
+   * @return true if a "\r\n" pair is found (according to the mode), false otherwise.
    */
-  static bool _getCRLFPosition(const char* rxData, size_t len, size_t* pos = nullptr);
+  static bool _getCRLFPosition(const char* rxData, size_t len, bool findWhole,
+                               size_t* pos = nullptr);
 
   /**
    * @brief Checks if the current parser buffer contains a predefined end-of-payload marker.

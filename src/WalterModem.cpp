@@ -993,27 +993,38 @@ void WalterModem::_queueRxBuffer()
   }
 }
 
-bool WalterModem::_getCRLFPosition(const char* rxData, size_t len, size_t* pos)
+bool WalterModem::_getCRLFPosition(const char* rxData, size_t len, bool findWhole, size_t* pos)
 {
-  const char* crPtr = (const char*) memchr(rxData, '\r', len);
-  const char* lfPtr = (const char*) memchr(rxData, '\n', len);
+  if(!findWhole) {
+    const char* crPtr = (const char*) memchr(rxData, '\r', len);
+    const char* lfPtr = (const char*) memchr(rxData, '\n', len);
 
-  if(pos != nullptr) {
-    if(crPtr) {
-      *pos = (size_t) (crPtr - rxData);
-    } else if(lfPtr) {
-      *pos = (size_t) (lfPtr - rxData);
-    } else {
-      *pos = SIZE_MAX;
+    if(pos != nullptr) {
+      if(crPtr) {
+        *pos = (size_t) (crPtr - rxData);
+      } else if(lfPtr) {
+        *pos = (size_t) (lfPtr - rxData);
+      } else {
+        *pos = SIZE_MAX;
+      }
     }
-  }
 
-  /* return true only if we found a "\r\n" pair consecutively */
-  if(crPtr && (size_t) (crPtr - rxData) + 1 < len && rxData[(crPtr - rxData) + 1] == '\n') {
-    return true;
+    if(crPtr && (size_t) (crPtr - rxData) + 1 < len && rxData[(crPtr - rxData) + 1] == '\n') {
+      return true;
+    }
+    return false;
+  } else {
+    for(size_t i = 0; i + 1 < len; ++i) {
+      if(rxData[i] == '\r' && rxData[i + 1] == '\n') {
+        if(pos)
+          *pos = i;
+        return true;
+      }
+    }
+    if(pos)
+      *pos = SIZE_MAX;
+    return false;
   }
-
-  return false;
 }
 
 bool WalterModem::_checkPayloadComplete()
@@ -1152,7 +1163,7 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
     /* Receiving messages with undefined size (AT-commands, URCs, payloads with unknown size) */
     /* We keep appending the message to the buffer until the CRLF is found. Queue when complete */
     size_t crlfPos;
-    if(_getCRLFPosition(chunk, remaining, &crlfPos)) {
+    if(_getCRLFPosition(chunk, remaining, false, &crlfPos)) {
       /* If we found a full CRLF, we can read until the end of it */
       chunkLen += crlfPos + 2;
     } else {
@@ -1181,7 +1192,7 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
     /* Check if the full \r\n CRLF is already present in the buffer */
     /* If not present, we assume the message was split by the UART buffer, so we continue until we
      * can "stitch" the message(s) back together */
-    if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size)) {
+    if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size, true)) {
 
       /* Check for special prompts (e.g. "> " or ">>>") which don't use CRLF's */
       bool prompt2 = (_parserData.buf && _parserData.buf->size >= 2 &&
