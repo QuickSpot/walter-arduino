@@ -3402,12 +3402,43 @@ private:
   static void _queueRxBuffer();
 
   /**
-   * @brief returns the CRLF position
+   * @brief Returns the position of the first CRLF character(s) in a buffer.
    *
-   * @param data The incoming data buffer.
-   * @param len The number of bytes in the rxData buffer.
+   * This function searches the buffer for carriage return (`\r`) and/or line feed (`\n`)
+   * characters. Its behavior depends on the `findWhole` parameter:
+   *
+   * - If `findWhole` is false:
+   *     - Finds the first occurrence of either `\r` or `\n`.
+   *     - Sets `pos` to the index of that first character (if provided).
+   *     - Returns true only if a `\r\n` pair occurs consecutively starting at the first `\r`.
+   *
+   * - If `findWhole` is true:
+   *     - Searches for the first full `\r\n` pair.
+   *     - Sets `pos` to the index of the `\r` in that pair (if provided).
+   *     - Returns true if a full `\r\n` pair is found, false otherwise.
+   *
+   * @param rxData Pointer to the incoming data buffer.
+   * @param len Number of bytes in the rxData buffer.
+   * @param findWhole Whether to search for the full "\r\n" pair (true) or just the first CR or LF
+   * (false).
+   * @param pos Optional pointer to store the position of the first found character or pair. Will be
+   *            set to SIZE_MAX if nothing is found.
+   *
+   * @return true if a "\r\n" pair is found (according to the mode), false otherwise.
    */
-  static size_t _getCRLFPosition(const char* rxData, size_t len);
+  static bool _getCRLFPosition(const char* rxData, size_t len, bool findWhole,
+                               size_t* pos = nullptr);
+
+  /**
+   * @brief Checks if the current parser buffer contains a predefined end-of-payload marker.
+   *
+   * end-of-payload markers: "\r\nOK\r\n", "\r\nERROR\r\n", or "\r\n+CME ERROR: ".
+   * If found, the payload is segmented, optional CRLF is stripped, the buffer is queued,
+   * and any leftover marker bytes are added to a new buffer for further parsing.
+   *
+   * @return true if a complete payload was detected and handled; false otherwise.
+   */
+  static bool _checkPayloadComplete();
 
   /**
    * @brief Check the parser buffer for a message containing payload data.
@@ -3426,15 +3457,6 @@ private:
    */
   static void _parseRxData(char* rxData, size_t len);
 
-  /**
-   * @brief This function resets the payload receiving flags.
-   */
-  static void _resetParseRxFlags();
-  /**
-   * @brief This function checks if a full payload was received, if so it queues it and sends the
-   * appropriate return RX command.
-   */
-  static bool _checkPayloadComplete();
 #ifdef ARDUINO
   /**
    * @brief Handle and parse modem RX data.

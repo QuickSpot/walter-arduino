@@ -985,7 +985,7 @@ void WalterModem::_queueRxBuffer()
          * consumer.
          */
         _parserData.buf->free = true;
-        // ESP_LOGW("WalterParser", "unable to queue the buffer");
+        ESP_LOGW("WalterParser", "unable to queue the buffer");
       }
     }
 
@@ -993,75 +993,89 @@ void WalterModem::_queueRxBuffer()
   }
 }
 
-size_t WalterModem::_getCRLFPosition(const char* rxData, size_t len)
+bool WalterModem::_getCRLFPosition(const char* rxData, size_t len, bool findWhole, size_t* pos)
 {
-  const char* lfPtr = (const char*) memchr(rxData, '\n', len);
+  if(!findWhole) {
+    const char* crPtr = (const char*) memchr(rxData, '\r', len);
+    const char* lfPtr = (const char*) memchr(rxData, '\n', len);
 
-  if(lfPtr != NULL && lfPtr > rxData) {
-    return (size_t) (lfPtr - rxData);
+    if(pos != nullptr) {
+      if(crPtr) {
+        *pos = (size_t) (crPtr - rxData);
+      } else if(lfPtr) {
+        *pos = (size_t) (lfPtr - rxData);
+      } else {
+        *pos = SIZE_MAX;
+      }
+    }
+
+    if(crPtr && (size_t) (crPtr - rxData) + 1 < len && rxData[(crPtr - rxData) + 1] == '\n') {
+      return true;
+    }
+    return false;
+  } else {
+    for(size_t i = 0; i + 1 < len; ++i) {
+      if(rxData[i] == '\r' && rxData[i + 1] == '\n') {
+        if(pos)
+          *pos = i;
+        return true;
+      }
+    }
+    if(pos)
+      *pos = SIZE_MAX;
+    return false;
   }
-
-  return 0;
 }
 
 bool WalterModem::_checkPayloadComplete()
 {
-#pragma region OK
-  char* resultPos = (char*) memmem(&_parserData.buf->data[_receivedPayloadSize],
-                                   _parserData.buf->size, "\r\nOK\r\n", 6);
+  char* data = reinterpret_cast<char*>(_parserData.buf->data);
+  size_t size = _parserData.buf->size;
 
-  if(resultPos && _parserData.buf->size >= _receivedPayloadSize) {
-    // ESP_LOGI("WalterParser", "payload completed (OK)");
+  auto handleMatch = [&](size_t offset) -> bool {
+    size_t remaining = size - offset;
+    const uint8_t* chunk = _parserData.buf->data + offset;
 
-    _parserData.buf->size -= 6;
+    /* Cut the end-payload marker chunk off from this buffer */
+    _parserData.buf->size -= remaining;
+    /* Optionally also strip the ending CRLF \r\n because the rspProcessor doesn't use it */
+    _parserData.buf->size -= 2;
     _queueRxBuffer();
-    _resetParseRxFlags();
-    _parseRxData((char*) "\r\nOK\r\n", 6);
+
+    /* Strip the CR/LF from the beginning of the end-payload marker chunk */
+    while(remaining && (*chunk == '\r' || *chunk == '\n')) {
+      ++chunk;
+      --remaining;
+    }
+
+    /* Add the end-payload marker chunk to a fresh buffer */
+    if(remaining > 0) {
+      _addATBytesToBuffer(reinterpret_cast<const char*>(chunk), remaining);
+    }
+
     return true;
+  };
+
+  if(void* p = memmem(data, size, "\r\nOK\r\n", 6)) {
+    return handleMatch(static_cast<size_t>(static_cast<char*>(p) - data));
   }
-#pragma endregion
 
-#pragma region ERROR
-  resultPos = (char*) memmem(&_parserData.buf->data[_receivedPayloadSize], _parserData.buf->size,
-                             "\r\nERROR\r\n", 9);
-
-  if(resultPos && _parserData.buf->size >= _receivedPayloadSize) {
-    // ESP_LOGI("WalterParser", "payload received error (ERROR)");
-    _parserData.buf->size -= 9;
-    _queueRxBuffer();
-    _resetParseRxFlags();
-    _parseRxData((char*) "\r\nERROR\r\n", 9);
-    return true;
+  if(void* p = memmem(data, size, "\r\nERROR\r\n", 9)) {
+    return handleMatch(static_cast<size_t>(static_cast<char*>(p) - data));
   }
-#pragma endregion
 
-#pragma region CME_ERROR
-  resultPos = (char*) memmem(&_parserData.buf->data[_receivedPayloadSize], _parserData.buf->size,
-                             "+CME ERROR:", 11);
-
-  if(resultPos && _parserData.buf->size >= _receivedPayloadSize) {
-    // ESP_LOGI("WalterParser", "payload CME error (OK)");
-    uint16_t size = (uint16_t) ((uint8_t*) resultPos - _parserData.buf->data);
-    _parserData.buf->size -= size;
-    _queueRxBuffer();
-    _resetParseRxFlags();
-    _parseRxData(resultPos, size);
-    return true;
+  if(void* p = memmem(data, size, "\r\n+CME ERROR: ", 12)) {
+    return handleMatch(static_cast<size_t>(static_cast<char*>(p) - data));
   }
-#pragma endregion
 
   return false;
 }
 
-void WalterModem::_resetParseRxFlags()
-{
-  _receivingPayload = false;
-  _foundCRLF = false;
-  _receivedPayloadSize = 0;
-}
-
 bool WalterModem::_expectingPayload()
 {
+  /* Fallback if no payload size is defined (e.g. for AT+SQNSNVR) */
+  _receivedPayloadSize = SIZE_MAX;
+
   // Check for "+SQNSRECV: "
   if(strncmp((const char*) _parserData.buf, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
     // Check for "+SQNSRECV: <ignored>,<length>"
@@ -1097,91 +1111,112 @@ bool WalterModem::_expectingPayload()
     return true;
   }
 
+  // Check for "+SQNSNVR: "
+  if(strncmp((const char*) _parserData.buf, "+SQNSNVR: ", strlen("+SQNSNVR: ")) == 0) {
+    return true;
+  }
+
   return false;
 }
 
 void WalterModem::_parseRxData(char* rxData, size_t len)
 {
-  if(len <= 0 || _hardwareReset)
-    return;
-  char* dataStart = rxData;
-  size_t dataLen = len;
-  /* remove the leading CRLF*/
-  if(_parserData.buf == NULL) {
-    if(dataStart[0] == '\r') {
-      /* remove the leading \r */
-      dataLen--;
-      dataStart++;
-    }
-    if(dataStart[0] == '\n') {
-      /* remove the leading \n */
-      dataLen--;
-      dataStart++;
-    }
-  }
-
-  /* we have the possebility to receive 'ghost' data from the UART in that case ignore it */
-  if(dataLen <= 0 || dataLen > UART_BUF_SIZE)
+  if(len == 0 || _hardwareReset || len > UART_BUF_SIZE)
     return;
 
-  // ESP_LOGV("WalterParser", "rxData (%u bytes): \r\n '%.*s'\n", dataLen, dataLen, dataStart);
+  char* ptr = rxData;
+  size_t size = len;
 
-  size_t CRLFPos = _getCRLFPosition(
-      dataStart, dataLen); /* we try and get the ending CRLF to know if we have a full message */
-  bool hasTripleChevron =
-      memmem(dataStart, dataLen, "<<<", 3) != nullptr; /* <<< is the start of the HTTP response */
+  /* Main processing loop: parse until all bytes consumed */
+  for(size_t offset = 0; offset < size;) {
+    const char* chunk = ptr + offset;
+    size_t remaining = size - offset, chunkLen = 0;
 
-  if(_foundCRLF || CRLFPos > 0 || hasTripleChevron) {
-    if(_receivingPayload || hasTripleChevron) {
-      /* We are receiving more payload data*/
-      _receivingPayload = true;
-      _foundCRLF = true;
-      _addATBytesToBuffer(dataStart, dataLen);
-      _checkPayloadComplete();
-    } else {
-      /* We have received a full message!*/
-      _addATBytesToBuffer(dataStart, CRLFPos);
-
-      if(_expectingPayload()) {
-        /* We are expecting payload data to be received after this */
-        _receivingPayload = true;
+    /* A new buffer can never start with a CRLF, so if necessary, we strip it here */
+    /* This will not affect payload data as it will already have a buffer reserved */
+    if(!_parserData.buf) {
+      while(remaining && (*chunk == '\r' || *chunk == '\n')) {
+        chunk++;
+        remaining--;
+        offset++;
       }
+      if(remaining == 0)
+        break;
+    }
 
-      if(!_foundCRLF && CRLFPos > 0 && _receivedPayloadSize > 0) {
-        /* We are receiving payload data */
-        /* We need to keep append the CRLFPos for correct _receivExpected usage */
-        _receivedPayloadSize += CRLFPos;
-        _foundCRLF = true;
-        _addATBytesToBuffer(dataStart + CRLFPos, dataLen - CRLFPos);
-        _checkPayloadComplete();
+    bool payloadSizeKnown = (_receivedPayloadSize != SIZE_MAX);
 
-      } else {
-        /* A full message has been found so queue it */
+    /* Receiving binary payload with a known total size */
+    /* Here we count the amount of bytes to read, and add them to the buffer. Queue when complete */
+    if(_receivingPayload && payloadSizeKnown) {
+      chunkLen = (_receivedPayloadSize > remaining) ? remaining : _receivedPayloadSize;
+      _addATBytesToBuffer(chunk, chunkLen);
+      _receivedPayloadSize -= chunkLen;
+      offset += chunkLen;
+      if(_receivedPayloadSize == 0) {
+        _receivingPayload = false;
         _queueRxBuffer();
-        _resetParseRxFlags();
-        _parseRxData(dataStart + CRLFPos + 1, dataLen - CRLFPos - 1);
+      }
+      continue;
+    }
+
+    /* Receiving messages with undefined size (AT-commands, URCs, payloads with unknown size) */
+    /* We keep appending the message to the buffer until the CRLF is found. Queue when complete */
+    size_t crlfPos;
+    if(_getCRLFPosition(chunk, remaining, false, &crlfPos)) {
+      /* If we found a full CRLF, we can read until the end of it */
+      chunkLen += crlfPos + 2;
+    } else {
+      if(crlfPos != SIZE_MAX) {
+        /* If we found a CR or LF, but not the full CRLF, we read until the found position */
+        chunkLen += crlfPos + 1;
+      } else {
+        /* If no CR or LF found, we read all remaining bytes */
+        chunkLen = remaining;
       }
     }
-  } else if(dataLen > 0) {
 
-    _addATBytesToBuffer(dataStart, dataLen);
+    _addATBytesToBuffer(chunk, chunkLen);
+    offset += chunkLen;
 
-#pragma region PROMPT
-    /* We are receiving a partial message or a data PROMPT*/
-    bool dataPrompt = (_parserData.buf->size >= 2)
-                          ? (_parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ')
-                          : false;
+    /* We need to check if the CRLF symbol is part of the payload, or if it marks the end */
+    if(_receivingPayload && !payloadSizeKnown) {
 
-    bool httpPrompt = (_parserData.buf->size >= 3)
-                          ? (_parserData.buf->data[0] == '>' && _parserData.buf->data[1] == '>' &&
-                             _parserData.buf->data[2] == '>')
-                          : false;
-
-    if(dataPrompt || httpPrompt) {
-      _queueRxBuffer();
-      _resetParseRxFlags();
+      /* If the payload is not yet complete, we continue adding to the buffer without queueing */
+      if(!_checkPayloadComplete()) {
+        continue;
+      }
+      _receivingPayload = false;
     }
-#pragma endregion
+
+    /* Check if the full \r\n CRLF is already present in the buffer */
+    /* If not present, we assume the message was split by the UART buffer, so we continue until we
+     * can "stitch" the message(s) back together */
+    if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size, true)) {
+
+      /* Check for special prompts (e.g. "> " or ">>>") which don't use CRLF's */
+      bool prompt2 = (_parserData.buf && _parserData.buf->size >= 2 &&
+                      _parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ');
+      bool prompt3 =
+          (_parserData.buf && _parserData.buf->size >= 3 && _parserData.buf->data[0] == '>' &&
+           _parserData.buf->data[1] == '>' && _parserData.buf->data[2] == '>');
+      if(prompt2 || prompt3) {
+        _queueRxBuffer();
+      }
+
+      continue;
+    }
+
+    /* If binnary payload is expected after the CRLF, set the flag */
+    if(_expectingPayload()) {
+      _receivingPayload = true;
+      continue;
+    }
+
+    /* Finally, queue the buffer if we are sure it is complete */
+    /* Optionally strip the ending CRLF \r\n because the rspProcessor doesn't use it */
+    _parserData.buf->size -= 2;
+    _queueRxBuffer();
   }
 }
 
@@ -1432,7 +1467,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd* cmd, bool queueError)
           ESP_LOGD("WalterModem", "Command ERROR (TX) Attempt %u of %u", cmd->attempt,
                    cmd->maxAttempts);
         }
-        _resetParseRxFlags();
+        _receivingPayload = false;
         if(cmd->attempt >= cmd->maxAttempts) {
           _finishQueueCmd(cmd, timedOut ? WALTER_MODEM_STATE_TIMEOUT : WALTER_MODEM_STATE_ERROR);
         } else {
@@ -1457,7 +1492,7 @@ TickType_t WalterModem::_processQueueCmd(WalterModemCmd* cmd, bool queueError)
       TickType_t diff = xTaskGetTickCount() - cmd->attemptStart;
       if(diff >= WALTER_MODEM_CMD_TIMEOUT_TICKS) {
         ESP_LOGW("WalterModem", "Command time-out (WAIT)");
-        _resetParseRxFlags();
+        _receivingPayload = false;
         _finishQueueCmd(cmd, WALTER_MODEM_STATE_TIMEOUT);
       } else {
         return diff;
@@ -2626,7 +2661,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
      * If data and dataSize are null, we cannot store the result. We can only hope the user
      * is using a callback which has access to the raw buffer.
      */
-    if(cmd->data != nullptr) {
+    if(cmd->data) {
       memcpy(cmd->data, payload, dataReceived);
     }
   } else if(_buffStartsWith(buff, "+SQNSS: ")) {
@@ -3266,7 +3301,6 @@ bool WalterModem::_tlsIsCredentialPresent(bool isPrivateKey, uint8_t slotIdx)
   void* args = NULL;
 
   const char* keyType = isPrivateKey ? "privatekey" : "certificate";
-  _receivingPayload = true;
   _runCmd(arr("AT+SQNSNVR=", _atStr(keyType), ",", _atNum(slotIdx)), "+SQNSNVR: ", rsp, cb, args);
   _returnAfterReply();
 }
