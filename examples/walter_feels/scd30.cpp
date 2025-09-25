@@ -1,29 +1,50 @@
-/*
-  This is a library written for the SCD30
-  SparkFun sells these at its website: www.sparkfun.com
-  Do you like this library? Help support SparkFun. Buy a board!
-  https://www.sparkfun.com/products/14751
-
-  Written by Nathan Seidle @ SparkFun Electronics, May 22nd, 2018
-
-  Updated February 1st 2021 to include some of the features of paulvha's version of the library
-  (while maintaining backward-compatibility):
-  https://github.com/paulvha/scd30
-  Thank you Paul!
-
-  The SCD30 measures CO2 with accuracy of +/- 30ppm.
-
-  This library handles the initialization of the SCD30 and outputs
-  CO2 levels, relative humidty, and temperature.
-
-  https://github.com/sparkfun/SparkFun_SCD30_Arduino_Library
-
-  Development environment specifics:
-  Arduino IDE 1.8.13
-
-  SparkFun code, firmware, and software is released under the MIT License.
-  Please see LICENSE.md for more details.
-*/
+/**
+ * @file scd30.cpp
+ * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 25 September 2025
+ * @copyright DPTechnics bv
+ * @brief Walter Modem library examples
+ *
+ * @section LICENSE
+ *
+ * Copyright (C) 2023, DPTechnics bv
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *   1. Redistributions of source code must retain the above copyright notice,
+ *      this list of conditions and the following disclaimer.
+ *
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ *   3. Neither the name of DPTechnics bv nor the names of its contributors may
+ *      be used to endorse or promote products derived from this software
+ *      without specific prior written permission.
+ *
+ *   4. This software, with or without modification, must only be used with a
+ *      Walter board from DPTechnics bv.
+ *
+ *   5. Any software provided in binary form under this license must not be
+ *      reverse engineered, decompiled, modified and/or disassembled.
+ *
+ * THIS SOFTWARE IS PROVIDED BY DPTECHNICS BV “AS IS” AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL DPTECHNICS BV OR CONTRIBUTORS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * @section DESCRIPTION
+ *
+ * This file contains drivers for the Walter Feels carrier board
+ */
 
 #include "scd30.h"
 
@@ -33,35 +54,37 @@ SCD30::SCD30(void)
 }
 
 // Initialize the Serial port
-bool SCD30::begin(TwoWire &wirePort, bool autoCalibrate, bool measBegin)
+bool SCD30::begin(TwoWire& wirePort, bool autoCalibrate, bool measBegin)
 {
   _i2cPort = &wirePort; // Grab which port the user wants us to use
 
-  /* Especially during obtaining the ACK BIT after a byte sent the SCD30 is using clock stretching  (but NOT only there)!
-   * The need for clock stretching is described in the Sensirion_CO2_Sensors_SCD30_Interface_Description.pdf
+  /* Especially during obtaining the ACK BIT after a byte sent the SCD30 is using clock stretching
+   * (but NOT only there)! The need for clock stretching is described in the
+   * Sensirion_CO2_Sensors_SCD30_Interface_Description.pdf
    *
-   * The default clock stretch (maximum wait time) on the ESP8266-library (2.4.2) is 230us which is set during _i2cPort->begin();
-   * In the current implementation of the ESP8266 I2C driver there is NO error message when this time expired, while
-   * the clock stretch is still happening, causing uncontrolled behaviour of the hardware combination.
+   * The default clock stretch (maximum wait time) on the ESP8266-library (2.4.2) is 230us which is
+   * set during _i2cPort->begin(); In the current implementation of the ESP8266 I2C driver there is
+   * NO error message when this time expired, while the clock stretch is still happening, causing
+   * uncontrolled behaviour of the hardware combination.
    *
    * To set ClockStretchlimit() a check for ESP8266 boards has been added in the driver.
    *
-   * With setting to 20000, we set a max timeout of 20mS (> 20x the maximum measured) basically disabling the time-out
-   * and now wait for clock stretch to be controlled by the client.
+   * With setting to 20000, we set a max timeout of 20mS (> 20x the maximum measured) basically
+   * disabling the time-out and now wait for clock stretch to be controlled by the client.
    */
 
 #if defined(ARDUINO_ARCH_ESP8266)
   _i2cPort->setClockStretchLimit(200000);
 #endif
 
-  if (isConnected() == false)
+  if(isConnected() == false)
     return (false);
 
-  if (measBegin == false) // Exit now if measBegin is false
+  if(measBegin == false) // Exit now if measBegin is false
     return (true);
 
   // Check for device to respond correctly
-  if (beginMeasuring() == true) // Start continuous measurements
+  if(beginMeasuring() == true) // Start continuous measurements
   {
     setMeasurementInterval(2);             // 2 seconds between measurements
     setAutoSelfCalibration(autoCalibrate); // Enable auto-self-calibration
@@ -76,11 +99,11 @@ bool SCD30::begin(TwoWire &wirePort, bool autoCalibrate, bool measBegin)
 bool SCD30::isConnected()
 {
   uint16_t fwVer;
-  if (getFirmwareVersion(&fwVer) == false) // Read the firmware version. Return false if the CRC check fails.
+  if(getFirmwareVersion(&fwVer) ==
+     false) // Read the firmware version. Return false if the CRC check fails.
     return (false);
 
-  if (_printDebug == true)
-  {
+  if(_printDebug == true) {
     _debugPort->print(F("Firmware version 0x"));
     _debugPort->println(fwVer, HEX);
   }
@@ -90,7 +113,7 @@ bool SCD30::isConnected()
 
 // Calling this function with nothing sets the debug port to Serial
 // You can also call it with other streams like Serial1, SerialUSB, etc.
-void SCD30::enableDebugging(Stream &debugPort)
+void SCD30::enableDebugging(Stream& debugPort)
 {
   _debugPort = &debugPort;
   _printDebug = true;
@@ -100,25 +123,25 @@ void SCD30::enableDebugging(Stream &debugPort)
 // If the current level has already been reported, trigger a new read
 uint16_t SCD30::getCO2(void)
 {
-  if (co2HasBeenReported == true) // Trigger a new read
+  if(co2HasBeenReported == true) // Trigger a new read
   {
-    if (readMeasurement() == false) // Pull in new co2, humidity, and temp into global vars
-      if (!_useStaleData)
+    if(readMeasurement() == false) // Pull in new co2, humidity, and temp into global vars
+      if(!_useStaleData)
         co2 = 0; // Failed to read sensor
   }
 
   co2HasBeenReported = true;
 
-  return (uint16_t)co2; // Cut off decimal as co2 is 0 to 10,000
+  return (uint16_t) co2; // Cut off decimal as co2 is 0 to 10,000
 }
 
 // Returns the latest available humidity
 // If the current level has already been reported, trigger a new read
 float SCD30::getHumidity(void)
 {
-  if (humidityHasBeenReported == true) // Trigger a new read
-    if (readMeasurement() == false)    // Pull in new co2, humidity, and temp into global vars
-      if (!_useStaleData)
+  if(humidityHasBeenReported == true) // Trigger a new read
+    if(readMeasurement() == false)    // Pull in new co2, humidity, and temp into global vars
+      if(!_useStaleData)
         humidity = 0; // Failed to read sensor
 
   humidityHasBeenReported = true;
@@ -130,9 +153,9 @@ float SCD30::getHumidity(void)
 // If the current level has already been reported, trigger a new read
 float SCD30::getTemperature(void)
 {
-  if (temperatureHasBeenReported == true) // Trigger a new read
-    if (readMeasurement() == false)       // Pull in new co2, humidity, and temp into global vars
-      if (!_useStaleData)
+  if(temperatureHasBeenReported == true) // Trigger a new read
+    if(readMeasurement() == false)       // Pull in new co2, humidity, and temp into global vars
+      if(!_useStaleData)
         temperature = 0; // Failed to read sensor
 
   temperatureHasBeenReported = true;
@@ -143,7 +166,7 @@ float SCD30::getTemperature(void)
 // Enables or disables the ASC
 bool SCD30::setAutoSelfCalibration(bool enable)
 {
-  if (enable)
+  if(enable)
     return sendCommand(COMMAND_AUTOMATIC_SELF_CALIBRATION, 1); // Activate continuous ASC
   else
     return sendCommand(COMMAND_AUTOMATIC_SELF_CALIBRATION, 0); // Deactivate continuous ASC
@@ -153,8 +176,7 @@ bool SCD30::setAutoSelfCalibration(bool enable)
 // The reference CO2 concentration has to be within the range 400 ppm ≤ cref(CO2) ≤ 2000 ppm.
 bool SCD30::setForcedRecalibrationFactor(uint16_t concentration)
 {
-  if (concentration < 400 || concentration > 2000)
-  {
+  if(concentration < 400 || concentration > 2000) {
     return false; // Error check.
   }
   return sendCommand(COMMAND_SET_FORCED_RECALIBRATION_FACTOR, concentration);
@@ -165,24 +187,25 @@ float SCD30::getTemperatureOffset(void)
 {
   uint16_t response = readRegister(COMMAND_SET_TEMPERATURE_OFFSET);
 
-  union
-  {
+  union {
     int16_t signed16;
     uint16_t unsigned16;
   } signedUnsigned; // Avoid any ambiguity casting int16_t to uint16_t
   signedUnsigned.unsigned16 = response;
 
-  return (((float)signedUnsigned.signed16) / 100.0);
+  return (((float) signedUnsigned.signed16) / 100.0);
 }
 
 // Set the temperature offset to remove module heating from temp reading
 bool SCD30::setTemperatureOffset(float tempOffset)
 {
-  // Temp offset is only positive. See: https://github.com/sparkfun/SparkFun_SCD30_Arduino_Library/issues/27#issuecomment-971986826
-  //"The SCD30 offset temperature is obtained by subtracting the reference temperature from the SCD30 output temperature"
+  // Temp offset is only positive. See:
+  // https://github.com/sparkfun/SparkFun_SCD30_Arduino_Library/issues/27#issuecomment-971986826
+  //"The SCD30 offset temperature is obtained by subtracting the reference temperature from the
+  //SCD30 output temperature"
   // https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9.5_CO2/Sensirion_CO2_Sensors_SCD30_Low_Power_Mode.pdf
 
-  if (tempOffset < 0.0)
+  if(tempOffset < 0.0)
     return (false);
 
   uint16_t value = tempOffset * 100;
@@ -206,8 +229,7 @@ bool SCD30::setAltitudeCompensation(uint16_t altitude)
 // mbar can be 700 to 1200
 bool SCD30::setAmbientPressure(uint16_t pressure_mbar)
 {
-  if (pressure_mbar < 700 || pressure_mbar > 1200)
-  {
+  if(pressure_mbar < 700 || pressure_mbar > 1200) {
     return false;
   }
   return sendCommand(COMMAND_CONTINUOUS_MEASUREMENT, pressure_mbar);
@@ -223,12 +245,9 @@ void SCD30::reset()
 bool SCD30::getAutoSelfCalibration()
 {
   uint16_t response = readRegister(COMMAND_AUTOMATIC_SELF_CALIBRATION);
-  if (response == 1)
-  {
+  if(response == 1) {
     return true;
-  }
-  else
-  {
+  } else {
     return false;
   }
 }
@@ -276,7 +295,7 @@ bool SCD30::dataAvailable()
 {
   uint16_t response = readRegister(COMMAND_GET_DATA_READY);
 
-  if (response == 1)
+  if(response == 1)
     return (true);
   return (false);
 }
@@ -287,7 +306,7 @@ bool SCD30::dataAvailable()
 bool SCD30::readMeasurement()
 {
   // Verify we have data from the sensor
-  if (dataAvailable() == false)
+  if(dataAvailable() == false)
     return (false);
 
   ByteToFl tempCO2;
@@ -300,22 +319,19 @@ bool SCD30::readMeasurement()
   _i2cPort->beginTransmission(SCD30_ADDRESS);
   _i2cPort->write(COMMAND_READ_MEASUREMENT >> 8);   // MSB
   _i2cPort->write(COMMAND_READ_MEASUREMENT & 0xFF); // LSB
-  if (_i2cPort->endTransmission() != 0)
+  if(_i2cPort->endTransmission() != 0)
     return (0); // Sensor did not ACK
 
   delay(3);
 
-  const uint8_t receivedBytes = _i2cPort->requestFrom((uint8_t)SCD30_ADDRESS, (uint8_t)18);
+  const uint8_t receivedBytes = _i2cPort->requestFrom((uint8_t) SCD30_ADDRESS, (uint8_t) 18);
   bool error = false;
-  if (_i2cPort->available())
-  {
+  if(_i2cPort->available()) {
     uint8_t bytesToCrc[2];
-    for (uint8_t x = 0; x < 18; x++)
-    {
+    for(uint8_t x = 0; x < 18; x++) {
       uint8_t incoming = _i2cPort->read();
 
-      switch (x)
-      {
+      switch(x) {
       case 0:
       case 1:
       case 3:
@@ -340,10 +356,8 @@ bool SCD30::readMeasurement()
       default:
         // Validate CRC
         uint8_t foundCrc = computeCRC8(bytesToCrc, 2);
-        if (foundCrc != incoming)
-        {
-          if (_printDebug == true)
-          {
+        if(foundCrc != incoming) {
+          if(_printDebug == true) {
             _debugPort->print(F("readMeasurement: found CRC in byte "));
             _debugPort->print(x);
             _debugPort->print(F(", expected 0x"));
@@ -356,21 +370,18 @@ bool SCD30::readMeasurement()
         break;
       }
     }
-  }
-  else
-  {
-    if (_printDebug == true)
-    {
-      _debugPort->print(F("readMeasurement: no SCD30 data found from I2C, i2c claims we should receive "));
+  } else {
+    if(_printDebug == true) {
+      _debugPort->print(
+          F("readMeasurement: no SCD30 data found from I2C, i2c claims we should receive "));
       _debugPort->print(receivedBytes);
       _debugPort->println(F(" bytes"));
     }
     return false;
   }
 
-  if (error)
-  {
-    if (_printDebug == true)
+  if(error) {
+    if(_printDebug == true)
       _debugPort->println(F("readMeasurement: encountered error reading SCD30 data."));
     return false;
   }
@@ -389,29 +400,27 @@ bool SCD30::readMeasurement()
 
 // Gets a setting by reading the appropriate register.
 // Returns true if the CRC is valid.
-bool SCD30::getSettingValue(uint16_t registerAddress, uint16_t *val)
+bool SCD30::getSettingValue(uint16_t registerAddress, uint16_t* val)
 {
   _i2cPort->beginTransmission(SCD30_ADDRESS);
   _i2cPort->write(registerAddress >> 8);   // MSB
   _i2cPort->write(registerAddress & 0xFF); // LSB
-  if (_i2cPort->endTransmission() != 0)
+  if(_i2cPort->endTransmission() != 0)
     return (false); // Sensor did not ACK
 
   delay(3);
 
-  _i2cPort->requestFrom((uint8_t)SCD30_ADDRESS, (uint8_t)3); // Request data and CRC
-  if (_i2cPort->available())
-  {
+  _i2cPort->requestFrom((uint8_t) SCD30_ADDRESS, (uint8_t) 3); // Request data and CRC
+  if(_i2cPort->available()) {
     uint8_t data[2];
     data[0] = _i2cPort->read();
     data[1] = _i2cPort->read();
     uint8_t crc = _i2cPort->read();
-    *val = (uint16_t)data[0] << 8 | data[1];
+    *val = (uint16_t) data[0] << 8 | data[1];
     uint8_t expectedCRC = computeCRC8(data, 2);
-    if (crc == expectedCRC) // Return true if CRC check is OK
+    if(crc == expectedCRC) // Return true if CRC check is OK
       return (true);
-    if (_printDebug == true)
-    {
+    if(_printDebug == true) {
       _debugPort->print(F("getSettingValue: CRC fail: expected 0x"));
       _debugPort->print(expectedCRC, HEX);
       _debugPort->print(F(", got 0x"));
@@ -427,17 +436,16 @@ uint16_t SCD30::readRegister(uint16_t registerAddress)
   _i2cPort->beginTransmission(SCD30_ADDRESS);
   _i2cPort->write(registerAddress >> 8);   // MSB
   _i2cPort->write(registerAddress & 0xFF); // LSB
-  if (_i2cPort->endTransmission() != 0)
+  if(_i2cPort->endTransmission() != 0)
     return (0); // Sensor did not ACK
 
   delay(3);
 
-  _i2cPort->requestFrom((uint8_t)SCD30_ADDRESS, (uint8_t)2);
-  if (_i2cPort->available())
-  {
+  _i2cPort->requestFrom((uint8_t) SCD30_ADDRESS, (uint8_t) 2);
+  if(_i2cPort->available()) {
     uint8_t msb = _i2cPort->read();
     uint8_t lsb = _i2cPort->read();
-    return ((uint16_t)msb << 8 | lsb);
+    return ((uint16_t) msb << 8 | lsb);
   }
   return (0); // Sensor did not respond
 }
@@ -456,7 +464,7 @@ bool SCD30::sendCommand(uint16_t command, uint16_t arguments)
   _i2cPort->write(arguments >> 8);   // MSB
   _i2cPort->write(arguments & 0xFF); // LSB
   _i2cPort->write(crc);
-  if (_i2cPort->endTransmission() != 0)
+  if(_i2cPort->endTransmission() != 0)
     return (false); // Sensor did not ACK
 
   return (true);
@@ -468,7 +476,7 @@ bool SCD30::sendCommand(uint16_t command)
   _i2cPort->beginTransmission(SCD30_ADDRESS);
   _i2cPort->write(command >> 8);   // MSB
   _i2cPort->write(command & 0xFF); // LSB
-  if (_i2cPort->endTransmission() != 0)
+  if(_i2cPort->endTransmission() != 0)
     return (false); // Sensor did not ACK
 
   return (true);
@@ -483,14 +491,12 @@ uint8_t SCD30::computeCRC8(uint8_t data[], uint8_t len)
 {
   uint8_t crc = 0xFF; // Init with 0xFF
 
-  for (uint8_t x = 0; x < len; x++)
-  {
+  for(uint8_t x = 0; x < len; x++) {
     crc ^= data[x]; // XOR-in the next input byte
 
-    for (uint8_t i = 0; i < 8; i++)
-    {
-      if ((crc & 0x80) != 0)
-        crc = (uint8_t)((crc << 1) ^ 0x31);
+    for(uint8_t i = 0; i < 8; i++) {
+      if((crc & 0x80) != 0)
+        crc = (uint8_t) ((crc << 1) ^ 0x31);
       else
         crc <<= 1;
     }

@@ -1,29 +1,50 @@
-/*
-  This is a library written for the SCD30
-  SparkFun sells these at its website: www.sparkfun.com
-  Do you like this library? Help support SparkFun. Buy a board!
-  https://www.sparkfun.com/products/14751
-
-  Written by Nathan Seidle @ SparkFun Electronics, May 22nd, 2018
-
-	Updated February 1st 2021 to include some of the features of paulvha's version of the library
-	(while maintaining backward-compatibility):
-	https://github.com/paulvha/scd30
-	Thank you Paul!
-
-  The SCD30 measures CO2 with accuracy of +/- 30ppm.
-
-  This library handles the initialization of the SCD30 and outputs
-  CO2 levels, relative humidty, and temperature.
-
-  https://github.com/sparkfun/SparkFun_SCD30_Arduino_Library
-
-  Development environment specifics:
-  Arduino IDE 1.8.13
-
-	SparkFun code, firmware, and software is released under the MIT License.
-  Please see LICENSE.md for more details.
-*/
+/**
+ * @file scd30.h
+ * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 25 September 2025
+ * @copyright DPTechnics bv
+ * @brief Walter Modem library examples
+ *
+ * @section LICENSE
+ *
+ * Copyright (C) 2023, DPTechnics bv
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *   1. Redistributions of source code must retain the above copyright notice,
+ *      this list of conditions and the following disclaimer.
+ *
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *      notice, this list of conditions and the following disclaimer in the
+ *      documentation and/or other materials provided with the distribution.
+ *
+ *   3. Neither the name of DPTechnics bv nor the names of its contributors may
+ *      be used to endorse or promote products derived from this software
+ *      without specific prior written permission.
+ *
+ *   4. This software, with or without modification, must only be used with a
+ *      Walter board from DPTechnics bv.
+ *
+ *   5. Any software provided in binary form under this license must not be
+ *      reverse engineered, decompiled, modified and/or disassembled.
+ *
+ * THIS SOFTWARE IS PROVIDED BY DPTECHNICS BV “AS IS” AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL DPTECHNICS BV OR CONTRIBUTORS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+ * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * @section DESCRIPTION
+ *
+ * This file contains drivers for the Walter Feels carrier board
+ */
 
 #ifndef _SCD30_H
 #define _SCD30_H
@@ -48,84 +69,96 @@
 #define COMMAND_STOP_MEAS 0x0104
 #define COMMAND_READ_FW_VER 0xD100
 
-typedef union
-{
-	uint8_t array[4];
-	float value;
+typedef union {
+  uint8_t array[4];
+  float value;
 } ByteToFl; // paulvha
 
 class SCD30
 {
 public:
-	SCD30(void);
+  SCD30(void);
 
-	bool begin(bool autoCalibrate) { return begin(Wire, autoCalibrate); }
-	bool begin(TwoWire &wirePort = Wire, bool autoCalibrate = false, bool measBegin = true);
+  bool begin(bool autoCalibrate) { return begin(Wire, autoCalibrate); }
+  bool begin(TwoWire& wirePort = Wire, bool autoCalibrate = false, bool measBegin = true);
 
-	bool isConnected();
-	void enableDebugging(Stream &debugPort = Serial); // Turn on debug printing. If user doesn't specify then Serial will be used.
+  bool isConnected();
+  void enableDebugging(Stream& debugPort = Serial); // Turn on debug printing. If user doesn't
+                                                    // specify then Serial will be used.
 
-	bool beginMeasuring(uint16_t pressureOffset);
-	bool beginMeasuring(void);
-	bool StopMeasurement(void); // paulvha
+  bool beginMeasuring(uint16_t pressureOffset);
+  bool beginMeasuring(void);
+  bool StopMeasurement(void); // paulvha
 
-	bool setAmbientPressure(uint16_t pressure_mbar);
+  bool setAmbientPressure(uint16_t pressure_mbar);
 
-	bool getSettingValue(uint16_t registerAddress, uint16_t *val);
-	bool getFirmwareVersion(uint16_t *val) { return (getSettingValue(COMMAND_READ_FW_VER, val)); }
-	uint16_t getCO2(void);
-	float getHumidity(void);
-	float getTemperature(void);
+  bool getSettingValue(uint16_t registerAddress, uint16_t* val);
+  bool getFirmwareVersion(uint16_t* val) { return (getSettingValue(COMMAND_READ_FW_VER, val)); }
+  uint16_t getCO2(void);
+  float getHumidity(void);
+  float getTemperature(void);
 
-	uint16_t getMeasurementInterval(void);
-	bool getMeasurementInterval(uint16_t *val) { return (getSettingValue(COMMAND_SET_MEASUREMENT_INTERVAL, val)); }
-	bool setMeasurementInterval(uint16_t interval);
+  uint16_t getMeasurementInterval(void);
+  bool getMeasurementInterval(uint16_t* val)
+  {
+    return (getSettingValue(COMMAND_SET_MEASUREMENT_INTERVAL, val));
+  }
+  bool setMeasurementInterval(uint16_t interval);
 
-	uint16_t getAltitudeCompensation(void);
-	bool getAltitudeCompensation(uint16_t *val) { return (getSettingValue(COMMAND_SET_ALTITUDE_COMPENSATION, val)); }
-	bool setAltitudeCompensation(uint16_t altitude);
+  uint16_t getAltitudeCompensation(void);
+  bool getAltitudeCompensation(uint16_t* val)
+  {
+    return (getSettingValue(COMMAND_SET_ALTITUDE_COMPENSATION, val));
+  }
+  bool setAltitudeCompensation(uint16_t altitude);
 
-	bool getAutoSelfCalibration(void);
-	bool setAutoSelfCalibration(bool enable);
+  bool getAutoSelfCalibration(void);
+  bool setAutoSelfCalibration(bool enable);
 
-	bool getForcedRecalibration(uint16_t *val) { return (getSettingValue(COMMAND_SET_FORCED_RECALIBRATION_FACTOR, val)); }
-	bool setForcedRecalibrationFactor(uint16_t concentration);
+  bool getForcedRecalibration(uint16_t* val)
+  {
+    return (getSettingValue(COMMAND_SET_FORCED_RECALIBRATION_FACTOR, val));
+  }
+  bool setForcedRecalibrationFactor(uint16_t concentration);
 
-	float getTemperatureOffset(void);
-	bool getTemperatureOffset(uint16_t *val) { return (getSettingValue(COMMAND_SET_TEMPERATURE_OFFSET, val)); }
-	bool setTemperatureOffset(float tempOffset);
+  float getTemperatureOffset(void);
+  bool getTemperatureOffset(uint16_t* val)
+  {
+    return (getSettingValue(COMMAND_SET_TEMPERATURE_OFFSET, val));
+  }
+  bool setTemperatureOffset(float tempOffset);
 
-	bool dataAvailable();
-	bool readMeasurement();
+  bool dataAvailable();
+  bool readMeasurement();
 
-	void reset();
+  void reset();
 
-	bool sendCommand(uint16_t command, uint16_t arguments);
-	bool sendCommand(uint16_t command);
+  bool sendCommand(uint16_t command, uint16_t arguments);
+  bool sendCommand(uint16_t command);
 
-	uint16_t readRegister(uint16_t registerAddress);
+  uint16_t readRegister(uint16_t registerAddress);
 
-	uint8_t computeCRC8(uint8_t data[], uint8_t len);
+  uint8_t computeCRC8(uint8_t data[], uint8_t len);
 
-	void useStaleData(bool enable) { _useStaleData = enable; }
+  void useStaleData(bool enable) { _useStaleData = enable; }
 
 private:
-	// Variables
-	TwoWire *_i2cPort;
-	// Global main datums
-	float co2 = 0;
-	float temperature = 0;
-	float humidity = 0;
-	bool _useStaleData = false; // If true, stale data is returned instead of zeros
+  // Variables
+  TwoWire* _i2cPort;
+  // Global main datums
+  float co2 = 0;
+  float temperature = 0;
+  float humidity = 0;
+  bool _useStaleData = false; // If true, stale data is returned instead of zeros
 
-	// These track the staleness of the current data
-	// This allows us to avoid calling readMeasurement() every time individual datums are requested
-	bool co2HasBeenReported = true;
-	bool humidityHasBeenReported = true;
-	bool temperatureHasBeenReported = true;
+  // These track the staleness of the current data
+  // This allows us to avoid calling readMeasurement() every time individual datums are requested
+  bool co2HasBeenReported = true;
+  bool humidityHasBeenReported = true;
+  bool temperatureHasBeenReported = true;
 
-	// Debug
-	Stream *_debugPort;			 // The stream to send debug messages to if enabled. Usually Serial.
-	boolean _printDebug = false; // Flag to print debugging variables
+  // Debug
+  Stream* _debugPort;          // The stream to send debug messages to if enabled. Usually Serial.
+  boolean _printDebug = false; // Flag to print debugging variables
 };
 #endif

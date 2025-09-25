@@ -1,13 +1,13 @@
 /**
  * @file WalterFeels.cpp
- * @author Daan Pape <daan@dptechnics.com>
- * @date 26 Nov 2024
+ * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 25 September 2025
  * @copyright DPTechnics bv
- * @brief Walter Feels carrier board library.
+ * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2024, DPTechnics bv
+ * Copyright (C) 2023, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -43,7 +43,7 @@
  *
  * @section DESCRIPTION
  *
- * This file contains the Walter Feels carrier board library implementation.
+ * This file contains drivers for the Walter Feels carrier board
  */
 
 #include <Arduino.h>
