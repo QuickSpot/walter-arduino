@@ -187,3 +187,43 @@ This is the Changelog for WalterModem
 - fix(bluecherry): task delay and publish buffer ([#82](https://github.com/QuickSpot/walter-arduino/pull/82))
 
 - fix(uart): hardware flow control threshold ([#123](https://github.com/QuickSpot/walter-esp-idf/pull/123))
+
+## [v1.4.3](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.4.3)
+
+### Features
+
+- feat(Clang-Format): Format has been applied to source files ([#103](https://github.com/QuickSpot/walter-arduino/pull/103))
+
+### Bug Fixes
+
+- fix(MQTT): mqttSubscribe ([#87](https://github.com/QuickSpot/walter-arduino/pull/87))
+- fix(MQTT): mqttConfig memory stability for multiple calls ([#89](https://github.com/QuickSpot/walter-arduino/pull/89))
+- fix(WalterModem): runCmd ([#100](https://github.com/QuickSpot/walter-arduino/pull/100))
+- fix: missing include esp_log.h ([#131](https://github.com/QuickSpot/walter-esp-idf/pull/131))
+- fix(WalterModem): Parser refactor ([#104](https://github.com/QuickSpot/walter-arduino/pull/104))
+
+### Examples
+
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] aws_mqtt example ([#86](https://github.com/QuickSpot/walter-arduino/pull/86))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] added mqtts base example ([#88](https://github.com/QuickSpot/walter-arduino/pull/88))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(HTTPS_QUERY): Configures TLS and queries HTTPS ([#90](https://github.com/QuickSpot/walter-arduino/pull/90))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(Sesor Shield): removed ([#91](https://github.com/QuickSpot/walter-arduino/pull/91))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(HTTP): Unified annd refactored http examples ([#92](https://github.com/QuickSpot/walter-arduino/pull/92))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(HTTPS): Unified and refactored https example for GET and POST requests ([#93](https://github.com/QuickSpot/walter-arduino/pull/93))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(MQTT) MQTT annd MQTTS example consistency updates ([#94](https://github.com/QuickSpot/walter-arduino/pull/94))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(UDP): refactored udp to work with walterdemo and standard ([#95](https://github.com/QuickSpot/walter-arduino/pull/95))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(TCP): refactored tcp to work with walterdemo and standard ([#96](https://github.com/QuickSpot/walter-arduino/pull/96))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(UDP/TCP): Validity check for cellinfo added ([#97](https://github.com/QuickSpot/walter-arduino/pull/97))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(Positioning): refactor and standardization ([#98](https://github.com/QuickSpot/walter-arduino/pull/98))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(BlueCherry): clang styling and standardized lteConnect ([#99](https://github.com/QuickSpot/walter-arduino/pull/99))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(walter_feels): refactored GNSS and ltc4015 driver ([#101](https://github.com/QuickSpot/walter-arduino/pull/101))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(example): udp and tcp added delay before cellinfo fetch ([#102](https://github.com/QuickSpot/walter-arduino/pull/102))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(UDP): refactor ([#137](https://github.com/QuickSpot/walter-esp-idf/pull/137))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(TCP): refactor ([#138](https://github.com/QuickSpot/walter-esp-idf/pull/138))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(HTTP): refactor ([#139](https://github.com/QuickSpot/walter-esp-idf/pull/139))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(HTTPS): refactor ([#140](https://github.com/QuickSpot/walter-esp-idf/pull/140))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(mqtt): refactored mqtt and new mqtts example ([#141](https://github.com/QuickSpot/walter-esp-idf/pull/141))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(positioning): refactor ([#143](https://github.com/QuickSpot/walter-esp-idf/pull/143))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(walter_feels): update ([#105](https://github.com/QuickSpot/walter-arduino/pull/105))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(bluecherry): consistency ([#145](https://github.com/QuickSpot/walter-esp-idf/pull/145))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(mfu): Add modem firmware flash example ([#146](https://github.com/QuickSpot/walter-esp-idf/pull/146))
