@@ -225,3 +225,4 @@ This is the Changelog for WalterModem
 - [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(mqtt): refactored mqtt and new mqtts example ([#141](https://github.com/QuickSpot/walter-esp-idf/pull/141))
 - [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(positioning): refactor ([#143](https://github.com/QuickSpot/walter-esp-idf/pull/143))
 - [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(walter_feels): update ([#105](https://github.com/QuickSpot/walter-arduino/pull/105))
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(bluecherry): consistency ([#145](https://github.com/QuickSpot/walter-esp-idf/pull/145))
