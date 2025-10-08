@@ -222,6 +222,9 @@ CONFIG_UINT8(WALTER_MODEM_MAX_COAP_PROFILES, 3)
  */
 CONFIG_UINT8(WALTER_MODEM_COAP_MAX_PENDING_RINGS, 8)
 
+#define WALTER_MODEM_COAP_RING_QUEUE_SIZE                                                          \
+  WALTER_MODEM_COAP_MAX_PENDING_RINGS * sizeof(WalterModemCoAPRing)
+
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
@@ -243,13 +246,10 @@ CONFIG_UINT8(WALTER_MODEM_MAX_SOCKETS, 6)
 /**
  * @brief The maximum number of rings a socket profile will store.
  */
-CONFIG_UINT8(WALTER_MODEM_MAX_SOCKET_RINGS, 8)
+CONFIG_UINT8(WALTER_MODEM_SOCKET_MAX_PENDING_RINGS, 8)
 
-/**
- * @brief The size in bytes of the task queue.
- */
 #define WALTER_MODEM_SOCKET_RING_QUEUE_SIZE                                                        \
-  WALTER_MODEM_MAX_SOCKET_RINGS * sizeof(WalterModemSocketRing)
+  WALTER_MODEM_SOCKET_MAX_PENDING_RINGS * sizeof(WalterModemSocketRing)
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
@@ -322,6 +322,10 @@ CONFIG_UINT8(WALTER_MODEM_MQTT_MIN_PREF_KEEP_ALIVE, 20)
  * @brief The maximum allowed mqtt topics to subscribe to.
  */
 CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
+
+#define WALTER_MODEM_MQTT_RING_QUEUE_SIZE                                                          \
+  WALTER_MODEM_MQTT_MAX_PENDING_RINGS * sizeof(WalterModemMQTTRing)
+
 #endif
 
 // The following variables are fixed by bluecherry
@@ -2117,7 +2121,7 @@ typedef struct {
    * @brief The CoAP message size.
    */
   uint16_t length;
-} WalterModemCoapRing;
+} WalterModemCoAPRing;
 
 /**
  * @brief This structure represents a CoAP context with it's current state info.
@@ -2131,7 +2135,7 @@ typedef struct {
   /**
    * @brief Up to 8 CoAP ring notifications.
    */
-  WalterModemCoapRing rings[WALTER_MODEM_COAP_MAX_PENDING_RINGS];
+  WalterModemCoAPRing rings[WALTER_MODEM_COAP_MAX_PENDING_RINGS];
 } WalterModemCoapContext;
 #endif
 #pragma endregion
@@ -2191,7 +2195,7 @@ typedef struct {
    * @brief Is this ring free for usage.
    */
   bool free = true;
-} WalterModemMqttRing;
+} WalterModemMQTTRing;
 
 typedef struct {
   /**
@@ -2283,10 +2287,6 @@ typedef struct {
    */
   uint16_t ringSize = 0;
 } WalterModemSocketRing;
-
-typedef struct {
-  WalterModemSocketRing
-} WalterModemRing;
 
 /**
  * @brief This structure represents a socket.
@@ -2840,6 +2840,40 @@ typedef struct {
   uint8_t mem[WALTER_MODEM_SOCKET_RING_QUEUE_SIZE] = { 0 };
 } WalterModemSocketRingQueue;
 
+typedef struct {
+  /**
+   * @brief The queue handle.
+   */
+  QueueHandle_t handle;
+
+  /**
+   * @brief The memory handle.
+   */
+  StaticQueue_t memHandle;
+
+  /**
+   * @brief The statically allocated queue memory.
+   */
+  uint8_t mem[WALTER_MODEM_MQTT_RING_QUEUE_SIZE] = { 0 };
+} WalterModemMQTTRingQueue;
+
+typedef struct {
+  /**
+   * @brief The queue handle.
+   */
+  QueueHandle_t handle;
+
+  /**
+   * @brief The memory handle.
+   */
+  StaticQueue_t memHandle;
+
+  /**
+   * @brief The statically allocated queue memory.
+   */
+  uint8_t mem[WALTER_MODEM_COAP_RING_QUEUE_SIZE] = { 0 };
+} WalterModemCOAPRingQueue;
+
 /**
  * @brief This structure represents the command queue. This queue is used inside the libraries
  * processing task to manage incoming and pending commands.
@@ -2982,7 +3016,7 @@ private:
   /**
    * @brief MQTT incoming messages for subscribed topics backlog.
    */
-  static inline WalterModemMqttRing _mqttRings[WALTER_MODEM_MQTT_MAX_PENDING_RINGS];
+  static inline WalterModemMQTTRing _mqttRings[WALTER_MODEM_MQTT_MAX_PENDING_RINGS];
 
   /**
    * @brief MQTT subscribed topics
@@ -3064,11 +3098,36 @@ private:
    */
   static inline WalterModemPDPContext* _pdpCtx = NULL;
 
-#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
   /**
-   * @brief The set with sockets.
+   * @brief The task in which ring URCs are processed.
    */
-  static inline WalterModemSocket _socketSet[WALTER_MODEM_MAX_SOCKETS] = {};
+  static inline TaskHandle_t _ringQueueTask;
+
+  /**
+   * @brief Handle used to manage the queue processing task stack.
+   */
+  static inline StaticTask_t _ringQueueTaskBuf;
+
+  /**
+   * @brief The statically allocated queue processing task stack memory.
+   */
+  static inline StackType_t _ringQueueTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
+
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS || CONFIG_WALTER_MODEM_ENABLE_MQTT ||                       \
+    CONFIG_WALTER_MODEM_ENABLE_COAP
+  /**
+   * @brief The task that retrieves data from the modem if an event handler is registered.
+   *
+   * @param args A NULL pointer.
+   */
+  static void _eventRingQueueTask(void* args);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+  /**
+   * @brief The MQTT ring URC queue.
+   */
+  static inline WalterModemMQTTRingQueue _mqttRingQueue = {};
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
@@ -3076,6 +3135,11 @@ private:
    * @brief The set with CoAP contexts.
    */
   static inline WalterModemCoapContext _coapContextSet[WALTER_MODEM_MAX_COAP_PROFILES] = {};
+
+  /**
+   * @brief The CoAP ring URC queue.
+   */
+  static inline WalterModemCOAPRingQueue _coapRingQueue = {};
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
@@ -3092,30 +3156,20 @@ private:
 
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
   /**
+   * @brief The set with sockets.
+   */
+  static inline WalterModemSocket _socketSet[WALTER_MODEM_MAX_SOCKETS] = {};
+
+  /**
    * @brief The socket which is currently in use by the library or NULL when no socket is in
    * use.
    */
   static inline WalterModemSocket* _socket = NULL;
 
   /**
-   * @brief The task in which AT commands and responses are handled.
-   */
-  static inline TaskHandle_t _ringQueueTask;
-
-  /**
-   * @brief Handle used to manage the queue processing task stack.
-   */
-  static inline StaticTask_t _ringQueueTaskBuf;
-
-  /**
-   * @brief The statically allocated queue processing task stack memory.
-   */
-  static inline StackType_t _ringQueueTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
-
-  /**
    * @brief The Socket ring URC queue.
    */
-  static inline WalterModemSocketRingQueue _ringQueue = {};
+  static inline WalterModemSocketRingQueue _socketRingQueue = {};
 #endif
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
@@ -3334,17 +3388,6 @@ private:
    * @return True on success, false on error.
    */
   static bool _socketUpdateStates();
-
-  /**
-   * @brief This is the entrypoint of the ring queue processing task.
-   *
-   * The WalterModem library relies on a seperate task for handeling ring messages from the modem
-   *
-   * @param args A NULL pointer.
-   *
-   * @return None.
-   */
-  static void _ringQueueProcessingTask(void* args);
 #endif
 #pragma endregion
 

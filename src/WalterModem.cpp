@@ -1355,6 +1355,54 @@ void WalterModem::_queueProcessingTask(void* args)
     }
   }
 }
+
+void WalterModem::_eventRingQueueTask(void* args)
+{
+  uint8_t data[1500];
+
+  while(true) {
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+    WalterModemSocketRing socketRing {};
+    if(_eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].socketHandler != nullptr
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+       || _blueCherry.bcProfileId != 0
+#endif
+    ) {
+      if(xQueueReceive(_socketRingQueue.handle, &socketRing, 0) == pdTRUE) {
+        socketReceive(socketRing.ringSize, sizeof(data), data, socketRing.profileId);
+#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+        if(socketRing.profileId == _blueCherry.bcProfileId) {
+          _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, socketRing.ringSize, data);
+          continue;
+        }
+#endif
+        _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, socketRing.profileId, socketRing.ringSize,
+                       data);
+      }
+    }
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+    WalterModemMQTTRing mqttRing {};
+    if(_eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].mqttHandler != nullptr) {
+      if(xQueueReceive(_mqttRingQueue.handle, &mqttRing, 0) == pdTRUE) {
+        mqttReceive(mqttRing.ringSize, sizeof(data), data, mqttRing.profileId);
+        _dispatchEvent(WALTER_MODEM_MQTT_EVENT_RING, mqttRing.profileId, mqttRing.ringSize, data);
+      }
+    }
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+    WalterModemCoAPRing coapRing {};
+    if(_eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].coapHandler != nullptr) {
+      if(xQueueReceive(_coapRingQueue.handle, &coapRing, 0) == pdTRUE) {
+        coapReceive(coapRing.ringSize, sizeof(data), data, coapRing.profileId);
+        _dispatchEvent(WALTER_MODEM_COAP_EVENT_RING, coapRing.profileId, coapRing.ringSize, data);
+      }
+    }
+#endif
+  }
+}
 #pragma endregion
 
 #pragma region QUEUE_CMD_RSP_PROCESSING
@@ -2614,22 +2662,13 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
       start = ++commaPos;
       dataReceived = atoi(commaPos);
     }
-    WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
-    if(handler->socketHandler != nullptr
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-       || _blueCherry.bcProfileId != 0
-#endif
-    ) {
-      WalterModemSocketRing ring {};
-      ring.profileId = sockId;
-      ring.ringSize = dataReceived;
-      sock->dataAvailable += dataReceived;
-      if(xQueueSend(_ringQueue.handle, &ring, 0)) {
-      }
-    } else {
-      sock->dataAvailable += dataReceived;
+
+    WalterModemSocketRing ring {};
+    ring.profileId = sockId;
+    ring.ringSize = dataReceived;
+    sock->dataAvailable += dataReceived;
+    xQueueSend(_socketRingQueue.handle, &ring, 0);
     }
-  }
 
   if(_buffStartsWith(buff, "+SQNSRECV: ")) {
     const char* rspStr = _buffStr(buff);
@@ -3471,9 +3510,23 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
       xQueueCreateStatic(WALTER_MODEM_TASK_QUEUE_MAX_ITEMS, sizeof(WalterModemTaskQueueItem),
                          _taskQueue.mem, &(_taskQueue.memHandle));
 
-  _ringQueue.handle =
-      xQueueCreateStatic(WALTER_MODEM_MAX_SOCKET_RINGS, sizeof(WalterModemSocketRing),
-                         _ringQueue.mem, &(_ringQueue.memHandle));
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+  _socketRingQueue.handle =
+      xQueueCreateStatic(WALTER_MODEM_SOCKET_MAX_PENDING_RINGS, sizeof(WalterModemSocketRing),
+                         _socketRingQueue.mem, &(_socketRingQueue.memHandle));
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+  _mqttRingQueue.handle =
+      xQueueCreateStatic(WALTER_MODEM_MQTT_MAX_PENDING_RINGS, sizeof(WalterModemMQTTRing),
+                         _mqttRingQueue.mem, &(_mqttRingQueue.memHandle));
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+  _coapRingQueue.handle =
+      xQueueCreateStatic(WALTER_MODEM_COAP_MAX_PENDING_RINGS, sizeof(WalterModemCoAPRing),
+                         _coapRingQueue.mem, &(_coapRingQueue.memHandle));
+#endif
 
   gpio_set_direction((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_MODE_OUTPUT);
   gpio_set_pull_mode((gpio_num_t) WALTER_MODEM_PIN_RESET, GPIO_FLOATING);
@@ -3522,8 +3575,9 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
                                              WALTER_MODEM_TASK_STACK_SIZE, NULL, 2, _queueTaskStack,
                                              &_queueTaskBuf, 0);
 #endif
-#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-  _queueTask = xTaskCreateStaticPinnedToCore(_ringQueueProcessingTask, "ringQueueProcessingTask",
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS || CONFIG_WALTER_MODEM_ENABLE_MQTT ||                       \
+    CONFIG_WALTER_MODEM_ENABLE_COAP
+  _queueTask = xTaskCreateStaticPinnedToCore(_eventRingQueueTask, "ringQueueProcessingTask",
                                              WALTER_MODEM_TASK_STACK_SIZE, NULL, 4,
                                              _ringQueueTaskStack, &_ringQueueTaskBuf, 0);
 #endif

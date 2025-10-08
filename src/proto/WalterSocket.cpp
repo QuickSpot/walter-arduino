@@ -102,23 +102,6 @@ bool WalterModem::_socketUpdateStates()
   _runCmd({ "AT+SQNSS?" }, "OK", rsp, cb, args);
   _returnAfterReply();
 }
-void WalterModem::_ringQueueProcessingTask(void* args)
-{
-  WalterModemSocketRing ring {};
-  TickType_t blockTime = pdMS_TO_TICKS(1000);
-  uint8_t data[1500];
-  while(true) {
-    if(xQueueReceive(_ringQueue.handle, &ring, blockTime) == pdTRUE) {
-      socketReceive(ring.ringSize, sizeof(data), data, ring.profileId);
-      _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_RING, ring.profileId, ring.ringSize, data);
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-      if(ring.profileId == _blueCherry.bcProfileId) {
-        _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, ring.ringSize, data);
-      }
-#endif
-    }
-  }
-}
 
 void WalterModem::_dispatchEvent(WalterModemSocketEvent event, int profileId, uint16_t dataReceived,
                                  uint8_t* dataBuffer)
@@ -312,6 +295,13 @@ bool WalterModem::socketListen(WalterModemRsp* rsp, walterModemCb cb, void* args
   }
 }
 
+/**
+ * TODO: (minor) BREAKING CHANGE
+ *
+ * socketAvailable should return the amount of messages available, not the amount of bytes since it
+ * is a bad representation of how much is received. If two messages get received back to back, the
+ * current counter just adds them up.
+ */
 uint16_t WalterModem::socketAvailable(int profileId)
 {
   WalterModemSocket* sock = _socketGet(profileId);
@@ -321,6 +311,17 @@ uint16_t WalterModem::socketAvailable(int profileId)
   return sock->dataAvailable;
 }
 
+/**
+ * TODO: (major) BREAKING CHANGE
+ *
+ * rename to socketDidRing for consistency with MQTT and CoAP. or rename those to ...Receive()
+ *
+ * FIFO behavior:
+ * should only retrieve the most oldest message and return. subsequent calls will get the next
+ * message(s).
+ *
+ * profileId should either be the return value, or should be an output parameter.
+ */
 bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
                                 int profileId, WalterModemRsp* rsp)
 {
