@@ -76,7 +76,7 @@ WalterModemSocket* WalterModem::_socketGet(int id)
   }
 
   for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
-    if(_socketSet[i].state != WALTER_MODEM_SOCKET_STATE_FREE && _socketSet[i].id == id) {
+    if(_socketSet[i].id == id) {
       _socket = _socketSet + i;
       return _socketSet + i;
     }
