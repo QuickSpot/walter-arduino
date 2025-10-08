@@ -1550,7 +1550,7 @@ typedef void (*walterModemCoAPEventHandler)(WalterModemCoapEvent ev, int profile
  * @brief Header of an Socket event handler
  *
  * @param ev The Type of SocketEvent
- * @param socketId the id of the Socket
+ * @param profileId the id of the Socket
  * @param dataReceived The amount of data that has been received
  * @param dataBuffer The data buffer to hold the data in
  * @param args Optional arguments set by the application layer.
@@ -1560,7 +1560,7 @@ typedef void (*walterModemCoAPEventHandler)(WalterModemCoapEvent ev, int profile
  *
  * @return None.
  */
-typedef void (*walterModemSocketEventHandler)(WalterModemSocketEvent ev, int socketId,
+typedef void (*walterModemSocketEventHandler)(WalterModemSocketEvent ev, int profileId,
                                               uint16_t dataReceived, uint8_t* dataBuffer,
                                               void* args);
 #endif
@@ -1927,7 +1927,7 @@ typedef struct {
   /**
    * @brief The UDP socket ID of the bluecherry CoAP socket.
    */
-  int bcSocketId = 0;
+  int bcProfileId = 0;
 
   /**
    * @brief The TLS profile used by the BlueCherry connection.
@@ -2284,6 +2284,10 @@ typedef struct {
   uint16_t ringSize = 0;
 } WalterModemSocketRing;
 
+typedef struct {
+  WalterModemSocketRing
+} WalterModemRing;
+
 /**
  * @brief This structure represents a socket.
  */
@@ -2528,7 +2532,7 @@ union WalterModemRspData {
   /**
    * @brief The ID of a socket.
    */
-  int socketId;
+  int profileId;
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
   /**
@@ -3891,7 +3895,7 @@ private:
    *
    *
    */
-  static void _dispatchEvent(WalterModemSocketEvent event, int socketId, uint16_t dataReceived,
+  static void _dispatchEvent(WalterModemSocketEvent event, int profileId, uint16_t dataReceived,
                              uint8_t* dataBuffer);
 #endif
 #pragma endregion
@@ -4742,14 +4746,14 @@ public:
    * @param exchangeTimeout The maximum number of seconds this socket can be inactive.
    * @param connTimeout The maximum number of seconds this socket can try to connect.
    * @param sendDelayMs The number of milliseconds send delay.
-   * @param socketId The socket identifier. -1 to reserve a new one.
+   * @param profileId The socket identifier. -1 to reserve a new one.
    *
    * @return True on success, false otherwise.
    */
   static bool socketConfig(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
                            int pdpCtxId = 1, uint16_t mtu = 300, uint16_t exchangeTimeout = 90,
                            uint16_t connTimeout = 60, uint16_t sendDelayMs = 5000,
-                           int socketId = -1);
+                           int profileId = -1);
 
   /**
    * @brief Configure the socket extended parameters.
@@ -4759,7 +4763,7 @@ public:
    * @param rsp Optional modem response structure to save the result in.
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
-   * @param socketId The id of the socket to connect or -1 to re-use the last one.
+   * @param profileId The id of the socket to connect or -1 to re-use the last one.
    * @param ringMode The format of the ring notification.
    * @param recvMode The data recv mode of the socket
    * @param keepAlive The keepAlive time (currently unused)
@@ -4769,7 +4773,7 @@ public:
    * @return True on success, false otherwise.
    */
   static bool socketConfigExtended(
-      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL, int socketId = -1,
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL, int profileId = -1,
       WalterModemSocketRingMode ringMode = WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT,
       WalterModemSocketRecvMode recvMode = WALTER_MODEM_SOCKET_RECV_MODE_TEXT, int keepAlive = 0,
       WalterModemSocketListenMode listenMode = WALTER_MODEM_SOCKET_LISTEN_MODE_DISABLED,
@@ -4784,13 +4788,13 @@ public:
    * @param rsp Optional modem response structure to save the result in.
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
-   * @param socketId The id of the socket to connect or -1 to re-use the last one.
+   * @param profileId The id of the socket to connect or -1 to re-use the last one.
    * @param profileId The TLS profile id to use.
    * @param enableTLS True to enable TLS, false to disable it.
    *
    * @return True on success, false otherwise.
    */
-  static bool socketConfigSecure(bool enableTLS, int profileId = 1, int socketId = -1,
+  static bool socketConfigSecure(bool enableTLS, int profileId = 1, int profileId = -1,
                                  WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                  void* args = NULL);
 
@@ -4809,7 +4813,7 @@ public:
    * @param protocol The protocol to use, UDP by default.
    * @param acceptAnyRemote Determines whether receive/send UDP datagrams from/to another µ
    * address than remoteHost:remotePort are allowed.
-   * @param socketId The id of the socket to connect or -1 to re-use the last one.
+   * @param profileId The id of the socket to connect or -1 to re-use the last one.
    *
    * @return True on success, false otherwise.
    */
@@ -4818,7 +4822,7 @@ public:
       WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
       WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_UDP,
       WalterModemSocketAcceptAnyRemote acceptAnyRemote = WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
-      int socketId = -1);
+      int profileId = -1);
 
   /**
    * @brief Close a socket.
@@ -4829,7 +4833,7 @@ public:
    * @param rsp Optional modem response structure to save the result in.
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
-   * @param socketId The id of the socket to close or -1 to re-use the last one.
+   * @param profileId The id of the socket to close or -1 to re-use the last one.
    *
    * @return True on success, false otherwise.
    *
@@ -4837,7 +4841,7 @@ public:
    * the modem state.
    */
   static bool socketClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
-                          int socketId = -1);
+                          int profileId = -1);
 
   /**
    * @brief Send data over a socket.
@@ -4852,7 +4856,7 @@ public:
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
    * @param rai The release assistance information.
-   * @param socketId The id of the socket to close or -1 to re-use the last one.
+   * @param profileId The id of the socket to close or -1 to re-use the last one.
    *
    * @return True on success, false otherwise.
    *
@@ -4860,7 +4864,7 @@ public:
    */
   static bool socketSend(uint8_t* data, uint32_t dataSize, WalterModemRsp* rsp = NULL,
                          walterModemCb cb = NULL, void* args = NULL,
-                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, int socketId = -1);
+                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, int profileId = -1);
 
   /**
    * @brief Send a string over a socket.
@@ -4874,13 +4878,13 @@ public:
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
    * @param rai The release assistance information.
-   * @param socketId The id of the socket to close or -1 to re-use the last one.
+   * @param profileId The id of the socket to close or -1 to re-use the last one.
    *
    * @return True on success, false otherwise.
    */
   static bool socketSend(char* str, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                          void* args = NULL, WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO,
-                         int socketId = -1);
+                         int profileId = -1);
 
   /**
    * @brief accepts an incomming socket connetion.
@@ -4890,12 +4894,12 @@ public:
    * @param rsp Optional modem response structure to save the result in.
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
-   * @param socketId The id of the socket to close or -1 to re-use the last one.
+   * @param profileId The id of the socket to close or -1 to re-use the last one.
    *
    * @warning This function must be preceded by a call to socketListen.
    */
   static bool socketAccept(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
-                           int socketId = -1, bool commandMode = false);
+                           int profileId = -1, bool commandMode = false);
 
   /**
    * @brief This function listens for incomming socket connections.
@@ -4903,7 +4907,7 @@ public:
    * @param rsp Optional modem response structure to save the result in.
    * @param cb Optional callback function, if set this function will not block.
    * @param args Optional argument to pass to the callback.
-   * @param socketId The id of the socket to listen or -1 to re-use the last one.
+   * @param profileId The id of the socket to listen or -1 to re-use the last one.
    * @param protocol The protocol of the listening socket.
    * @param listenState The state to listen on.
    * @param socketListenPort The port to listen on.
@@ -4912,11 +4916,11 @@ public:
    */
   static bool
   socketListen(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
-               int socketId = -1, WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_TCP,
+               int profileId = -1, WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_TCP,
                WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
                int socketListenPort = 0);
 
-  static uint16_t socketAvailable(int socketId = -1);
+  static uint16_t socketAvailable(int profileId = -1);
 
   /**
    * @brief Receive data from an incomming socket connection
@@ -4924,7 +4928,7 @@ public:
    * @param receiveCount the amount of bytes to receive.
    * @param targetBufSize The size of the target buffer.
    * @param targetBuf The target buffer to write the data to
-   * @param socketId The socket id to receive from.
+   * @param profileId The socket id to receive from.
    * @param rsp Optional modem response structure to save the result in.
    *
    * @return True on success, false otherwise.
@@ -4933,18 +4937,18 @@ public:
    * handler to keep track of the available bytes)
    */
   static bool socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
-                            int socketId = -1, WalterModemRsp* rsp = NULL);
+                            int profileId = -1, WalterModemRsp* rsp = NULL);
 
   /**
    * @brief This function updates all the socketStates and returns the current state for the
    * requested socket.
    *
-   * @param socketId The socket id to retrieve the current state.
+   * @param profileId The socket id to retrieve the current state.
    *
    * @return The socket state.
    *
    */
-  static WalterModemSocketState socketGetState(int socketId = 0);
+  static WalterModemSocketState socketGetState(int profileId = 0);
 
   /**
    * @brief this function resumes a suspended socketConnection.
@@ -4954,7 +4958,7 @@ public:
    *
    * @return True on success, false otherwise.
    */
-  static bool socketResume(int socketId = -1, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+  static bool socketResume(int profileId = -1, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                            void* args = NULL);
 #endif
 #pragma endregion
