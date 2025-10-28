@@ -66,14 +66,14 @@ bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t ta
 {
   ESP_LOGW("DEPRECATION",
            "this coapDidRing method is deprecated and will be removed in future releases. Use "
-           "coapReceiveMessage instead.");
+           "coapReceiveMessage(...) instead.");
 
   int receive_count = 0;
   return coapReceiveMessage(profileId, targetBuf, targetBufSize, &receive_count, rsp, NULL, NULL);
 }
 
-bool WalterModem::coapReceiveMessage(uint8_t profile_id, uint8_t* buf, uint16_t buf_size,
-                                     int* receive_count, WalterModemRsp* rsp, walterModemCb cb,
+bool WalterModem::coapReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t buf_size,
+                                     size_t* receive_count, WalterModemRsp* rsp, walterModemCb cb,
                                      void* args)
 {
   if(profile_id == 0) {

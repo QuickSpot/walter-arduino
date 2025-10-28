@@ -322,29 +322,17 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
   return socketReceive(profileId, targetBuf, targetBufSize, &receiveCount, rsp, NULL, NULL);
 }
 
-bool WalterModem::socketReceive(int profile_id, uint8_t* buf, size_t buf_size, int* receive_count,
-                                WalterModemRsp* rsp, walterModemCb cb, void* cb_args)
+bool WalterModem::socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                                size_t* receive_count, WalterModemRsp* rsp, walterModemCb cb,
+                                void* cb_args)
 {
-  uint16_t dataToRead;
   WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
-  if(buf_size < *receive_count || *receive_count > 1500) {
-    _returnState(WALTER_MODEM_STATE_NO_MEMORY);
-  }
-
-  dataToRead = (*receive_count > sock->dataAvailable) ? sock->dataAvailable : *receive_count;
-
-  if(dataToRead == 0) {
-    return true;
-  }
-
-  sock->dataAvailable -= dataToRead;
-
-  _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(*receive_count)), "+SQNSRECV:", rsp,
-          cb, cb_args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
+  _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(buf_size)), "OK", rsp, cb, cb_args,
+          NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, receive_count);
   _returnAfterReply();
 }
 

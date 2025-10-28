@@ -184,14 +184,14 @@ bool WalterModem::mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t ta
 {
   ESP_LOGW("DEPRECATION",
            "this mqttDidRing method is deprecated and will be removed in future releases. Use "
-           "mqttReceiveMessage instead.");
+           "mqttReceiveMessage(...) instead.");
 
   int receive_count = 0;
   return mqttReceiveMessage(topic, targetBuf, targetBufSize, &receive_count, rsp, NULL, NULL);
 }
 
-bool WalterModem::mqttReceiveMessage(const char* topic, uint8_t* buf, uint16_t buf_size,
-                                     int* receive_count, WalterModemRsp* rsp, walterModemCb cb,
+bool WalterModem::mqttReceiveMessage(const char* topic, uint8_t* buf, size_t buf_size,
+                                     size_t* receive_count, WalterModemRsp* rsp, walterModemCb cb,
                                      void* cb_args)
 {
   uint8_t idx;

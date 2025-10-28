@@ -4357,18 +4357,18 @@ public:
    *
    * This function will receive MQTT data from the modem buffer for a specific topic.
    *
-   * @param topic The topic to receive data from.
-   * @param buf User buffer to store the received data.
-   * @param buf_size Size of the buffer (maximum bytes to receive).
-   * @param receive_count Number of bytes actually received.
-   * @param rsp Optional modem response structure to store the result.
-   * @param cb Optional callback function; if set, this function will not block.
-   * @param cb_args Optional argument to pass to the callback.
+   * @param[in] topic The topic to receive data from.
+   * @param[out] buf User buffer to store the received data.
+   * @param[in] buf_size Size of the buffer (maximum bytes to receive).
+   * @param[out] receive_count Number of bytes actually received.
+   * @param[out] rsp Optional modem response structure to store the result.
+   * @param[in] cb Optional callback function; if set, this function will not block.
+   * @param[in] cb_args Optional argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool mqttReceiveMessage(const char* topic, uint8_t* buf, uint16_t buf_size,
-                                 int* receive_count, WalterModemRsp* rsp = NULL,
+  static bool mqttReceiveMessage(const char* topic, uint8_t* buf, size_t buf_size,
+                                 size_t* receive_count, WalterModemRsp* rsp = NULL,
                                  walterModemCb cb = NULL, void* cb_args = NULL);
 #endif
 #pragma endregion
@@ -4792,8 +4792,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool coapReceiveMessage(uint8_t profile_id, uint8_t* buf, uint16_t buf_size,
-                                 int* receive_count, WalterModemRsp* rsp = NULL,
+  static bool coapReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t buf_size,
+                                 size_t* receive_count, WalterModemRsp* rsp = NULL,
                                  walterModemCb cb = NULL, void* cb_args = NULL);
 #endif
 #pragma endregion
@@ -5014,7 +5014,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size, int* receive_count,
+  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size, size_t* receive_count,
                             WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                             void* cb_args = NULL);
 

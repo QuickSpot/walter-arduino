@@ -2656,7 +2656,6 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     WalterModemSocketRing ring {};
     ring.profileId = sockId;
     ring.ringSize = dataReceived;
-    sock->dataAvailable += dataReceived;
     xQueueSend(_socketRingQueue.handle, &ring, 0);
   }
 
@@ -2673,8 +2672,6 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     int sockId = atoi(start);
     uint16_t dataReceived = 0;
 
-    WalterModemSocket* sock = _socketGet(sockId);
-
     char* commaPos = strchr(start, ',');
     if(commaPos) {
       *commaPos = '\0';
@@ -2682,10 +2679,6 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
       dataReceived = atoi(start);
     }
 
-    WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
-    if(handler->socketHandler != nullptr) {
-      sock->dataAvailable -= dataReceived;
-    }
     /*
      * If data and dataSize are null, we cannot store the result. We can only hope the user
      * is using a callback which has access to the raw buffer.
