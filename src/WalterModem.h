@@ -2966,7 +2966,6 @@ private:
 
   static inline size_t _receivedPayloadSize = 0;
 
-  static inline size_t _expectedPayloadSize = 0;
   /**
    * @brief We remember the configured watchdog timeout.
    */
@@ -4343,22 +4342,34 @@ public:
                             walterModemCb cb = NULL, void* args = NULL);
 
   /**
-   * @brief Poll if there were incoming MQTT messages.
+   * @brief Receive data from an incoming MQTT connection.
    *
-   * Poll if the modem has reported any incoming MQTT messages received on topics that we are
-   * subscribed on.
-   * @warning when a QoS 0 message was received it must be retrieved before the next message
-   * on the same topic.
-   *
-   * @param topic Topic to poll
-   * @param targetBuf Target buffer to write incoming mqtt data in
-   * @param targetBufSize Size of the target buffer
-   * @param rsp Optional modem response structure to save the result in.
-   *
-   * @return True on success, false otherwise.
+   * @deprecated This function is deprecated. Examples implementing this function have been updated
+   * to use the new signature for reference.
    */
+  [[deprecated("Use mqttReceiveMessage(topic, targetBuf, targetBufSize, receive_count, rsp, cb, "
+               "cb_args) instead")]]
   static bool mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t targetBufSize,
                           WalterModemRsp* rsp = NULL);
+
+  /**
+   * @brief Receives MQTT data from the modem buffer.
+   *
+   * This function will receive MQTT data from the modem buffer for a specific topic.
+   *
+   * @param topic The topic to receive data from.
+   * @param buf User buffer to store the received data.
+   * @param buf_size Size of the buffer (maximum bytes to receive).
+   * @param receive_count Number of bytes actually received.
+   * @param rsp Optional modem response structure to store the result.
+   * @param cb Optional callback function; if set, this function will not block.
+   * @param cb_args Optional argument to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool mqttReceiveMessage(const char* topic, uint8_t* buf, uint16_t buf_size,
+                                 int* receive_count, WalterModemRsp* rsp = NULL,
+                                 walterModemCb cb = NULL, void* cb_args = NULL);
 #endif
 #pragma endregion
 
@@ -4758,18 +4769,32 @@ public:
                            WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
-   * @brief Fetch incoming CoAP messages, if any.
+   * @brief Receive data from an incoming CoAP connection.
    *
-   * @param profileId Profile for which to get incoming data (1 or 2)
-   * @param targetBuf User buffer to store response in.
-   * @param targetBufSize Size of the user buffer, including space for a terminating 0-byte.
-   * @param rsp Optional modem response structure to save the result in.
-   *
-   * @return True on success, false if no data arrived, if there was an error or if no data
-   * is expected (eg no ring received).
+   * @deprecated This function is deprecated. Examples implementing this function have been updated
+   * to use the new signature for reference.
    */
+  [[deprecated("Use coapReceiveMessage(profile_id, buf, buf_size, receive_count, rsp, cb, cb_args) "
+               "instead")]]
   static bool coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                           WalterModemRsp* rsp = NULL);
+
+  /**
+   * @brief Receives CoAP data from the modem buffer.
+   *
+   * @param[in] profile_id CoAP profile identifier to receive from.
+   * @param[out] buf User buffer to store the received data.
+   * @param[in] buf_size Size of the buffer (maximum bytes to receive).
+   * @param[out] receive_count Number of bytes actually received.
+   * @param[out] rsp Optional modem response structure to store the result.
+   * @param[in] cb Optional callback function; if set, this function will not block.
+   * @param[in] cb_args Optional argument to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool coapReceiveMessage(uint8_t profile_id, uint8_t* buf, uint16_t buf_size,
+                                 int* receive_count, WalterModemRsp* rsp = NULL,
+                                 walterModemCb cb = NULL, void* cb_args = NULL);
 #endif
 #pragma endregion
 
@@ -4966,21 +4991,32 @@ public:
   static uint16_t socketAvailable(int profileId = -1);
 
   /**
-   * @brief Receive data from an incomming socket connection
+   * @brief Receive data from an incoming socket connection.
    *
-   * @param receiveCount the amount of bytes to receive.
-   * @param targetBufSize The size of the target buffer.
-   * @param targetBuf The target buffer to write the data to
-   * @param profileId The socket id to receive from.
-   * @param rsp Optional modem response structure to save the result in.
-   *
-   * @return True on success, false otherwise.
-   *
-   * @warning the receiveCount cannot be larger then the amount of bytes left to receive (use event
-   * handler to keep track of the available bytes)
+   * @deprecated This function is deprecated. Examples implementing this function have been updated
+   * to use the new signature for reference.
    */
+  [[deprecated(
+      "Use socketReceive(profile_id, buf, buf_size, receive_count, rsp, cb, cb_args) instead")]]
   static bool socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
                             int profileId = -1, WalterModemRsp* rsp = NULL);
+
+  /**
+   * @brief Receives socket data from the modem buffer.
+   *
+   * @param[in] profile_id Socket profile identifier to receive from.
+   * @param[out] buf User buffer to store the received data.
+   * @param[in] buf_size Size of the buffer (maximum bytes to receive).
+   * @param[out] receive_count Number of bytes actually received.
+   * @param[out] rsp Optional modem response structure to store the result.
+   * @param[in] cb Optional callback function; if set, this function will not block.
+   * @param[in] cb_args Optional argument to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size, int* receive_count,
+                            WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                            void* cb_args = NULL);
 
   /**
    * @brief This function updates all the socketStates and returns the current state for the

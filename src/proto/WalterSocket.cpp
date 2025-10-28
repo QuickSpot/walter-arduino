@@ -311,37 +311,31 @@ uint16_t WalterModem::socketAvailable(int profileId)
   return sock->dataAvailable;
 }
 
-/**
- * TODO: (major) BREAKING CHANGE
- *
- * rename to socketDidRing for consistency with MQTT and CoAP. or rename those to ...Receive()
- *
- * FIFO behavior:
- * should only retrieve the most oldest message and return. subsequent calls will get the next
- * message(s).
- *
- * profileId should either be the return value, or should be an output parameter.
- */
 bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
                                 int profileId, WalterModemRsp* rsp)
 {
-  /* this is by definition a blocking call without callback.
-   * it is only used when the arduino user is not taking advantage of
-   * the (TBI) ring notification events.
-   */
-  walterModemCb cb = NULL;
-  void* args = NULL;
+  ESP_LOGW("DEPRECATION",
+           "this socketReceive method is deprecated and will be removed in future releases. Use "
+           "socketReceive(int profile_id, uint8_t* buf, size_t buf_size, int *receive_count, "
+           "WalterModemRsp* rsp, walterModemCb cb, void* cb_args) instead.");
+
+  return socketReceive(profileId, targetBuf, targetBufSize, &receiveCount, rsp, NULL, NULL);
+}
+
+bool WalterModem::socketReceive(int profile_id, uint8_t* buf, size_t buf_size, int* receive_count,
+                                WalterModemRsp* rsp, walterModemCb cb, void* cb_args)
+{
   uint16_t dataToRead;
-  WalterModemSocket* sock = _socketGet(profileId);
+  WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
-  if(targetBufSize < receiveCount || receiveCount > 1500) {
+  if(buf_size < *receive_count || *receive_count > 1500) {
     _returnState(WALTER_MODEM_STATE_NO_MEMORY);
   }
 
-  dataToRead = (receiveCount > sock->dataAvailable) ? sock->dataAvailable : receiveCount;
+  dataToRead = (*receive_count > sock->dataAvailable) ? sock->dataAvailable : *receive_count;
 
   if(dataToRead == 0) {
     return true;
@@ -349,11 +343,8 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
 
   sock->dataAvailable -= dataToRead;
 
-  // The number of received bytes attempts to be read from within the RX parser.
-  // This will be used as a fallback if it cannot read it.
-  _expectedPayloadSize = dataToRead;
-  _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(receiveCount)), "+SQNSRECV:", rsp,
-          cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, targetBuf, targetBufSize);
+  _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(*receive_count)), "+SQNSRECV:", rsp,
+          cb, cb_args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
   _returnAfterReply();
 }
 

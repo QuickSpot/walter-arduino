@@ -1079,10 +1079,7 @@ bool WalterModem::_expectingPayload()
   // Check for "+SQNSRECV: "
   if(strncmp((const char*) _parserData.buf, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
     // Check for "+SQNSRECV: <ignored>,<length>"
-    if(sscanf((const char*) _parserData.buf, "+SQNSRECV: %*d,%d", &_receivedPayloadSize) != 1) {
-      // Fall back to the expected payload size if the length could not be found.
-      _receivedPayloadSize = _expectedPayloadSize;
-    }
+    sscanf((const char*) _parserData.buf, "+SQNSRECV: %*d,%d", &_receivedPayloadSize);
     return true;
   }
 
@@ -1090,24 +1087,17 @@ bool WalterModem::_expectingPayload()
   if(strncmp((const char*) _parserData.buf,
              "+SQNSMQTTRCVMESSAGE: ", strlen("+SQNSMQTTRCVMESSAGE: ")) == 0) {
     // Check for "+SQNSMQTTRCVMESSAGE=0,<ignored>,<length>"
-    if(sscanf((const char*) _parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%*[^,],%d",
-              &_receivedPayloadSize) != 1) {
-      // Fall back to the expected payload size if the length could not be found.
-      _receivedPayloadSize = _expectedPayloadSize;
-    }
+    sscanf((const char*) _parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%*[^,],%d", &_receivedPayloadSize);
     return true;
   }
 
   // Check for "+SQNCOAPRCV: "
   if(strncmp((const char*) _parserData.buf, "+SQNCOAPRCV: ", strlen("+SQNCOAPRCV: ")) == 0) {
     // Check for "+SQNCOAPRCV: <ignored>,<length>"
-    if(sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,,%*d,%*d,%*d,%d",
-              &_receivedPayloadSize) != 1 &&
-       sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,%*[^,],%*d,%*d,%*d,%d",
-              &_receivedPayloadSize) != 1) {
-      // Fall back to the expected payload size if the length could not be found.
-      _receivedPayloadSize = _expectedPayloadSize;
-    }
+    sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,,%*d,%*d,%*d,%d",
+           &_receivedPayloadSize);
+    sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,%*[^,],%*d,%*d,%*d,%d",
+           &_receivedPayloadSize);
     return true;
   }
 
@@ -2668,7 +2658,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     ring.ringSize = dataReceived;
     sock->dataAvailable += dataReceived;
     xQueueSend(_socketRingQueue.handle, &ring, 0);
-    }
+  }
 
   if(_buffStartsWith(buff, "+SQNSRECV: ")) {
     const char* rspStr = _buffStr(buff);

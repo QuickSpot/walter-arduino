@@ -182,14 +182,18 @@ bool WalterModem::mqttSubscribe(const char* topicString, uint8_t qos, WalterMode
 bool WalterModem::mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t targetBufSize,
                               WalterModemRsp* rsp)
 {
-  /* this is by definition a blocking call without callback.
-   * it is only used when the arduino user is not taking advantage of
-   * the (TBI) ring notification events which give access to the raw
-   * buffer (a targetBuf is not needed).
-   */
-  walterModemCb cb = NULL;
-  void* args = NULL;
+  ESP_LOGW("DEPRECATION",
+           "this mqttDidRing method is deprecated and will be removed in future releases. Use "
+           "mqttReceiveMessage instead.");
 
+  int receive_count = 0;
+  return mqttReceiveMessage(topic, targetBuf, targetBufSize, &receive_count, rsp, NULL, NULL);
+}
+
+bool WalterModem::mqttReceiveMessage(const char* topic, uint8_t* buf, uint16_t buf_size,
+                                     int* receive_count, WalterModemRsp* rsp, walterModemCb cb,
+                                     void* cb_args)
+{
   uint8_t idx;
   for(idx = 0; idx < WALTER_MODEM_MQTT_MAX_PENDING_RINGS; idx++) {
     if(!strncmp(topic, _mqttRings[idx].topic, strlen(topic)) && !_mqttRings[idx].free) {
@@ -201,21 +205,20 @@ bool WalterModem::mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t ta
     _returnState(WALTER_MODEM_STATE_NO_DATA);
   }
 
-  if(targetBufSize < _mqttRings[idx].length) {
+  if(buf_size < _mqttRings[idx].length) {
     _returnState(WALTER_MODEM_STATE_NO_MEMORY);
   }
 
   if(_mqttRings[idx].qos == 0) {
     /* no msg id means qos 0 message */
-    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)), "OK", rsp, cb, args, NULL,
-            (void*) (uintptr_t) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf,
-            _mqttRings[idx].length);
+    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)), "OK", rsp, cb, cb_args, NULL,
+            (void*) (uintptr_t) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, _mqttRings[idx].length);
 
     _returnAfterReply();
   } else {
     _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(_mqttRings[idx].messageId)),
-            "OK", rsp, cb, args, NULL, (void*) (uintptr_t) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT,
-            targetBuf, _mqttRings[idx].length);
+            "OK", rsp, cb, cb_args, NULL, (void*) (uintptr_t) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT,
+            buf, _mqttRings[idx].length);
 
     _returnAfterReply();
   }

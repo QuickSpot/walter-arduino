@@ -64,25 +64,29 @@ void WalterModem::_dispatchEvent(WalterModemCoapEvent event, int profileId)
 bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                               WalterModemRsp* rsp)
 {
-  /* this is by definition a blocking call without callback.
-   * it is only used when the arduino user is not taking advantage of
-   * the (TBI) ring notification events which give access to the raw
-   * buffer (a targetBuf is not needed).
-   */
-  walterModemCb cb = NULL;
-  void* args = NULL;
+  ESP_LOGW("DEPRECATION",
+           "this coapDidRing method is deprecated and will be removed in future releases. Use "
+           "coapReceiveMessage instead.");
 
-  if(profileId == 0) {
+  int receive_count = 0;
+  return coapReceiveMessage(profileId, targetBuf, targetBufSize, &receive_count, rsp, NULL, NULL);
+}
+
+bool WalterModem::coapReceiveMessage(uint8_t profile_id, uint8_t* buf, uint16_t buf_size,
+                                     int* receive_count, WalterModemRsp* rsp, walterModemCb cb,
+                                     void* args)
+{
+  if(profile_id == 0) {
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
-  if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
+  if(profile_id >= WALTER_MODEM_MAX_COAP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
   uint8_t ringIdx;
   for(ringIdx = 0; ringIdx < WALTER_MODEM_COAP_MAX_PENDING_RINGS; ringIdx++) {
-    if(_coapContextSet[profileId].rings[ringIdx].messageId) {
+    if(_coapContextSet[profile_id].rings[ringIdx].messageId) {
       break;
     }
   }
@@ -90,19 +94,16 @@ bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t ta
   if(ringIdx == WALTER_MODEM_COAP_MAX_PENDING_RINGS) {
     _returnState(WALTER_MODEM_STATE_NO_DATA);
   }
-  if(_coapContextSet[profileId].rings[ringIdx].length == 0) {
+  if(_coapContextSet[profile_id].rings[ringIdx].length == 0) {
     _returnState(WALTER_MODEM_STATE_OK);
   }
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profileId,
-                                 _coapContextSet[profileId].rings[ringIdx].messageId,
-                                 _coapContextSet[profileId].rings[ringIdx].length);
+  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
+                                 _coapContextSet[profile_id].rings[ringIdx].messageId,
+                                 _coapContextSet[profile_id].rings[ringIdx].length);
 
-  // The number of received bytes attempts to be read from within the RX parser.
-  // This will be used as a fallback if it cannot read it.
-  _expectedPayloadSize = _coapContextSet[profileId].rings[ringIdx].length;
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf, targetBufSize, stringsBuffer);
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, buf_size, stringsBuffer);
 
   _returnAfterReply();
 }
