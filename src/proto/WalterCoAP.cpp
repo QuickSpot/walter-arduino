@@ -47,17 +47,6 @@
 
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 #pragma region PRIVATE_METHODS
-void WalterModem::_dispatchEvent(WalterModemCoapEvent event, int profileId)
-{
-  WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_COAP;
-  if(handler->coapHandler == nullptr) {
-    return;
-  }
-
-  auto start = std::chrono::steady_clock::now();
-  handler->coapHandler(event, profileId, handler->args);
-  _checkEventDuration(start);
-}
 #pragma endregion
 
 #pragma region PUBLIC_METHODS
@@ -68,12 +57,11 @@ bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t ta
            "this coapDidRing method is deprecated and will be removed in future releases. Use "
            "coapReceiveMessage(...) instead.");
 
-  int receive_count = 0;
-  return coapReceiveMessage(profileId, targetBuf, targetBufSize, &receive_count, rsp, NULL, NULL);
+  return coapReceiveMessage(profileId, -1, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
 }
 
-bool WalterModem::coapReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t buf_size,
-                                     size_t* receive_count, WalterModemRsp* rsp, walterModemCb cb,
+bool WalterModem::coapReceiveMessage(uint8_t profile_id, int message_id, uint8_t* buf,
+                                     size_t buf_size, WalterModemRsp* rsp, walterModemCb cb,
                                      void* args)
 {
   if(profile_id == 0) {
@@ -84,26 +72,12 @@ bool WalterModem::coapReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t bu
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  uint8_t ringIdx;
-  for(ringIdx = 0; ringIdx < WALTER_MODEM_COAP_MAX_PENDING_RINGS; ringIdx++) {
-    if(_coapContextSet[profile_id].rings[ringIdx].messageId) {
-      break;
-    }
-  }
-
-  if(ringIdx == WALTER_MODEM_COAP_MAX_PENDING_RINGS) {
-    _returnState(WALTER_MODEM_STATE_NO_DATA);
-  }
-  if(_coapContextSet[profile_id].rings[ringIdx].length == 0) {
-    _returnState(WALTER_MODEM_STATE_OK);
-  }
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
-                                 _coapContextSet[profile_id].rings[ringIdx].messageId,
-                                 _coapContextSet[profile_id].rings[ringIdx].length);
+                                 message_id, buf_size);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, buf_size, stringsBuffer);
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, NULL, stringsBuffer);
 
   _returnAfterReply();
 }
@@ -218,12 +192,6 @@ bool WalterModem::coapSendData(uint8_t profileId, WalterModemCoapSendType type,
               _atNum(length)),
           "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, payload, length);
   _returnAfterReply();
-}
-
-void WalterModem::coapSetEventHandler(walterModemCoAPEventHandler handler, void* args)
-{
-  _eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].coapHandler = handler;
-  _eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].args = args;
 }
 #pragma endregion
 #endif

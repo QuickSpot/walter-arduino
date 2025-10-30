@@ -184,29 +184,6 @@ bool lteConnect()
 }
 
 /**
- * @brief Common routine to wait for and print an HTTP response.
- */
-static bool waitForHttpResponse(uint8_t profile, const char* contentType)
-{
-  Serial.print("Waiting for reply...");
-  const uint16_t maxPolls = 30;
-  for(uint16_t i = 0; i < maxPolls; i++) {
-    Serial.print(".");
-    if(modem.httpDidRing(profile, incomingBuf, sizeof(incomingBuf), &rsp)) {
-      Serial.println();
-      Serial.printf("HTTP status code (Modem): %d\r\n", rsp.data.httpResponse.httpStatus);
-      Serial.printf("Content type: %s\r\n", contentType);
-      Serial.printf("Payload:\r\n%s\r\n", incomingBuf);
-      return true;
-    }
-    delay(1000);
-  }
-  Serial.println();
-  Serial.println("Error: HTTP response timeout");
-  return false;
-}
-
-/**
  * @brief Perform an HTTP GET request.
  */
 bool httpGet(const char* path)
@@ -220,7 +197,7 @@ bool httpGet(const char* path)
     return false;
   }
   Serial.println("HTTP GET successfully sent");
-  return waitForHttpResponse(MODEM_HTTP_PROFILE, ctBuf);
+  return true;
 }
 
 /**
@@ -240,7 +217,38 @@ bool httpPost(const char* path, const uint8_t* body, size_t bodyLen,
     return false;
   }
   Serial.println("HTTP POST successfully sent");
-  return waitForHttpResponse(MODEM_HTTP_PROFILE, ctBuf);
+  return true;
+}
+
+static const size_t in_buf_len = 2048;
+static uint8_t in_buf[in_buf_len];
+
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+{
+  Serial.printf("URC received at %lld\n", ev->timestamp);
+  switch(ev->type) {
+  case WM_URC_TYPE_HTTP:
+    if(ev->http.event == WALTER_MODEM_HTTP_EVENT_RING) {
+      Serial.printf(
+          "HTTP Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
+          ev->http.profileId,
+          ev->http.status,
+          ev->http.dataLen,
+          ev->http.contentType ? ev->http.contentType : "(none)"
+      );
+      if (modem.httpReceiveMessage(ev->http.profileId, in_buf, in_buf_len)) {
+        Serial.printf("Payload:\n");
+        for (int i = 0; i < ev->http.dataLen; i++) {
+          Serial.printf("%c", in_buf[i]);
+        }
+        Serial.printf("\n");
+      }
+    }
+    break;
+  default:
+    /* Unhandled event */
+    break;
+  }
 }
 
 /**
@@ -254,12 +262,14 @@ void setup()
   Serial.printf("\r\n\r\n=== WalterModem HTTP example ===\r\n\r\n");
 
   /* Start the modem */
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
     return;
   }
+
+  modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the lte network */
   if(!lteConnect()) {
@@ -297,7 +307,7 @@ void loop()
     delay(2000);
 
     // Example POST
-    const char jsonBody[] = "{\"hello\":\"walter\"}";
+    const char jsonBody[] = "{\"hello\":\"quickspot\"}";
     if(!httpPost(HTTP_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
                  "application/json")) {
       Serial.println("HTTP POST failed, restarting...");
@@ -307,4 +317,6 @@ void loop()
 
     Serial.println();
   }
+
+  delay(10);
 }
