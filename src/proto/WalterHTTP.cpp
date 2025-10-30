@@ -214,7 +214,7 @@ bool WalterModem::httpReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t bu
       sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d,%u", profile_id, toRead);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, buf_size, stringsBuffer);
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, toRead, stringsBuffer);
   _returnAfterReply();
 }
 #pragma endregion

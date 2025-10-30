@@ -2499,9 +2499,9 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
       newEvent.timestamp = esp_timer_get_time();
       newEvent.coap.event = WALTER_MODEM_COAP_EVENT_RING;
       newEvent.coap.profileId = profileId;
-      newEvent.coap.messageId = messageId;
-      newEvent.coap.sendType = sendType;
-      newEvent.coap.methodRsp = (WalterModemCoapSendMethodRsp) reqRspCodeRaw;
+      newEvent.coap.msgId = messageId;
+      newEvent.coap.type = sendType;
+      newEvent.coap.rspCode = (WalterModemCoapSendMethodRsp) reqRspCodeRaw;
       newEvent.coap.dataLen = length;
       xQueueSend(_urcEventQueue.handle, &newEvent, 0);
     }

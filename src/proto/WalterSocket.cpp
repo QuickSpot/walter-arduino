@@ -320,7 +320,7 @@ bool WalterModem::socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_
   size_t toRead = (buf_size > 1500) ? 1500 : buf_size;
 
   _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(toRead)), "OK", rsp, cb, args, NULL,
-          NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
+          NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, toRead);
   _returnAfterReply();
 }
 

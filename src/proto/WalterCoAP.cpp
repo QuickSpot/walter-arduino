@@ -64,21 +64,18 @@ bool WalterModem::coapReceiveMessage(uint8_t profile_id, int message_id, uint8_t
                                      size_t buf_size, WalterModemRsp* rsp, walterModemCb cb,
                                      void* args)
 {
-  if(profile_id == 0) {
-    _returnState(WALTER_MODEM_STATE_ERROR);
-  }
-
   if(profile_id >= WALTER_MODEM_MAX_COAP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
+  size_t toRead = (buf_size > 1024) ? 1024 : buf_size;
+
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
-                                 message_id, buf_size);
+                                 message_id, toRead);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, NULL, stringsBuffer);
-
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, toRead, stringsBuffer);
   _returnAfterReply();
 }
 
@@ -111,9 +108,8 @@ bool WalterModem::coapCreateContext(uint8_t profileId, const char* serverName, i
         sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",,%d", tlsProfileId);
   }
 
-  _runCmd(arr((const char*) stringsBuffer->data), "+SQNCOAPCONNECTED: ", rsp, cb, args, NULL, NULL,
+  _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsBuffer);
-
   _returnAfterReply();
 }
 
@@ -127,7 +123,7 @@ bool WalterModem::coapClose(uint8_t profileId, WalterModemRsp* rsp, walterModemC
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  _runCmd(arr("AT+SQNCOAPCLOSE=", _atNum(profileId)), "+SQNCOAPCLOSED: ", rsp, cb, args);
+  _runCmd(arr("AT+SQNCOAPCLOSE=", _atNum(profileId)), "OK", rsp, cb, args);
   _returnAfterReply();
 }
 

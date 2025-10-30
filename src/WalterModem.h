@@ -1546,9 +1546,9 @@ struct WalterModemURCEvent {
     struct {
       WalterModemCoapEvent event;
       int profileId;
-      uint16_t messageId;
-      uint8_t sendType;
-      uint16_t methodRsp;
+      uint16_t msgId;
+      uint8_t type;
+      uint16_t rspCode;
       uint16_t dataLen;
     } coap;
 #endif
@@ -4687,7 +4687,8 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool coapReceiveMessage(uint8_t profile_id, int message_id, uint8_t* buf, size_t buf_size,
-                                 WalterModemRsp* rsp, walterModemCb cb, void* args);
+                                 WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                                 void* args = NULL);
 #endif
 #pragma endregion
 

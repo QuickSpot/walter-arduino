@@ -51,7 +51,6 @@
 #include <WalterModem.h>
 #include <esp_mac.h>
 
-
 /**
  * @brief COAP profile used for COAP tests
  */
@@ -70,12 +69,12 @@ WalterModemRsp rsp = {};
 /**
  * @brief The buffer to transmit to the COAP server.
  */
-uint8_t dataBuf[8] = {0};
+uint8_t dataBuf[8] = { 0 };
 
 /**
  * @brief Buffer for incoming COAP response
  */
-uint8_t incomingBuf[256] = {0};
+uint8_t incomingBuf[256] = { 0 };
 
 /**
  * @brief The counter used in the ping packets.
@@ -87,7 +86,8 @@ uint16_t counter = 0;
  *
  * @return True when connected, False otherwise
  */
-bool lteConnected() {
+bool lteConnected()
+{
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
   return (regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
           regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING);
@@ -97,13 +97,14 @@ bool lteConnected() {
  * @brief This function waits for the modem to be connected to the Lte network.
  * @return true if the connected, else false on timeout.
  */
-bool waitForNetwork() {
+bool waitForNetwork()
+{
   /* Wait for the network to become available */
   int timeout = 0;
-  while (!lteConnected()) {
+  while(!lteConnected()) {
     delay(1000);
     timeout++;
-    if (timeout > 300)
+    if(timeout > 300)
       return false;
   }
   Serial.println("Connected to the network");
@@ -114,8 +115,9 @@ bool waitForNetwork() {
  * @brief This function tries to connect the modem to the cellular network.
  * @return true if the connection attempt is successful, else false.
  */
-bool lteConnect() {
-  if (modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
+bool lteConnect()
+{
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
   } else {
     Serial.println("Error: Could not set operational state to NO RF");
@@ -123,7 +125,7 @@ bool lteConnect() {
   }
 
   /* Create PDP context */
-  if (modem.definePDPContext()) {
+  if(modem.definePDPContext()) {
     Serial.println("Created PDP context");
   } else {
     Serial.println("Error: Could not create PDP context");
@@ -131,7 +133,7 @@ bool lteConnect() {
   }
 
   /* Set the operational state to full */
-  if (modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
     Serial.println("Successfully set operational state to FULL");
   } else {
     Serial.println("Error: Could not set operational state to FULL");
@@ -139,18 +141,45 @@ bool lteConnect() {
   }
 
   /* Set the network operator selection to automatic */
-  if (modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
+  if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
     Serial.println("Network selection mode to was set to automatic");
   } else {
-    Serial.println(
-        "Error: Could not set the network selection mode to automatic");
+    Serial.println("Error: Could not set the network selection mode to automatic");
     return false;
   }
 
   return waitForNetwork();
 }
 
-void setup() {
+static const size_t in_buf_len = 2048;
+static uint8_t in_buf[in_buf_len];
+
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+{
+  Serial.printf("URC received at %lld\n", ev->timestamp);
+  switch(ev->type) {
+  case WM_URC_TYPE_COAP:
+    if(ev->coap.event == WALTER_MODEM_COAP_EVENT_RING) {
+      Serial.printf(
+          "CoAP Ring Received for profile: %d Length: %u Type: %u Message ID: %u Code: %u\n",
+          ev->coap.profileId, ev->coap.dataLen, ev->coap.type, ev->coap.msgId, ev->coap.rspCode);
+      if(modem.coapReceiveMessage(ev->coap.profileId, ev->coap.msgId, in_buf, ev->coap.dataLen)) {
+        Serial.printf("Payload:\n");
+        for(int i = 0; i < ev->coap.dataLen; i++) {
+          Serial.printf("%c", in_buf[i]);
+        }
+        Serial.printf("\n");
+      }
+    }
+    break;
+  default:
+    /* Unhandled event */
+    break;
+  }
+}
+
+void setup()
+{
   Serial.begin(115200);
   delay(5000);
 
@@ -158,44 +187,47 @@ void setup() {
 
   /* Get the MAC address for board validation */
   esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n",
-                dataBuf[0], dataBuf[1], dataBuf[2], dataBuf[3], dataBuf[4],
-                dataBuf[5]);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1],
+                dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
 
-  if (WalterModem::begin(&Serial2)) {
+  if(WalterModem::begin(&Serial2)) {
     Serial.println("Modem initialization OK");
   } else {
     Serial.println("Error: Modem initialization ERROR");
     return;
   }
 
+  modem.urcSetEventHandler(myURCHandler, NULL);
+
   /* Connect the modem to the lte network */
-  if (!lteConnect()) {
+  if(!lteConnect()) {
     Serial.println("Error: Could Not Connect to LTE");
     return;
   }
 }
 
-void loop() {
-  delay(10000);
+void loop()
+{
+  static unsigned long lastPublish = 0;
+  const unsigned long publishInterval = 15000; // 15 seconds
 
-  dataBuf[6] = counter >> 8;
-  dataBuf[7] = counter & 0xFF;
+  /* Periodically publish a message */
+  if(millis() - lastPublish >= publishInterval) {
+    lastPublish = millis();
 
-  counter++;
+    dataBuf[6] = counter >> 8;
+    dataBuf[7] = counter & 0xFF;
 
-  static short receiveAttemptsLeft = 0;
+    counter++;
 
-  if (!modem.coapCreateContext(COAP_PROFILE, "coap.me", 5683)) {
-    Serial.println(
-        "Error: Could not create COAP context. Better luck next iteration?");
-    return;
-  } else {
-    Serial.println("Successfully created or refreshed COAP context");
-  }
+    if(!modem.coapCreateContext(COAP_PROFILE, "coap.me", 5683)) {
+      Serial.println("Error: Could not create COAP context.");
+      return;
+    } else {
+      Serial.println("Successfully created or refreshed COAP context");
+    }
 
-  if (!receiveAttemptsLeft) {
-    if (modem.coapSetHeader(COAP_PROFILE, counter)) {
+    if(modem.coapSetHeader(COAP_PROFILE, counter)) {
       Serial.printf("Set COAP header with message id %d\r\n", counter);
     } else {
       Serial.println("Error: Could not set COAP header");
@@ -203,37 +235,15 @@ void loop() {
       ESP.restart();
     }
 
-    if (modem.coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
-                           WALTER_MODEM_COAP_SEND_METHOD_GET, 8, dataBuf)) {
+    if(modem.coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
+                          WALTER_MODEM_COAP_SEND_METHOD_GET, 8, dataBuf)) {
       Serial.println("Sent COAP datagram");
-      receiveAttemptsLeft = 3;
     } else {
       Serial.println("Error: Could not send COAP datagram");
       delay(1000);
       ESP.restart();
     }
-  } else {
-    receiveAttemptsLeft--;
-    Serial.println("Checking for incoming COAP message or response");
-
-    while (modem.coapDidRing(COAP_PROFILE, incomingBuf, sizeof(incomingBuf),
-                             &rsp)) {
-      receiveAttemptsLeft = 0;
-
-      Serial.println("COAP incoming:");
-      Serial.printf("profileId: %d (profile ID used by us: %d)\r\n",
-                    rsp.data.coapResponse.profileId, COAP_PROFILE);
-      Serial.printf("Message id: %d\r\n", rsp.data.coapResponse.messageId);
-      Serial.printf("Send type (CON, NON, ACK, RST): %d\r\n",
-                    rsp.data.coapResponse.sendType);
-      Serial.printf("Method or response code: %d\r\n",
-                    rsp.data.coapResponse.methodRsp);
-      Serial.printf("Data (%d bytes):\r\n", rsp.data.coapResponse.length);
-
-      for (size_t i = 0; i < rsp.data.coapResponse.length; i++) {
-        Serial.printf("[%02x  %c] ", incomingBuf[i], incomingBuf[i]);
-      }
-      Serial.println("");
-    }
   }
+
+  delay(10);
 }
