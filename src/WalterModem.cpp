@@ -1352,6 +1352,17 @@ void WalterModem::_URCEventProcessingTask(void* args)
   while(true) {
     vTaskDelay(pdMS_TO_TICKS(10));
     if(xQueueReceive(_urcEventQueue.handle, &qItem, 0) == pdTRUE) {
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+      if(qItem.type == WM_URC_TYPE_SOCKET && qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_RING &&
+         qItem.socket.profileId == _blueCherry.bcProfileId) {
+        uint16_t bcdatalen = qItem.socket.dataLen;
+        uint8_t bcdata[bcdatalen];
+        if(socketReceiveMessage(_blueCherry.bcProfileId, bcdata, bcdatalen)) {
+          _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, bcdatalen, bcdata);
+        }
+        continue;
+      }
+#endif
       if(_URCEventHandler) {
         _dispatchURCEvent(&qItem);
       }
@@ -2579,7 +2590,6 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     char* start = (char*) rspStr + _strLitLen("+SQNSRING: ");
     int sockId = atoi(start);
 
-    WalterModemSocket* sock = _socketGet(sockId);
     uint16_t dataReceived = 0;
 
     char* commaPos = strchr(start, ',');

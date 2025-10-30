@@ -4882,6 +4882,12 @@ public:
                WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
                int socketListenPort = 0);
 
+  /**
+   * @brief Receive how much data is available on a socket.
+   *
+   * @deprecated This function is deprecated.
+   */
+  [[deprecated("Do not use anymore")]]
   static uint16_t socketAvailable(int profileId = -1);
 
   /**

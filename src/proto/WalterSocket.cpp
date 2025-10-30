@@ -282,20 +282,11 @@ bool WalterModem::socketListen(WalterModemRsp* rsp, walterModemCb cb, void* args
   }
 }
 
-/**
- * TODO: (minor) BREAKING CHANGE
- *
- * socketAvailable should return the amount of messages available, not the amount of bytes since it
- * is a bad representation of how much is received. If two messages get received back to back, the
- * current counter just adds them up.
- */
 uint16_t WalterModem::socketAvailable(int profileId)
 {
-  WalterModemSocket* sock = _socketGet(profileId);
-  if(sock == NULL) {
-    return 0;
-  }
-  return sock->dataAvailable;
+  ESP_LOGW("DEPRECATION",
+           "socketAvailable method is deprecated and will be removed in future releases.");
+  return 0;
 }
 
 bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
