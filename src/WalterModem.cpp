@@ -2785,47 +2785,19 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
       newEvent.mqtt.msgId = messageId;
       xQueueSend(_urcEventQueue.handle, &newEvent, 0);
     }
-  } else if(_buffStartsWith(buff, "+SQNSMQTTRCVMESSAGE:0,")) {
+  } else if(cmd && cmd->atCmd[0] && !strcmp(cmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=0,") &&
+            cmd->rsp->type != WALTER_MODEM_RSP_DATA_TYPE_MQTT) {
+    /**
+     * This is a response to a MQTT receive message command.
+     * The modem response does not include a header, so this condition is triggered when the last
+     * sent command is a MQTT receive message command.
+     */
     const char* rspStr = _buffStr(buff);
 
-    // Move past the prefix
-    const char* ptr = rspStr + _strLitLen("+SQNSMQTTRCVMESSAGE:0,");
-    char* topicEnd = strchr(ptr, ',');
-    if(!topicEnd)
-      return;
+    cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_MQTT;
 
-    *topicEnd = '\0';
-    const char* topic = ptr;
-    ptr = topicEnd + 1;
-
-    // Try to find next comma – could be MSGID or directly PAYLOADLEN
-    char* nextComma = strchr(ptr, ',');
-    const char* msgIdStr = NULL;
-    const char* lenStr = NULL;
-
-    if(nextComma) {
-      // Peek ahead: if another comma exists after nextComma, then this was msgId
-      char* secondComma = strchr(nextComma + 1, ',');
-      if(secondComma) {
-        *nextComma = '\0';
-        msgIdStr = ptr;
-        lenStr = secondComma + 1;
-      } else {
-        lenStr = nextComma + 1;
-      }
-    } else {
-      lenStr = ptr;
-    }
-
-    uint16_t dataReceived = atoi(lenStr);
-
-    char* payload = strstr((char*) rspStr, "\r\n");
-    if(payload) {
-      payload += 2;
-    }
-
-    if(cmd->payload && payload) {
-      memcpy(cmd->payload, payload, dataReceived);
+    if(cmd->payload) {
+      memcpy(cmd->payload, rspStr, cmd->payloadSize);
     }
   }
 #endif

@@ -197,19 +197,33 @@ static bool mqttsPublishMessage(const char* topic, const char* message)
   return false;
 }
 
-/**
- * @brief Common routine to check for and print incoming MQTT messages.
- */
-static void mqttsCheckIncoming(const char* topic)
+static const size_t in_buf_len = 2048;
+static uint8_t in_buf[in_buf_len];
+
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
-  while(modem.mqttDidRing(topic, incomingBuf, sizeof(incomingBuf), &rsp)) {
-    Serial.printf("Incoming MQTT message on '%s'\r\n", topic);
-    Serial.printf("  QoS: %d, Message ID: %d, Length: %d\r\n", rsp.data.mqttResponse.qos,
-                  rsp.data.mqttResponse.messageId, rsp.data.mqttResponse.length);
-    Serial.println("  Payload:");
-    for(int i = 0; i < rsp.data.mqttResponse.length; i++) {
-      Serial.printf("  '%c' 0x%02X\r\n", incomingBuf[i], incomingBuf[i]);
+  Serial.printf("URC received at %lld\n", ev->timestamp);
+  switch(ev->type) {
+  case WM_URC_TYPE_MQTT:
+    if(ev->mqtt.event == WALTER_MODEM_MQTT_EVENT_RING) {
+      Serial.printf(
+          "MQTT Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
+          ev->mqtt.topic,
+          ev->mqtt.dataLen,
+          ev->mqtt.qos,
+          ev->mqtt.msgId);
+      if (modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
+        Serial.printf("Payload:\n");
+        for (int i = 0; i < ev->mqtt.dataLen; i++) {
+          Serial.printf("%c", in_buf[i]);
+        }
+        Serial.printf("\n");
+      }
     }
+    break;
+  default:
+    /* Unhandled event */
+    break;
   }
 }
 
@@ -235,6 +249,8 @@ void setup()
     Serial.println("Error: Could not initialize the modem");
     return;
   }
+
+  modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the LTE network */
   if(!lteConnect()) {
@@ -293,6 +309,5 @@ void loop()
     }
   }
 
-  /* Check for incoming messages */
-  mqttsCheckIncoming(MQTT_TOPIC);
+  delay(10);
 }
