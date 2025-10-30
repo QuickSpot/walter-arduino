@@ -1353,12 +1353,17 @@ void WalterModem::_URCEventProcessingTask(void* args)
     vTaskDelay(pdMS_TO_TICKS(10));
     if(xQueueReceive(_urcEventQueue.handle, &qItem, 0) == pdTRUE) {
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-      if(qItem.type == WM_URC_TYPE_SOCKET && qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_RING &&
-         qItem.socket.profileId == _blueCherry.bcProfileId) {
-        uint16_t bcdatalen = qItem.socket.dataLen;
-        uint8_t bcdata[bcdatalen];
-        if(socketReceiveMessage(_blueCherry.bcProfileId, bcdata, bcdatalen)) {
-          _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, bcdatalen, bcdata);
+      if(qItem.type == WM_URC_TYPE_SOCKET && qItem.socket.profileId == _blueCherry.bcProfileId) {
+        if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
+          uint16_t bcdatalen = qItem.socket.dataLen;
+          uint8_t bcdata[bcdatalen];
+          if(socketReceiveMessage(_blueCherry.bcProfileId, bcdata, bcdatalen)) {
+            _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, bcdatalen, bcdata);
+          }
+        } else if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_DISCONNECTED) {
+          _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, 0, nullptr);
+        } else if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_CONNECTED) {
+          _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_CONNECTED, 0, nullptr);
         }
         continue;
       }
@@ -2566,16 +2571,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     const char* rspStr = _buffStr(buff);
     int sockId = atoi(rspStr + _strLitLen("+SQNSH: "));
 
-    WalterModemSocket* sock = _socketGet(sockId);
-
-    if(sock) {
-      _socketRelease(sock);
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-      if(sockId == _blueCherry.bcProfileId) {
-        _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, 0, nullptr);
-      }
-#endif
-    }
+    _socketGet(sockId)->state = WALTER_MODEM_SOCKET_STATE_FREE;
 
     WalterModemURCEvent newEvent = {};
     newEvent.type = WalterModemURCType::WM_URC_TYPE_SOCKET;
@@ -3558,7 +3554,6 @@ bool WalterModem::softReset(WalterModemRsp* rsp, walterModemCb cb, void* args)
     _pdpCtxSet[i] = {};
   }
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-  _socket = NULL;
   for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
     _socketSet[i] = {};
   }
@@ -3614,7 +3609,6 @@ bool WalterModem::reset(WalterModemRsp* rsp, walterModemCb cb, void* args)
     _pdpCtxSet[i] = {};
   }
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-  _socket = NULL;
   for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
     _socketSet[i] = {};
   }

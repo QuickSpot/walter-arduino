@@ -127,7 +127,7 @@ bool WalterModem::_blueCherrySocketConnect()
       }
       continue;
 
-    case WALTER_MODEM_SOCKET_STATE_CONFIGURED:
+    case WALTER_MODEM_SOCKET_STATE_READY:
       if(!socketDial(WALTER_MODEM_BLUECHERRY_HOSTNAME, WALTER_MODEM_BLUECHERRY_PORT, 0, NULL, NULL,
                      NULL, WALTER_MODEM_SOCKET_PROTO_UDP, WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
                      _blueCherry.bcProfileId)) {

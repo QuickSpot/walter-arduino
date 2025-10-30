@@ -62,35 +62,18 @@ WalterModemSocket* WalterModem::_socketReserve()
     }
   }
 
-  if(sock != NULL) {
-    _socket = sock;
-  }
-
   return sock;
 }
 
 WalterModemSocket* WalterModem::_socketGet(int id)
 {
-  if(id < 0) {
-    return _socket;
-  }
-
   for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
     if(_socketSet[i].id == id) {
-      _socket = _socketSet + i;
       return _socketSet + i;
     }
   }
 
   return NULL;
-}
-void WalterModem::_socketRelease(WalterModemSocket* sock)
-{
-  if(sock == NULL) {
-    return;
-  }
-
-  sock->state = WALTER_MODEM_SOCKET_STATE_FREE;
 }
 
 bool WalterModem::_socketUpdateStates()
@@ -105,74 +88,65 @@ bool WalterModem::_socketUpdateStates()
 #pragma endregion
 
 #pragma region PUBLIC_METHODS
-bool WalterModem::socketConfig(WalterModemRsp* rsp, walterModemCb cb, void* args, int pdpCtxId,
-                               uint16_t mtu, uint16_t exchangeTimeout, uint16_t connTimeout,
-                               uint16_t sendDelayMs, int profileId)
+bool WalterModem::socketConfig(int profile_id, int pdp_ctx_id, uint16_t mtu,
+                               uint16_t exchange_timeout, uint16_t conn_timeout,
+                               uint16_t send_delay_ms, WalterModemRsp* rsp, walterModemCb cb,
+                               void* args)
 {
-  WalterModemSocket* sock = NULL;
-
-  if(profileId == -1) {
-    sock = _socketReserve();
-  } else {
-    sock = _socketGet(profileId);
-  }
+  WalterModemSocket* sock = _socketGet(profile_id);
 
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_FREE_SOCKET);
   }
 
-  sock->pdpContextId = pdpCtxId;
+  sock->pdpContextId = pdp_ctx_id;
   sock->mtu = mtu;
-  sock->exchangeTimeout = exchangeTimeout;
-  sock->connTimeout = connTimeout;
-  sock->sendDelayMs = sendDelayMs;
+  sock->exchangeTimeout = exchange_timeout;
+  sock->connTimeout = conn_timeout;
+  sock->sendDelayMs = send_delay_ms;
 
   auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
     WalterModemSocket* sock = (WalterModemSocket*) cmd->completeHandlerArg;
-
-    cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_SOCKET_ID;
-    cmd->rsp->data.profileId = sock->id;
-
     if(result == WALTER_MODEM_STATE_OK) {
-      sock->state = WALTER_MODEM_SOCKET_STATE_CONFIGURED;
+      sock->state = WALTER_MODEM_SOCKET_STATE_READY;
     }
   };
 
-  _runCmd(arr("AT+SQNSCFG=", _digitStr(sock->id), ",", _digitStr(sock->pdpContextId), ",",
-              _atNum(sock->mtu), ",", _atNum(sock->exchangeTimeout), ",",
-              _atNum(sock->connTimeout * 10), ",", _atNum(sock->sendDelayMs / 100)),
+  _runCmd(arr("AT+SQNSCFG=", _digitStr(profile_id), ",", _digitStr(pdp_ctx_id), ",", _atNum(mtu),
+              ",", _atNum(exchange_timeout), ",", _atNum(conn_timeout * 10), ",",
+              _atNum(send_delay_ms / 100)),
           "OK", rsp, cb, args, completeHandler, sock);
   _returnAfterReply();
 }
 
-bool WalterModem::socketConfigExtended(WalterModemRsp* rsp, walterModemCb cb, void* args,
-                                       int profileId, WalterModemSocketRingMode ringMode,
-                                       WalterModemSocketRecvMode recvMode, int keepAlive,
-                                       WalterModemSocketListenMode listenMode,
-                                       WalterModemsocketSendMode sendMode)
+bool WalterModem::socketConfigExtended(int profile_id, WalterModemSocketRingMode ring_mode,
+                                       WalterModemSocketRecvMode recv_mode, int keep_alive,
+                                       WalterModemSocketListenMode listen_mode,
+                                       WalterModemsocketSendMode send_mode, WalterModemRsp* rsp,
+                                       walterModemCb cb, void* args)
 {
-  WalterModemSocket* sock = _socketGet(profileId);
+  WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
-  _runCmd(arr("AT+SQNSCFGEXT=", _digitStr(sock->id), ",", _digitStr(ringMode), ",",
-              _digitStr(recvMode), ",", _digitStr(keepAlive), ",", _digitStr(listenMode), ",",
-              _digitStr(sendMode)),
+  _runCmd(arr("AT+SQNSCFGEXT=", _digitStr(sock->id), ",", _digitStr(ring_mode), ",",
+              _digitStr(recv_mode), ",", _digitStr(keep_alive), ",", _digitStr(listen_mode), ",",
+              _digitStr(send_mode)),
           "OK", rsp, cb, args, NULL, sock);
   _returnAfterReply();
 }
 
-bool WalterModem::socketConfigSecure(bool enableTLS, int tlsProfileId, int profileId,
+bool WalterModem::socketConfigSecure(int profile_id, bool enable_tls, int tls_profile_id,
                                      WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  WalterModemSocket* sock = _socketGet(profileId);
+  WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
-  _runCmd(arr("AT+SQNSSCFG=", _digitStr(sock->id), ",", enableTLS ? "1" : "0", ",",
-              _digitStr(tlsProfileId)),
+  _runCmd(arr("AT+SQNSSCFG=", _digitStr(sock->id), ",", enable_tls ? "1" : "0", ",",
+              _digitStr(tls_profile_id)),
           "OK", rsp, cb, args, NULL);
   _returnAfterReply();
 }
@@ -264,18 +238,13 @@ bool WalterModem::socketListen(WalterModemRsp* rsp, walterModemCb cb, void* args
                                WalterModemSocketProto protocol,
                                WalterModemSocketListenState listenState, int socketListenPort)
 {
-  WalterModemSocket* sock = _socketGet(profileId);
-  if(sock == NULL) {
-    _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
-  }
-  sock->protocol = protocol;
-  if(sock->protocol == WALTER_MODEM_SOCKET_PROTO_TCP) {
-    _runCmd(arr("AT+SQNSL=", _digitStr(sock->id), ",", _digitStr(listenState), ",",
+  if(protocol == WALTER_MODEM_SOCKET_PROTO_TCP) {
+    _runCmd(arr("AT+SQNSL=", _digitStr(profileId), ",", _digitStr(listenState), ",",
                 _atNum(socketListenPort)),
             "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT);
     _returnAfterReply();
   } else {
-    _runCmd(arr("AT+SQNSLUDP=", _digitStr(sock->id), ",", _digitStr(listenState), ",",
+    _runCmd(arr("AT+SQNSLUDP=", _digitStr(profileId), ",", _digitStr(listenState), ",",
                 _atNum(socketListenPort)),
             "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT);
     _returnAfterReply();
@@ -342,6 +311,39 @@ bool WalterModem::socketResume(int profileId, WalterModemRsp* rsp, walterModemCb
 
   _runCmd(arr("AT+SQNSO", _digitStr(sock->id)), "OK", rsp, cb, args);
   _returnAfterReply();
+}
+
+#pragma endregion
+#pragma region DEPRECATION
+bool WalterModem::socketConfig(WalterModemRsp* rsp, walterModemCb cb, void* args, int pdpCtxId,
+                               uint16_t mtu, uint16_t exchangeTimeout, uint16_t connTimeout,
+                               uint16_t sendDelayMs, int profileId)
+{
+  ESP_LOGW("DEPRECATION",
+           "Use socketConfig(profile_id, pdp_ctx_id, mtu, exchange_timeout, conn_timeout, "
+           "send_delay_ms, rsp, cb, args) instead");
+  return socketConfig(profileId, pdpCtxId, mtu, exchangeTimeout, connTimeout, sendDelayMs, rsp, cb,
+                      args);
+}
+
+bool WalterModem::socketConfigExtended(WalterModemRsp* rsp, walterModemCb cb, void* args,
+                                       int profileId, WalterModemSocketRingMode ringMode,
+                                       WalterModemSocketRecvMode recvMode, int keepAlive,
+                                       WalterModemSocketListenMode listenMode,
+                                       WalterModemsocketSendMode sendMode)
+{
+  ESP_LOGW("DEPRECATION", "Use socketConfigExtended(profile_id, ring_mode, recv_mode, keep_alive, "
+                          "listen_mode, send_mode, rsp, cb, args) instead");
+  return socketConfigExtended(profileId, ringMode, recvMode, keepAlive, listenMode, sendMode, rsp,
+                              cb, args);
+}
+
+bool WalterModem::socketConfigSecure(bool enableTLS, int tlsProfileId, int profileId,
+                                     WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+  ESP_LOGW("DEPRECATION",
+           "Use socketConfigSecure(profile_id, enable_tls, tls_profile_id, rsp, cb, args) instead");
+  return socketConfigSecure(profileId, enableTLS, tlsProfileId, rsp, cb, args);
 }
 
 #pragma endregion
