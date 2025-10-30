@@ -192,26 +192,31 @@ bool lteConnect()
   return waitForNetwork();
 }
 
-/**
- * @brief Socket event handler
- *
- * Handles status changes and incoming TCP messages.
- * @note This callback is invoked from the modem driver’s event context.
- *       It must never block or call modem methods directly.
- *       Use it only to set flags or copy data for later processing.
- *
- * @param ev          Event type (e.g. WALTER_MODEM_SOCKET_EVENT_RING for incoming messages)
- * @param socketId    ID of the socket that triggered the event
- * @param dataReceived Number of bytes received
- * @param dataBuffer  Pointer to received data
- * @param args        User argument pointer passed to socketSetEventHandler
- */
-void tcpSocketEventHandler(WalterModemSocketEvent ev, int socketId, uint16_t dataReceived,
-                           uint8_t* dataBuffer, void* args)
+static const size_t in_buf_len = 2048;
+static uint8_t in_buf[in_buf_len];
+
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
-  if(ev == WALTER_MODEM_SOCKET_EVENT_RING) {
-    Serial.printf("Received TCP message (%u bytes) on socket %d\r\n", dataReceived, socketId);
-    Serial.printf("Payload:\r\n%.*s\r\n", dataReceived, reinterpret_cast<const char*>(dataBuffer));
+  Serial.printf("URC received at %lld\n", ev->timestamp);
+  switch(ev->type) {
+  case WM_URC_TYPE_SOCKET:
+    if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
+      Serial.printf(
+          "Socket Ring Received for profile %d: Length: %u\n",
+          ev->socket.profileId,
+          ev->socket.dataLen);
+      if (modem.socketReceiveMessage(ev->socket.profileId, in_buf, in_buf_len)) {
+        Serial.printf("Payload:\n");
+        for (int i = 0; i < ev->socket.dataLen; i++) {
+          Serial.printf("%c", in_buf[i]);
+        }
+        Serial.printf("\n");
+      }
+    }
+    break;
+  default:
+    /* Unhandled event */
+    break;
   }
 }
 
@@ -292,6 +297,8 @@ void setup()
     return;
   }
 
+  modem.urcSetEventHandler(myURCHandler, NULL);
+
   /* Connect the modem to the LTE network */
   if(!lteConnect()) {
     Serial.println("Error: Could not connect to LTE");
@@ -303,16 +310,13 @@ void setup()
   Serial.printf("Board MAC: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1], dataBuf[2],
                 dataBuf[3], dataBuf[4], dataBuf[5]);
 
-  /* Set the TCP socket event handler */
-  modem.socketSetEventHandler(tcpSocketEventHandler, NULL);
-
   /* Configure a new socket */
   if(modem.socketConfig(&rsp)) {
     Serial.println("Successfully configured a new socket");
 
     /* Utilize the socket id if you have more then one socket */
     /* If not specified in the methods, the modem will use the previous socket id */
-    socketId = rsp.data.socketId;
+    socketId = rsp.data.profileId;
   } else {
     Serial.println("Error: Could not configure a new socket");
     return;

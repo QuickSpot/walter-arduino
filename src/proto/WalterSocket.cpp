@@ -303,22 +303,24 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
 {
   ESP_LOGW("DEPRECATION",
            "this socketReceive method is deprecated and will be removed in future releases. Use "
-           "socketReceive(int profile_id, uint8_t* buf, size_t buf_size, "
+           "socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size, "
            "WalterModemRsp* rsp, walterModemCb cb, void* args) instead.");
 
-  return socketReceive(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
+  return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
-bool WalterModem::socketReceive(int profile_id, uint8_t* buf, size_t buf_size, WalterModemRsp* rsp,
-                                walterModemCb cb, void* args)
+bool WalterModem::socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
+                                       WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
   WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
-  _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(buf_size)), "OK", rsp, cb, args,
-          NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf);
+  size_t toRead = (buf_size > 1500) ? 1500 : buf_size;
+
+  _runCmd(arr("AT+SQNSRECV=", _digitStr(sock->id), ",", _atNum(toRead)), "OK", rsp, cb, args, NULL,
+          NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
   _returnAfterReply();
 }
 

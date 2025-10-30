@@ -4889,7 +4889,7 @@ public:
    * @deprecated This function is deprecated. Examples implementing this function have been updated
    * to use the new signature for reference.
    */
-  [[deprecated("Use socketReceive(profile_id, buf, buf_size, rsp, cb, args) instead")]]
+  [[deprecated("Use socketReceiveMessage(profile_id, buf, buf_size, rsp, cb, args) instead")]]
   static bool socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
                             int profileId = -1, WalterModemRsp* rsp = NULL);
 
@@ -4905,8 +4905,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
-                            WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
+  static bool socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
+                                   WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                                   void* args = NULL);
 
   /**
    * @brief This function updates all the socketStates and returns the current state for the

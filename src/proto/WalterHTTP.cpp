@@ -96,7 +96,6 @@ bool WalterModem::httpConfigProfile(uint8_t profileId, const char* serverName, u
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsBuffer);
-
   _returnAfterReply();
 }
 
@@ -163,7 +162,6 @@ bool WalterModem::httpQuery(uint8_t profileId, const char* uri,
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsBuffer);
-
   _returnAfterReply();
 }
 
@@ -189,7 +187,6 @@ bool WalterModem::httpSend(uint8_t profileId, const char* uri, uint8_t* data, ui
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, data, dataSize, stringsBuffer);
-
   _returnAfterReply();
 }
 
@@ -218,7 +215,6 @@ bool WalterModem::httpReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t bu
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, buf_size, stringsBuffer);
-
   _returnAfterReply();
 }
 #pragma endregion
