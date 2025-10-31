@@ -48,6 +48,9 @@
 #include <esp_log.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+
+static uint8_t _curr_sock_id;
+
 #pragma region PRIVATE_METHODS
 WalterModemSocket* WalterModem::_socketReserve()
 {
@@ -156,6 +159,16 @@ bool WalterModem::socketDial(const char* remoteHost, uint16_t remotePort, uint16
                              WalterModemSocketProto protocol,
                              WalterModemSocketAcceptAnyRemote acceptAnyRemote, int profileId)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   WalterModemSocket* sock = _socketGet(profileId);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
@@ -184,6 +197,16 @@ bool WalterModem::socketDial(const char* remoteHost, uint16_t remotePort, uint16
 
 bool WalterModem::socketClose(WalterModemRsp* rsp, walterModemCb cb, void* args, int profileId)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   WalterModemSocket* sock = _socketGet(profileId);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
@@ -204,7 +227,16 @@ bool WalterModem::socketClose(WalterModemRsp* rsp, walterModemCb cb, void* args,
 bool WalterModem::socketSend(uint8_t* data, uint32_t dataSize, WalterModemRsp* rsp,
                              walterModemCb cb, void* args, WalterModemRAI rai, int profileId)
 {
-  /* AT+SQNSSEND is a legacy AT command! */
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   WalterModemSocket* sock = _socketGet(profileId);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
@@ -218,12 +250,32 @@ bool WalterModem::socketSend(uint8_t* data, uint32_t dataSize, WalterModemRsp* r
 bool WalterModem::socketSend(char* str, WalterModemRsp* rsp, walterModemCb cb, void* args,
                              WalterModemRAI rai, int profileId)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   return socketSend((uint8_t*) str, strlen(str), rsp, cb, args, rai, profileId);
 }
 
 bool WalterModem::socketAccept(WalterModemRsp* rsp, walterModemCb cb, void* args, int profileId,
                                bool commandMode)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   WalterModemSocket* sock = _socketGet(profileId);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
@@ -238,6 +290,16 @@ bool WalterModem::socketListen(WalterModemRsp* rsp, walterModemCb cb, void* args
                                WalterModemSocketProto protocol,
                                WalterModemSocketListenState listenState, int socketListenPort)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   if(protocol == WALTER_MODEM_SOCKET_PROTO_TCP) {
     _runCmd(arr("AT+SQNSL=", _digitStr(profileId), ",", _digitStr(listenState), ",",
                 _atNum(socketListenPort)),
@@ -249,24 +311,6 @@ bool WalterModem::socketListen(WalterModemRsp* rsp, walterModemCb cb, void* args
             "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT);
     _returnAfterReply();
   }
-}
-
-uint16_t WalterModem::socketAvailable(int profileId)
-{
-  ESP_LOGW("DEPRECATION",
-           "socketAvailable method is deprecated and will be removed in future releases.");
-  return 0;
-}
-
-bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
-                                int profileId, WalterModemRsp* rsp)
-{
-  ESP_LOGW("DEPRECATION",
-           "this socketReceive method is deprecated and will be removed in future releases. Use "
-           "socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size, "
-           "WalterModemRsp* rsp, walterModemCb cb, void* args) instead.");
-
-  return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
 bool WalterModem::socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
@@ -286,6 +330,12 @@ bool WalterModem::socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_
 
 WalterModemSocketState WalterModem::socketGetState(int profileId)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
   if(!_socketUpdateStates()) {
     ESP_LOGW("WalterModem", "Could not update socket states");
   }
@@ -304,6 +354,16 @@ WalterModemSocketState WalterModem::socketGetState(int profileId)
 
 bool WalterModem::socketResume(int profileId, WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
   WalterModemSocket* sock = _socketGet(profileId);
   if(sock == NULL) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
@@ -322,6 +382,16 @@ bool WalterModem::socketConfig(WalterModemRsp* rsp, walterModemCb cb, void* args
   ESP_LOGW("DEPRECATION",
            "Use socketConfig(profile_id, pdp_ctx_id, mtu, exchange_timeout, conn_timeout, "
            "send_delay_ms, rsp, cb, args) instead");
+  if(profileId == -1) {
+    _curr_sock_id = _socketReserve()->id;
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
   return socketConfig(profileId, pdpCtxId, mtu, exchangeTimeout, connTimeout, sendDelayMs, rsp, cb,
                       args);
 }
@@ -334,6 +404,15 @@ bool WalterModem::socketConfigExtended(WalterModemRsp* rsp, walterModemCb cb, vo
 {
   ESP_LOGW("DEPRECATION", "Use socketConfigExtended(profile_id, ring_mode, recv_mode, keep_alive, "
                           "listen_mode, send_mode, rsp, cb, args) instead");
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
   return socketConfigExtended(profileId, ringMode, recvMode, keepAlive, listenMode, sendMode, rsp,
                               cb, args);
 }
@@ -343,7 +422,44 @@ bool WalterModem::socketConfigSecure(bool enableTLS, int tlsProfileId, int profi
 {
   ESP_LOGW("DEPRECATION",
            "Use socketConfigSecure(profile_id, enable_tls, tls_profile_id, rsp, cb, args) instead");
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
   return socketConfigSecure(profileId, enableTLS, tlsProfileId, rsp, cb, args);
+}
+
+uint16_t WalterModem::socketAvailable(int profileId)
+{
+  ESP_LOGW("DEPRECATION",
+           "socketAvailable method is deprecated and will be removed in future releases.");
+  return 0;
+}
+
+bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
+                                int profileId, WalterModemRsp* rsp)
+{
+  ESP_LOGW("DEPRECATION",
+           "this socketReceive method is deprecated and will be removed in future releases. Use "
+           "socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size, "
+           "WalterModemRsp* rsp, walterModemCb cb, void* args) instead.");
+
+  if(profileId == -1) {
+    profileId = _curr_sock_id;
+  } else {
+    _curr_sock_id = profileId;
+  }
+
+  if(rsp) {
+    rsp->data.profileId = _curr_sock_id;
+  }
+
+  return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
 #pragma endregion
