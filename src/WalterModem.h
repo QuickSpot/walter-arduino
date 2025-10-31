@@ -868,7 +868,7 @@ typedef enum {
 } WalterModemSocketRecvMode;
 
 /**
- * @brief This enumeration determines whether an incomming socket connection should be auto
+ * @brief This enumeration determines whether an incoming socket connection should be auto
  * accepted
  */
 typedef enum {
@@ -4684,20 +4684,23 @@ public:
    * socket settings and use the socket for communication.
    *
    * @param[in] profile_id The socket identifier.
-   * @param[in] pdp_ctx_id The PDP context id.
-   * @param[in] mtu The maximum transmission unit used by the socket.
-   * @param[in] exchange_timeout The maximum number of seconds this socket can be inactive.
-   * @param[in] conn_timeout The maximum number of seconds this socket can try to connect.
-   * @param[in] send_delay_ms The number of milliseconds send delay.
-   * @param[out] rsp Optional modem response structure to save the result in.
-   * @param[in] cb Optional callback function, if set this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[in] pdp_ctx_id (Optional) The PDP context id.
+   * @param[in] mtu (Optional) The maximum transmission unit used by the socket.
+   * @param[in] exchange_timeout (Optional) The maximum number of seconds this socket can be
+   * inactive.
+   * @param[in] conn_timeout (Optional) The maximum number of seconds this socket can try to
+   * connect.
+   * @param[in] send_delay_ms (Optional) The number of milliseconds send delay.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketConfig(int profile_id, int pdp_ctx_id, uint16_t mtu, uint16_t exchange_timeout,
-                           uint16_t conn_timeout, uint16_t send_delay_ms,
-                           WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
+  static bool socketConfig(int profile_id, int pdp_ctx_id = 1, uint16_t mtu = 300,
+                           uint16_t exchange_timeout = 90, uint16_t conn_timeout = 60,
+                           uint16_t send_delay_ms = 5000, WalterModemRsp* rsp = NULL,
+                           walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Configure the socket extended parameters.
@@ -4719,14 +4722,14 @@ public:
    * This function configures the socket extended parameters.
    *
    * @param[in] profile_id The id of the socket to connect or -1 to re-use the last one.
-   * @param[in] ring_mode The format of the ring notification.
-   * @param[in] recv_mode The data recv mode of the socket
-   * @param[in] keep_alive The keepAlive time (currently unused)
-   * @param[in] listen_mode Should the socket auto accept incomming connections.
-   * @param[in] send_mode The format of the send data.
-   * @param[out] rsp Optional modem response structure to save the result in.
-   * @param[in] cb Optional callback function, if set this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[in] ring_mode (Optional) The format of the ring notification.
+   * @param[in] recv_mode (Optional) The data recv mode of the socket
+   * @param[in] keep_alive (Optional) The keepAlive time (currently unused)
+   * @param[in] listen_mode (Optional) Should the socket auto accept incoming connections.
+   * @param[in] send_mode (Optional) The format of the send data.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
@@ -4757,10 +4760,10 @@ public:
    *
    * @param[in] profile_id The id of the socket profile.
    * @param[in] enable_tls True to enable TLS, false to disable it.
-   * @param[in] tls_profile_id The id of the TLS profile.
-   * @param[out] rsp Optional modem response structure to save the result in.
-   * @param[in] cb Optional callback function, if set this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[in] tls_profile_id (Optional) The id of the TLS profile.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
@@ -4771,22 +4774,10 @@ public:
   /**
    * @brief Dial a socket after which data can be exchanged.
    *
-   * This function will dial a socket to a remote host. When the dial is successful data can
-   * be exchanged.
-   *
-   * @param remoteHost The remote IPv4/IPv6 or hostname to dial to.
-   * @param remotePort The remote port to dial on.
-   * @param localPort The local port in case of an UDP socket.
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
-   * @param protocol The protocol to use, UDP by default.
-   * @param acceptAnyRemote Determines whether receive/send UDP datagrams from/to another µ
-   * address than remoteHost:remotePort are allowed.
-   * @param profileId The id of the socket to connect or -1 to re-use the last one.
-   *
-   * @return True on "OK" response, false otherwise.
+   * @deprecated This method is deprecated and will be removed in a future release.
    */
+  [[deprecated("Use socketDial(profile_id, protocol, remote_port, remote_host, local_port, "
+               "accept_any_remote, rsp, cb, args) instead")]]
   static bool socketDial(
       const char* remoteHost, uint16_t remotePort, uint16_t localPort = 0,
       WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
@@ -4795,43 +4786,60 @@ public:
       int profileId = -1);
 
   /**
+   * @brief Dial a socket after which data can be exchanged.
+   *
+   * This function will dial a socket to a remote host. When the dial is successful data can
+   * be exchanged.
+   *
+   * @param[in] profile_id The id of the socket.
+   * @param[in] protocol The protocol to use.
+   * @param[in] remote_port The remote port to dial on.
+   * @param[in] remote_host The remote IPv4/IPv6 or hostname to dial to.
+   * @param[in] local_port (Optional) The local port in case of an UDP socket.
+   * @param[in] accept_any_remote (Optional) Determines whether receive/send UDP datagrams from/to
+   * another address than remoteHost:remotePort are allowed.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool socketDial(
+      int profile_id, WalterModemSocketProto protocol, uint16_t remote_port,
+      const char* remote_host, uint16_t local_port = 0,
+      WalterModemSocketAcceptAnyRemote accept_any_remote = WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
+
+  /**
+   * @brief Close a socket.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   */
+  [[deprecated("Use socketClose(profile_id, rsp, cb, args) instead")]]
+  static bool socketClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                          int profileId = -1);
+
+  /**
    * @brief Close a socket.
    *
    * This function closes a socket. Sockets can only be closed when they are suspended, active
    * socket connections cannot be closed.
    *
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
-   * @param profileId The id of the socket to close or -1 to re-use the last one.
+   * @param[in] profile_id The id of the socket to close.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
-   *
-   * @note The socket needs to be closed to free it, even tough it is in a closed state as this is
-   * the modem state.
    */
-  static bool socketClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
-                          int profileId = -1);
+  static bool socketClose(int profile_id, WalterModemRsp* rsp, walterModemCb cb, void* args);
 
   /**
    * @brief Send data over a socket.
    *
-   * This function will send data over a socket. The data buffer cannot be freed until the
-   * send response is received (sync or async). The maximum size of the data buffer is
-   * 16777216 bytes. (16MB)
-   *
-   * @param data The data to send.
-   * @param dataSize The number of bytes to transmit.
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
-   * @param rai The release assistance information.
-   * @param profileId The id of the socket to close or -1 to re-use the last one.
-   *
-   * @return True on "OK" response, false otherwise.
-   *
-   * @warning The modem internally chunks the data!
+   * @deprecated This method is deprecated and will be removed in a future release.
    */
+  [[deprecated("Use socketSend(profile_id, buf, buf_size, rai, rsp, cb, args) instead")]]
   static bool socketSend(uint8_t* data, uint32_t dataSize, WalterModemRsp* rsp = NULL,
                          walterModemCb cb = NULL, void* args = NULL,
                          WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, int profileId = -1);
@@ -4839,56 +4847,90 @@ public:
   /**
    * @brief Send a string over a socket.
    *
-   * This function will send a string over a socket. The string cannot be freed until the send
-   * response is received (sync or async). The maximum size of the string, not including the
-   * 0-terminator, is 16777216 bytes (16MB).
-   *
-   * @param str A zero-terminated string.
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
-   * @param rai The release assistance information.
-   * @param profileId The id of the socket to close or -1 to re-use the last one.
-   *
-   * @return True on "OK" response, false otherwise.
+   * @deprecated This method is deprecated and will be removed in a future release.
    */
+  [[deprecated("Use socketSend(profile_id, buf, buf_size, rai, rsp, cb, args) instead")]]
   static bool socketSend(char* str, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                          void* args = NULL, WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO,
                          int profileId = -1);
 
   /**
-   * @brief accepts an incomming socket connetion.
+   * @brief Send data over a socket.
    *
-   * This function will accept an incomming connection after a ring event has been received.
+   * This function will send data over a socket.
    *
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
-   * @param profileId The id of the socket to close or -1 to re-use the last one.
-   *
-   * @warning This function must be preceded by a call to socketListen.
-   */
-  static bool socketAccept(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
-                           int profileId = -1, bool commandMode = false);
-
-  /**
-   * @brief This function listens for incomming socket connections.
-   *
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
-   * @param profileId The id of the socket to listen or -1 to re-use the last one.
-   * @param protocol The protocol of the listening socket.
-   * @param listenState The state to listen on.
-   * @param socketListenPort The port to listen on.
+   * @param[in] profile_id The id of the socket.
+   * @param[in] buf The data to send.
+   * @param[in] buf_size The number of bytes to transmit.
+   * @param[in] rai (Optional) The release assistance information.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
+  static bool socketSend(int profile_id, uint8_t* buf, uint16_t buf_size, WalterModemRAI rai,
+                         WalterModemRsp* rsp, walterModemCb cb, void* args);
+
+  /**
+   * @brief This function listens for incoming socket connections.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   */
+  [[deprecated("Use socketListen(profile_id, protocol, listen_state, listen_port, "
+               "rsp, cb, args) instead")]]
   static bool
   socketListen(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
                int profileId = -1, WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_TCP,
                WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
                int socketListenPort = 0);
+
+  /**
+   * @brief This function listens for incoming socket connections.
+   *
+   * @param[in] profile_id The id of the socket to listen to.
+   * @param[in] protocol The protocol of the listening socket.
+   * @param[in] listen_state (Optional) The state to listen on.
+   * @param[in] listen_port (Optional) The port to listen on.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool
+  socketListen(int profile_id, WalterModemSocketProto protocol,
+               WalterModemSocketListenState listen_state = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
+               int listen_port = 0, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+               void* args = NULL);
+
+  /**
+   * @brief Accepts an incoming socket connetion.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   */
+  [[deprecated("Use socketAccept(profile_id, connection_mode, rsp, cb, args) instead")]]
+  static bool socketAccept(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                           int profileId = -1, bool commandMode = false);
+
+  /**
+   * @brief Accepts an incoming socket connetion.
+   *
+   * This function will accept an incoming connection after a connection event has been received.
+   *
+   * @param[in] profile_id The id of the socket to accept.
+   * @param[in] connection_mode (Optional) The connection mode.
+   * @param[out] rsp (Optional) modem response structure to save the result in.
+   * @param[in] cb (Optional) callback function, if set this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
+   *
+   * @warning This function must be preceded by a call to socketListen.
+   * @warning An incoming socket connection URC must have been received prior.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool socketAccept(int profile_id, bool connection_mode = false, WalterModemRsp* rsp = NULL,
+                           walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Receive how much data is available on a socket.
@@ -4910,12 +4952,12 @@ public:
   /**
    * @brief Receives socket data from the modem buffer.
    *
-   * @param[in] profile_id Socket profile identifier to receive from.
+   * @param[in] profile_id The id of the socket to receive from.
    * @param[out] buf User buffer to store the received data.
    * @param[in] buf_size Size of the buffer (maximum bytes to receive).
-   * @param[out] rsp Optional modem response structure to store the result.
-   * @param[in] cb Optional callback function; if set, this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[out] rsp (Optional) modem response structure to store the result.
+   * @param[in] cb (Optional) callback function; if set, this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
@@ -4927,22 +4969,24 @@ public:
    * @brief This function updates all the socketStates and returns the current state for the
    * requested socket.
    *
-   * @param profileId The socket id to retrieve the current state.
+   * @param[in] profile_id (Optional) The socket id to retrieve the current state.
    *
    * @return The socket state.
    *
    */
-  static WalterModemSocketState socketGetState(int profileId = 0);
+  static WalterModemSocketState socketGetState(int profile_id = 0);
 
   /**
    * @brief this function resumes a suspended socketConnection.
    *
-   * @param sockeId the id of the UDP socket to resume.
-   * @param rsp Optional modem response structure to save the result in.
+   * @param[in] profile_id the id of the UDP socket to resume.
+   * @param[out] rsp (Optional) modem response structure to store the result.
+   * @param[in] cb (Optional) callback function; if set, this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on success, false otherwise.
    */
-  static bool socketResume(int profileId = -1, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+  static bool socketResume(int profile_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                            void* args = NULL);
 #endif
 #pragma endregion

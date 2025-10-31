@@ -182,16 +182,16 @@ bool WalterModem::mqttReceiveMessage(const char* topic, int message_id, uint8_t*
                                      void* args)
 {
 
-  size_t toRead = (buf_size > 4096) ? 4096 : buf_size;
+  size_t readable_size = (buf_size > 4096) ? 4096 : buf_size;
 
   if(message_id == 0) {
     /* no msg id means qos 0 message */
     _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)), "OK", rsp, cb, args, NULL, NULL,
-            WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, toRead);
+            WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
     _returnAfterReply();
   } else {
     _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(message_id)), "OK", rsp, cb,
-            args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, toRead);
+            args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
     _returnAfterReply();
   }
 }

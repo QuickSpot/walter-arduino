@@ -207,14 +207,14 @@ bool WalterModem::httpReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t bu
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  size_t toRead = (buf_size > 1500) ? 1500 : buf_size;
+  size_t readable_size = (buf_size > 1500) ? 1500 : buf_size;
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d,%u", profile_id, toRead);
+      sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d,%u", profile_id, readable_size);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, toRead, stringsBuffer);
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
   _returnAfterReply();
 }
 #pragma endregion

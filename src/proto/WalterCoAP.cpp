@@ -68,14 +68,14 @@ bool WalterModem::coapReceiveMessage(uint8_t profile_id, int message_id, uint8_t
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  size_t toRead = (buf_size > 1024) ? 1024 : buf_size;
+  size_t readable_size = (buf_size > 1024) ? 1024 : buf_size;
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
-                                 message_id, toRead);
+                                 message_id, readable_size);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, toRead, stringsBuffer);
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
   _returnAfterReply();
 }
 
