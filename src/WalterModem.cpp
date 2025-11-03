@@ -2254,12 +2254,11 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_HTTP_RESPONSE;
 
     /*
-     * If data and dataSize are null, we cannot store the result. We can only hope the user is
-     * using a callback which has access to the raw buffer.
+     * If cmd->payload and cmd->payloadSize are null, we cannot store the result. We can only hope
+     * the user is using a callback which has access to the raw buffer.
      */
-    if(cmd->payload && cmd->payloadSize >= buff->size - 2) {
+    if(cmd->payload && cmd->payloadSize >= buff->size - 3) {
       memcpy(cmd->payload, buff->data + 3, buff->size - 3);
-      cmd->payload[buff->size - 3] = '\0';
     } else {
       ESP_LOGW("WalterModem", "Unable to store HTTP payload (buffer to small)");
       result = WALTER_MODEM_STATE_NO_MEMORY;
@@ -2444,8 +2443,8 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
       }
 
       /*
-       * If data and dataSize are null, we cannot store the result. We can only hope the user
-       * is using a callback which has access to the raw buffer.
+       * If cmd->payload and cmd->payloadSize are null, we cannot store the result. We can only hope
+       * the user is using a callback which has access to the raw buffer.
        */
       if(cmd->payload) {
         memcpy(cmd->payload, payload, cmd->rsp->data.coapResponse.length);
@@ -2625,8 +2624,8 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     }
 
     /*
-     * If data and dataSize are null, we cannot store the result. We can only hope the user
-     * is using a callback which has access to the raw buffer.
+     * If cmd->payload and cmd->payloadSize are null, we cannot store the result. We can only hope
+     * the user is using a callback which has access to the raw buffer.
      */
     if(cmd->payload) {
       memcpy(cmd->payload, payload, dataReceived);

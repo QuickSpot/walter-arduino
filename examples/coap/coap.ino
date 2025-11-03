@@ -67,14 +67,16 @@ WalterModem modem;
 WalterModemRsp rsp = {};
 
 /**
- * @brief The buffer to transmit to the COAP server.
+ * @brief The buffer to transmit to the CoAP server.
  */
-uint8_t dataBuf[8] = { 0 };
+uint8_t out_buf[8] = { 0 };
 
 /**
- * @brief Buffer for incoming COAP response
+ * @brief The buffer to receive from the CoAP server.
+ * @note Make sure this is sufficiently large enough for incoming data. (Up to 1024 bytes supported
+ * by Sequans)
  */
-uint8_t incomingBuf[256] = { 0 };
+uint8_t in_buf[1024] = { 0 };
 
 /**
  * @brief The counter used in the ping packets.
@@ -145,14 +147,12 @@ bool lteConnect()
     Serial.println("Network selection mode to was set to automatic");
   } else {
     Serial.println("Error: Could not set the network selection mode to automatic");
+
     return false;
   }
 
   return waitForNetwork();
 }
-
-static const size_t in_buf_len = 2048;
-static uint8_t in_buf[in_buf_len];
 
 static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
@@ -186,11 +186,11 @@ void setup()
   Serial.println("Error: Walter modem coap example v1.0.0");
 
   /* Get the MAC address for board validation */
-  esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1],
-                dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
+  esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", out_buf[0], out_buf[1],
+                out_buf[2], out_buf[3], out_buf[4], out_buf[5]);
 
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Modem initialization OK");
   } else {
     Serial.println("Error: Modem initialization ERROR");
@@ -215,8 +215,8 @@ void loop()
   if(millis() - lastPublish >= publishInterval) {
     lastPublish = millis();
 
-    dataBuf[6] = counter >> 8;
-    dataBuf[7] = counter & 0xFF;
+    out_buf[6] = counter >> 8;
+    out_buf[7] = counter & 0xFF;
 
     counter++;
 
@@ -236,7 +236,7 @@ void loop()
     }
 
     if(modem.coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
-                          WALTER_MODEM_COAP_SEND_METHOD_GET, 8, dataBuf)) {
+                          WALTER_MODEM_COAP_SEND_METHOD_GET, 8, out_buf)) {
       Serial.println("Sent COAP datagram");
     } else {
       Serial.println("Error: Could not send COAP datagram");

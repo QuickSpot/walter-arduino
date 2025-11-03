@@ -196,4 +196,12 @@ bool WalterModem::mqttReceiveMessage(const char* topic, int message_id, uint8_t*
   }
 }
 #pragma endregion
+#pragma region DEPRICATION
+void WalterModem::mqttSetEventHandler(walterModemMQTTEventHandler handler, void* args)
+{
+  ESP_LOGE("DEPRECATION",
+           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
+  return;
+}
+#pragma endregion
 #endif

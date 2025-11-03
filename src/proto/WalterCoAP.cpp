@@ -190,4 +190,12 @@ bool WalterModem::coapSendData(uint8_t profileId, WalterModemCoapSendType type,
   _returnAfterReply();
 }
 #pragma endregion
+#pragma region DEPRICATION
+void WalterModem::coapSetEventHandler(walterModemCoAPEventHandler handler, void* args)
+{
+  ESP_LOGE("DEPRECATION",
+           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
+  return;
+}
+#pragma endregion
 #endif

@@ -95,9 +95,9 @@ bool WalterModem::_blueCherrySocketConfigure()
 
   bool success = true;
 
-  success &= socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcProfileId);
-  success &= socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcProfileId);
-  success &= socketConfigSecure(true, _blueCherry.tlsProfileId, _blueCherry.bcProfileId);
+  success &= socketConfig(_blueCherry.bcProfileId);
+  success &= socketConfigExtended(_blueCherry.bcProfileId);
+  success &= socketConfigSecure(_blueCherry.bcProfileId, true, _blueCherry.tlsProfileId);
 
   return success;
 }
@@ -105,7 +105,7 @@ bool WalterModem::_blueCherrySocketConfigure()
 bool WalterModem::_blueCherrySocketConnect()
 {
 
-  WalterModem::socketGetState(); // Update the socket statuses to the latest available data.
+  WalterModem::socketGetState();
 
   if(_blueCherry.bcProfileId == 0) {
     if(WalterModemSocket* sock = _socketReserve(); sock != NULL) {
@@ -211,8 +211,7 @@ bool WalterModem::_blueCherryCoapSend()
   for(uint8_t attempt = 1; attempt <= MAX_RETRANSMIT; ++attempt) {
     _blueCherry.lastTransmissionTime = time(NULL);
 
-    socketSend(_blueCherry.messageOut, _blueCherry.messageOutLen, NULL, NULL, NULL,
-               WALTER_MODEM_RAI_NO_INFO, _blueCherry.bcProfileId);
+    socketSend(_blueCherry.bcProfileId, _blueCherry.messageOut, _blueCherry.messageOutLen);
 
     while(true) {
       if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
@@ -222,11 +221,11 @@ bool WalterModem::_blueCherryCoapSend()
       vTaskDelay(pdMS_TO_TICKS(10));
 
       if(difftime(time(NULL), _blueCherry.lastTransmissionTime) >= timeout) {
-        break; // retransmit or give up
+        break;
       }
     }
 
-    timeout *= 2; // exponential backoff
+    timeout *= 2;
   }
 
   _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;

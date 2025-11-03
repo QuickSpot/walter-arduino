@@ -67,14 +67,16 @@ WalterModem modem;
 WalterModemRsp rsp;
 
 /**
- * @brief Buffer for incoming response
+ * @brief The buffer to transmit to the MQTT server.
  */
-uint8_t incomingBuf[256] = { 0 };
+uint8_t out_buf[32] = { 0 };
 
 /**
- * @brief MQTT client and message prefix based on mac address
+ * @brief The buffer to receive from the MQTT server.
+ * @note Make sure this is sufficiently large enough for incoming data. (Up to 4096 bytes supported
+ * by Sequans)
  */
-char macString[32];
+uint8_t in_buf[4096] = { 0 };
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -186,7 +188,7 @@ bool lteConnect()
 /**
  * @brief Common routine to publish a message to an MQTT topic.
  */
-static bool mqttsPublishMessage(const char* topic, const char* message)
+static bool mqttPublishMessage(const char* topic, const char* message)
 {
   Serial.printf("Publishing to topic '%s': %s\r\n", topic, message);
   if(modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
@@ -197,24 +199,16 @@ static bool mqttsPublishMessage(const char* topic, const char* message)
   return false;
 }
 
-static const size_t in_buf_len = 2048;
-static uint8_t in_buf[in_buf_len];
-
 static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
   case WM_URC_TYPE_MQTT:
     if(ev->mqtt.event == WALTER_MODEM_MQTT_EVENT_RING) {
-      Serial.printf(
-          "MQTT Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
-          ev->mqtt.topic,
-          ev->mqtt.dataLen,
-          ev->mqtt.qos,
-          ev->mqtt.msgId);
-      if (modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
-        Serial.printf("Payload:\n");
-        for (int i = 0; i < ev->mqtt.dataLen; i++) {
+      Serial.printf("MQTT Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
+                    ev->mqtt.topic, ev->mqtt.dataLen, ev->mqtt.qos, ev->mqtt.msgId);
+      if(modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
+        for(int i = 0; i < ev->mqtt.dataLen; i++) {
           Serial.printf("%c", in_buf[i]);
         }
         Serial.printf("\n");
@@ -237,13 +231,13 @@ void setup()
 
   Serial.printf("\r\n\r\n=== WalterModem MQTT example ===\r\n\r\n");
 
-  /* Build a unique client ID from the ESP MAC address */
-  esp_read_mac(incomingBuf, ESP_MAC_WIFI_STA);
-  sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X", incomingBuf[0], incomingBuf[1],
-          incomingBuf[2], incomingBuf[3], incomingBuf[4], incomingBuf[5]);
+  uint8_t mac[6] = { 0 };
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  sprintf((char*) out_buf, "walter%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+          mac[4], mac[5]);
 
   /* Start the modem */
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
@@ -291,22 +285,20 @@ void loop()
   const unsigned long publishInterval = 15000; // 15 seconds
 
   static int seq = 0;
-  static char outgoingMsg[64];
+  static char out_msg[64];
 
   /* Periodically publish a message */
   if(millis() - lastPublish >= publishInterval) {
     lastPublish = millis();
     seq++;
 
-    if(seq % 3 == 0) {
-      sprintf(outgoingMsg, "%s-%d", macString, seq);
-      if(!mqttsPublishMessage(MQTT_TOPIC, outgoingMsg)) {
-        Serial.println("MQTT publish failed, restarting...");
-        delay(1000);
-        ESP.restart();
-      }
-      Serial.println();
+    sprintf(out_msg, "%s-%d", out_buf, seq);
+    if(!mqttPublishMessage(MQTT_TOPIC, out_msg)) {
+      Serial.println("MQTT publish failed, restarting...");
+      delay(1000);
+      ESP.restart();
     }
+    Serial.println();
   }
 
   delay(10);

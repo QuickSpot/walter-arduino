@@ -195,7 +195,7 @@ bool WalterModem::socketClose(int profile_id, WalterModemRsp* rsp, walterModemCb
   auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
     WalterModemSocket* sock = (WalterModemSocket*) cmd->completeHandlerArg;
     if(result == WALTER_MODEM_STATE_OK) {
-      _socketRelease(sock);
+      sock->state = WALTER_MODEM_SOCKET_STATE_FREE;
     }
   };
 
@@ -465,8 +465,7 @@ bool WalterModem::socketAccept(WalterModemRsp* rsp, walterModemCb cb, void* args
 
 uint16_t WalterModem::socketAvailable(int profileId)
 {
-  ESP_LOGW("DEPRECATION",
-           "socketAvailable method is deprecated and will be removed in future releases.");
+  ESP_LOGW("DEPRECATION", "This method is deprecated and will be removed in a future release.");
   return 0;
 }
 
@@ -488,5 +487,11 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
   return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
+void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void* args = NULL)
+{
+  ESP_LOGE("DEPRECATION",
+           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
+  return;
+}
 #pragma endregion
 #endif

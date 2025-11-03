@@ -72,9 +72,11 @@ WalterModem modem;
 WalterModemRsp rsp = {};
 
 /**
- * @brief Buffer for incoming HTTP response
+ * @brief The buffer to receive from the HTTP server.
+ * @note Make sure this is sufficiently large enough for incoming data. (Up to 1500 bytes supported
+ * by Sequans)
  */
-uint8_t incomingBuf[1024] = { 0 };
+uint8_t in_buf[1500] = { 0 };
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -220,25 +222,17 @@ bool httpPost(const char* path, const uint8_t* body, size_t bodyLen,
   return true;
 }
 
-static const size_t in_buf_len = 2048;
-static uint8_t in_buf[in_buf_len];
-
 static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
   case WM_URC_TYPE_HTTP:
     if(ev->http.event == WALTER_MODEM_HTTP_EVENT_RING) {
-      Serial.printf(
-          "HTTP Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
-          ev->http.profileId,
-          ev->http.status,
-          ev->http.dataLen,
-          ev->http.contentType ? ev->http.contentType : "(none)"
-      );
-      if (modem.httpReceiveMessage(ev->http.profileId, in_buf, in_buf_len)) {
-        Serial.printf("Payload:\n");
-        for (int i = 0; i < ev->http.dataLen; i++) {
+      Serial.printf("HTTP Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
+                    ev->http.profileId, ev->http.status, ev->http.dataLen,
+                    ev->http.contentType ? ev->http.contentType : "(none)");
+      if(modem.httpReceiveMessage(ev->http.profileId, in_buf, ev->http.dataLen)) {
+        for(int i = 0; i < ev->http.dataLen; i++) {
           Serial.printf("%c", in_buf[i]);
         }
         Serial.printf("\n");

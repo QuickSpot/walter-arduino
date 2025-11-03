@@ -209,13 +209,22 @@ bool WalterModem::httpReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t bu
 
   size_t readable_size = (buf_size > 1500) ? 1500 : buf_size;
 
+  // Known bug: CME ERROR 4 when attempting to receive a HTTP payload with a fixed size.
+  // Omit size for now and let rsp processor handle payload size
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d,%u", profile_id, readable_size);
+  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d", profile_id);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
   _returnAfterReply();
+}
+#pragma endregion
+#pragma region DEPRICATION
+void WalterModem::httpSetEventHandler(walterModemHttpEventHandler handler, void* args)
+{
+  ESP_LOGE("DEPRECATION",
+           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
+  return;
 }
 #pragma endregion
 #endif

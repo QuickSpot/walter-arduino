@@ -1371,7 +1371,7 @@ typedef enum {
    * @brief The number of event types supported by the library.
    */
   WALTER_MODEM_EVENT_TYPE_COUNT
-} WalterModemGenericEventType;
+} WalterModemEventType;
 
 /**
  * @brief The different types of URC types supported by the library.
@@ -1498,6 +1498,78 @@ typedef void (*walterModemATEventHandler)(const char* buff, size_t len, void* ar
  * @return None.
  */
 typedef void (*walterModemGNSSEventHandler)(const WalterModemGNSSFix* fix, void* args);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
+/**
+ * @brief Header of an MQTT event handler
+ *
+ * @deprecated This header is deprecated and will be removed in a future release.
+ * @note Use WalterModemURCEventHandlerCB instead
+ *
+ * @param ev The type of MQTTEvent
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemMQTTEventHandler)(WalterModemMQTTEvent ev, WalterModemMqttStatus status,
+                                            void* args);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_HTTP
+/**
+ * @brief Header of an HTTP event handler
+ *
+ * @deprecated This header is deprecated and will be removed in a future release.
+ * @note Use WalterModemURCEventHandlerCB instead
+ *
+ * @param ev The Type of HTTPEvent
+ * @param profileId the id of the Http Profile
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemHttpEventHandler)(WalterModemHttpEvent ev, int profileId, void* args);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+/**
+ * @brief Header of an CoAP event handler
+ *
+ * @deprecated This header is deprecated and will be removed in a future release.
+ * @note Use WalterModemURCEventHandlerCB instead
+ *
+ * @param ev The Type of CoAPEvent
+ * @param profileId the id of the CoAP Profile
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemCoAPEventHandler)(WalterModemCoapEvent ev, int profileId, void* args);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+/**
+ * @brief Header of an Socket event handler
+ *
+ * @deprecated This header is deprecated and will be removed in a future release.
+ * @note Use WalterModemURCEventHandlerCB instead
+ *
+ * @param ev The Type of SocketEvent
+ * @param socketId the id of the Socket
+ * @param dataReceived The amount of data that has been received
+ * @param dataBuffer The data buffer to hold the data in
+ * @param args Optional arguments set by the application layer.
+ *
+ * @warning the dataReceived and dataBuffer params will be used based
+ * on the WalterModemSocketRingMode.
+ *
+ * @return None.
+ */
+typedef void (*walterModemSocketEventHandler)(WalterModemSocketEvent ev, int socketId,
+                                              uint16_t dataReceived, uint8_t* dataBuffer,
+                                              void* args);
 #endif
 
 /**
@@ -4312,12 +4384,12 @@ public:
    *
    * @param profileId The profile id (0, 1 or 2) of the HTTP context
    * @param uri The URI
-   * @param httpQueryCmd GET, DELETE or HEAD
-   * @param contentTypeBuf Optional user buffer to store content type header in.
-   * @param contentTypeBufSize Size of the user buffer, including terminating null byte.
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
+   * @param httpQueryCmd (Optional) GET, DELETE or HEAD
+   * @param contentTypeBuf (Optional) user buffer to store content type header in.
+   * @param contentTypeBufSize (Optional) Size of the user buffer, including terminating null byte.
+   * @param rsp (Optional) modem response structure to save the result in.
+   * @param cb (Optional) callback function, if set this function will not block.
+   * @param args (Optional) argument to pass to the callback.
    *
    * @return True on success, false otherwise.
    */
@@ -4337,15 +4409,15 @@ public:
    * @param uri The URI
    * @param data Data to be sent to the server
    * @param dataSize Length of the data buffer to be sent to the server
-   * @param httpSendCmd POST or PUT
-   * @param httpPostParam content type (enum value)
-   * @param contentTypeBuf Optional user buffer to store content type header in.
-   * @param contentTypeBufSize Size of the user buffer, including terminating null byte.
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
+   * @param httpSendCmd (Optional) POST or PUT
+   * @param httpPostParam (Optional) content type
+   * @param contentTypeBuf (Optional) user buffer to store content type header in.
+   * @param contentTypeBufSize (Optional) Size of the user buffer, including terminating null byte.
+   * @param rsp (Optional) modem response structure to save the result in.
+   * @param cb (Optional) callback function, if set this function will not block.
+   * @param args (Optional) argument to pass to the callback.
    *
-   * @return True on success, false otherwise.
+   * @return True on "OK" response, false otherwise.
    */
   static bool
   httpSend(uint8_t profileId, const char* uri, uint8_t* data, uint16_t dataSize,
@@ -4370,11 +4442,11 @@ public:
    * This function will receive HTTP data from the modem buffer for a specific profile.
    *
    * @param[in] profile_id The profile to receive data from.
-   * @param[out] buf User buffer to store the received data.
+   * @param[out] buf User buffer to store the received data. No termination
    * @param[in] buf_size Size of the buffer (maximum bytes to receive).
-   * @param[out] rsp Optional modem response structure to store the result.
-   * @param[in] cb Optional callback function; if set, this function will not block
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[out] rsp (Optional) modem response structure to store the result.
+   * @param[in] cb (Optional) callback function; if set, this function will not block
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
@@ -4603,9 +4675,9 @@ public:
    * @param code The code of the options.
    * @param values The optional values array, expected as a comma delimited string of up to 6
    * strings or recognized option values (see WalterModemCoapOptValue)
-   * @param rsp Optional modem response structure to save the result in.
-   * @param cb Optional callback function, if set this function will not block.
-   * @param args Optional argument to pass to the callback.
+   * @param[out] rsp Optional modem response structure to save the result in.
+   * @param[in] cb Optional callback function, if set this function will not block.
+   * @param[in] args Optional argument to pass to the callback.
    *
    * @return True on success, false otherwise.
    */
@@ -4647,13 +4719,13 @@ public:
   /**
    * @brief Receives CoAP data from the modem buffer.
    *
-   * @param[in] profile_id CoAP profile identifier to receive from.
+   * @param[in] profile_id CoAP profile id (0, 1 or 2)
    * @param[in] message_id CoAP message identifier to receive.
-   * @param[out] buf User buffer to store the received data.
+   * @param[out] buf User buffer to store the received data. No termination.
    * @param[in] buf_size Size of the buffer (maximum bytes to receive).
-   * @param[out] rsp Optional modem response structure to store the result.
-   * @param[in] cb Optional callback function; if set, this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[out] rsp (Optional) modem response structure to store the result.
+   * @param[in] cb (Optional) callback function; if set, this function will not block.
+   * @param[in] args (Optional) argument to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
@@ -4767,7 +4839,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketConfigSecure(int profile_id, bool enable_tls, int tls_profile_id = 0,
+  static bool socketConfigSecure(int profile_id, bool enable_tls, int tls_profile_id = 1,
                                  WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                  void* args = NULL);
 
@@ -4832,7 +4904,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketClose(int profile_id, WalterModemRsp* rsp, walterModemCb cb, void* args);
+  static bool socketClose(int profile_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                          void* args = NULL);
 
   /**
    * @brief Send data over a socket.
@@ -4869,8 +4942,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketSend(int profile_id, uint8_t* buf, uint16_t buf_size, WalterModemRAI rai,
-                         WalterModemRsp* rsp, walterModemCb cb, void* args);
+  static bool socketSend(int profile_id, uint8_t* buf, uint16_t buf_size,
+                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, WalterModemRsp* rsp = NULL,
+                         walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief This function listens for incoming socket connections.
@@ -5557,6 +5631,54 @@ public:
    * @return None.
    */
   static void gnssSetEventHandler(walterModemGNSSEventHandler handler, void* args = NULL);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+  /**
+   * @brief Set the MQTT event handler.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   *
+   */
+  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
+  static void mqttSetEventHandler(walterModemMQTTEventHandler handler, void* args = NULL);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_HTTP
+  /**
+   * @brief Set the HTTP event handler.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   *
+   */
+  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
+  static void httpSetEventHandler(walterModemHttpEventHandler handler, void* args = NULL);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+  /**
+   * @brief Set the CoAP event handler.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   *
+   */
+  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
+  static void coapSetEventHandler(walterModemCoAPEventHandler handler, void* args = NULL);
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+  /**
+   * @brief Set the Socket event handler.
+   *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   *
+   */
+  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
+  static void socketSetEventHandler(walterModemSocketEventHandler handler, void* args);
 #endif
 
   /**

@@ -53,6 +53,13 @@
 #include <esp_mac.h>
 
 /**
+ * @brief The Socket profile to use (1..6)
+ *
+ * @note At least one socket should be available/reserved for BlueCherry.
+ */
+#define MODEM_SOCKET_PROFILE 1
+
+/**
  * @brief The address of the server to upload the data to.
  */
 #define SERV_ADDR "walterdemo.quickspot.io"
@@ -92,13 +99,6 @@
 WalterModem modem;
 
 /**
- * @brief The socket identifier (1-6)
- *
- * @note At least one socket should be available/reserved for BlueCherry.
- */
-uint8_t socketId = -1;
-
-/**
  * @brief Flag used to signal when a fix is received.
  */
 volatile bool gnssFixRcvd = false;
@@ -112,7 +112,14 @@ WalterModemGNSSFix latestGnssFix = {};
  * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
  * the MAC address of the Walter this code is running on.
  */
-uint8_t dataBuf[PACKET_SIZE] = { 0 };
+uint8_t out_buf[PACKET_SIZE] = { 0 };
+
+/**
+ * @brief The buffer to receive from the UDP server.
+ * @note Make sure this is sufficiently large enough for incoming data. (Up to 1500 bytes supported
+ * by Sequans)
+ */
+uint8_t in_buf[1500] = { 0 };
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -414,29 +421,6 @@ void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
 }
 
 /**
- * @brief Socket event handler
- *
- * Handles status changes and incoming messages.
- * @note This callback is invoked from the modem driver’s event context.
- *       It must never block or call modem methods directly.
- *       Use it only to set flags or copy data for later processing.
- *
- * @param ev          Event type (e.g. WALTER_MODEM_SOCKET_EVENT_RING for incoming messages)
- * @param socketId    ID of the socket that triggered the event
- * @param dataReceived Number of bytes received
- * @param dataBuffer  Pointer to received data
- * @param args        User argument pointer passed to socketSetEventHandler
- */
-void socketEventHandler(WalterModemSocketEvent ev, int socketId, uint16_t dataReceived,
-                        uint8_t* dataBuffer, void* args)
-{
-  if(ev == WALTER_MODEM_SOCKET_EVENT_RING) {
-    Serial.printf("Received message (%u bytes) on socket %d\r\n", dataReceived, socketId);
-    Serial.printf("Payload:\r\n%.*s\r\n", dataReceived, reinterpret_cast<const char*>(dataBuffer));
-  }
-}
-
-/**
  * @brief Attempt to obtain a GNSS position fix with acceptable confidence.
  *
  * This function:
@@ -513,6 +497,30 @@ bool attemptGNSSFix()
   return false;
 }
 
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+{
+  Serial.printf("URC received at %lld\n", ev->timestamp);
+  switch(ev->type) {
+  case WM_URC_TYPE_SOCKET:
+    if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
+      Serial.printf("Socket Ring Received for profile %d: Length: %u\n", ev->socket.profileId,
+                    ev->socket.dataLen);
+      if(modem.socketReceiveMessage(ev->socket.profileId, in_buf, ev->socket.dataLen)) {
+        for(int i = 0; i < ev->socket.dataLen; i++) {
+          Serial.printf("%c", in_buf[i]);
+        }
+        Serial.printf("\n");
+      }
+    } else if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_DISCONNECTED) {
+      Serial.printf("Socket was closed for profile %d", ev->socket.profileId);
+    }
+    break;
+  default:
+    /* Unhandled event */
+    break;
+  }
+}
+
 /**
  * @brief The main Arduino setup method.
  */
@@ -524,18 +532,20 @@ void setup()
   Serial.printf("\r\n\r\n=== WalterModem Positioning example ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
-  esp_read_mac(dataBuf, ESP_MAC_WIFI_STA);
-  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", dataBuf[0], dataBuf[1],
-                dataBuf[2], dataBuf[3], dataBuf[4], dataBuf[5]);
+  esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
+  Serial.printf("Walter's MAC is: %02X:%02X:%02X:%02X:%02X:%02X\r\n", out_buf[0], out_buf[1],
+                out_buf[2], out_buf[3], out_buf[4], out_buf[5]);
 
   /* Start the modem */
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
     delay(5000);
     ESP.restart();
   }
+
+  modem.urcSetEventHandler(myURCHandler, NULL);
 
   WalterModemRsp rsp = {};
 
@@ -579,19 +589,15 @@ void setup()
   }
 
   /* Configure a new socket */
-  if(modem.socketConfig(&rsp)) {
+  if(modem.socketConfig(MODEM_SOCKET_PROFILE)) {
     Serial.println("Successfully configured a new socket");
-
-    /* Utilize the socket id if you have more then one socket */
-    /* If not specified in the methods, the modem will use the previous socket id */
-    socketId = rsp.data.socketId;
   } else {
     Serial.println("Error: Could not configure a new socket");
     return;
   }
 
-  /* Disable TLS (the demo server does not use it) */
-  if(modem.socketConfigSecure(false)) {
+  /* Disable TLS (the demo UDP server does not use it) */
+  if(modem.socketConfigSecure(MODEM_SOCKET_PROFILE, false)) {
     Serial.println("Successfully set socket to insecure mode");
   } else {
     Serial.println("Error: Could not disable socket TLS");
@@ -600,8 +606,6 @@ void setup()
 
   /* Set the GNSS fix event handler */
   modem.gnssSetEventHandler(gnssEventHandler, NULL);
-  /* Set the TCP socket event handler */
-  modem.socketSetEventHandler(socketEventHandler, NULL);
 }
 
 /**
@@ -647,37 +651,35 @@ void loop()
 
   /* Construct the minimal sensor + GNSS + Cellinfo */
   uint16_t rawTemp = (temp + 50) * 100;
-  dataBuf[6] = 0x02;
-  dataBuf[7] = rawTemp >> 8;
-  dataBuf[8] = rawTemp & 0xFF;
-  dataBuf[9] = latestGnssFix.satCount;
-  memcpy(dataBuf + 10, &lat32, 4);
-  memcpy(dataBuf + 14, &lon32, 4);
-  dataBuf[18] = rsp.data.cellInformation.cc >> 8;
-  dataBuf[19] = rsp.data.cellInformation.cc & 0xFF;
-  dataBuf[20] = rsp.data.cellInformation.nc >> 8;
-  dataBuf[21] = rsp.data.cellInformation.nc & 0xFF;
-  dataBuf[22] = rsp.data.cellInformation.tac >> 8;
-  dataBuf[23] = rsp.data.cellInformation.tac & 0xFF;
-  dataBuf[24] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
-  dataBuf[25] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
-  dataBuf[26] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
-  dataBuf[27] = rsp.data.cellInformation.cid & 0xFF;
-  dataBuf[28] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
-  dataBuf[29] = rat;
+  out_buf[6] = 0x02;
+  out_buf[7] = rawTemp >> 8;
+  out_buf[8] = rawTemp & 0xFF;
+  out_buf[9] = latestGnssFix.satCount;
+  memcpy(out_buf + 10, &lat32, 4);
+  memcpy(out_buf + 14, &lon32, 4);
+  out_buf[18] = rsp.data.cellInformation.cc >> 8;
+  out_buf[19] = rsp.data.cellInformation.cc & 0xFF;
+  out_buf[20] = rsp.data.cellInformation.nc >> 8;
+  out_buf[21] = rsp.data.cellInformation.nc & 0xFF;
+  out_buf[22] = rsp.data.cellInformation.tac >> 8;
+  out_buf[23] = rsp.data.cellInformation.tac & 0xFF;
+  out_buf[24] = (rsp.data.cellInformation.cid >> 24) & 0xFF;
+  out_buf[25] = (rsp.data.cellInformation.cid >> 16) & 0xFF;
+  out_buf[26] = (rsp.data.cellInformation.cid >> 8) & 0xFF;
+  out_buf[27] = rsp.data.cellInformation.cid & 0xFF;
+  out_buf[28] = (uint8_t) (rsp.data.cellInformation.rsrp * -1);
+  out_buf[29] = rat;
 
-  /* Connect (dial) to the demo test server */
-  if(modem.socketDial(SERV_ADDR, SERV_PORT)) {
-    Serial.printf("Successfully dialed demo server %s:%d\r\n", SERV_ADDR, SERV_PORT);
+  /* Connect (dial) to the WalterDemo server */
+  if(modem.socketDial(MODEM_SOCKET_PROFILE, WALTER_MODEM_SOCKET_PROTO_UDP, SERV_PORT, SERV_ADDR)) {
+    Serial.printf("Successfully dialed UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
   } else {
-    Serial.println("Error: Could not dial demo server");
-    delay(1000);
-    ESP.restart();
+    Serial.println("Error: Could not dial UDP server");
     return;
   }
 
   /* Transmit the packet */
-  if(!modem.socketSend(dataBuf, PACKET_SIZE)) {
+  if(!modem.socketSend(MODEM_SOCKET_PROFILE, out_buf, PACKET_SIZE)) {
     Serial.println("Error: Could not transmit data");
     delay(1000);
     ESP.restart();
@@ -687,7 +689,7 @@ void loop()
   delay(2000);
 
   /* Close the socket */
-  if(!modem.socketClose()) {
+  if(!modem.socketClose(MODEM_SOCKET_PROFILE)) {
     Serial.println("Error: Could not close the socket");
     delay(1000);
     ESP.restart();
