@@ -74,7 +74,7 @@ bool WalterModem::mqttConfig(const char* clientId, const char* username, const c
   walterModemCb cb = NULL;
   void* args = NULL;
 
-  WalterModemBuffer* buf = _getFreeBuffer();
+  walter_modem_buffer_t* buf = _getFreeBuffer();
   buf->size += sprintf((char*) buf->data, "AT+SQNSMQTTCFG=0,\"%s\"", clientId);
 
   if(username && password) {
@@ -155,7 +155,7 @@ bool WalterModem::mqttSubscribe(const char* topicString, uint8_t qos, WalterMode
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
+  auto completeHandler = [](walter_modem_cmd_t* cmd, WalterModemState result) {
     if(result == WALTER_MODEM_STATE_ERROR) {
       /*If subscription was not succesfull free the topic so we can try again.*/
       _currentTopic->free = true;

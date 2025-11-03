@@ -70,7 +70,7 @@ bool WalterModem::coapReceiveMessage(uint8_t profile_id, int message_id, uint8_t
 
   size_t readable_size = (buf_size > 1024) ? 1024 : buf_size;
 
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
                                  message_id, readable_size);
 
@@ -91,7 +91,7 @@ bool WalterModem::coapCreateContext(uint8_t profileId, const char* serverName, i
     _returnState(WALTER_MODEM_STATE_OK);
   }
 
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPCREATE=%d,\"%s\",%d,",
                                  profileId, serverName, port);
 
@@ -157,7 +157,7 @@ bool WalterModem::coapSetOptions(uint8_t profileId, WalterModemCoapOptAction act
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
 
   if(action == WALTER_MODEM_COAP_OPT_SET || action == WALTER_MODEM_COAP_OPT_EXTEND) {
     if(values && *values) {

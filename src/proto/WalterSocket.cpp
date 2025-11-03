@@ -108,7 +108,7 @@ bool WalterModem::socketConfig(int profile_id, int pdp_ctx_id, uint16_t mtu,
   sock->connTimeout = conn_timeout;
   sock->sendDelayMs = send_delay_ms;
 
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
+  auto completeHandler = [](walter_modem_cmd_t* cmd, WalterModemState result) {
     WalterModemSocket* sock = (WalterModemSocket*) cmd->completeHandlerArg;
     if(result == WALTER_MODEM_STATE_OK) {
       sock->state = WALTER_MODEM_SOCKET_STATE_READY;
@@ -170,7 +170,7 @@ bool WalterModem::socketDial(int profile_id, WalterModemSocketProto protocol, ui
   sock->remotePort = remote_port;
   sock->localPort = local_port;
 
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
+  auto completeHandler = [](walter_modem_cmd_t* cmd, WalterModemState result) {
     WalterModemSocket* sock = (WalterModemSocket*) cmd->completeHandlerArg;
     if(result == WALTER_MODEM_STATE_OK) {
       sock->state = WALTER_MODEM_SOCKET_STATE_OPENED;
@@ -192,7 +192,7 @@ bool WalterModem::socketClose(int profile_id, WalterModemRsp* rsp, walterModemCb
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
+  auto completeHandler = [](walter_modem_cmd_t* cmd, WalterModemState result) {
     WalterModemSocket* sock = (WalterModemSocket*) cmd->completeHandlerArg;
     if(result == WALTER_MODEM_STATE_OK) {
       sock->state = WALTER_MODEM_SOCKET_STATE_FREE;

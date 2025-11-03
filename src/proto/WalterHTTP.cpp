@@ -63,7 +63,7 @@ bool WalterModem::httpConfigProfile(uint8_t profileId, const char* serverName, u
     port = 443;
   }
 
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size +=
       sprintf((char*) stringsBuffer->data, "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"", profileId,
               serverName, port, useBasicAuth, authUser, authPass);
@@ -151,7 +151,7 @@ bool WalterModem::httpQuery(uint8_t profileId, const char* uri,
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPQRY=%d,%d,\"%s\"",
                                  profileId, httpQueryCmd, uri);
 
@@ -175,7 +175,7 @@ bool WalterModem::httpSend(uint8_t profileId, const char* uri, uint8_t* data, ui
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
   if(httpPostParam == WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED) {
     stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d",
                                    profileId, httpSendCmd, uri, dataSize);
@@ -211,7 +211,7 @@ bool WalterModem::httpReceiveMessage(uint8_t profile_id, uint8_t* buf, size_t bu
 
   // Known bug: CME ERROR 4 when attempting to receive a HTTP payload with a fixed size.
   // Omit size for now and let rsp processor handle payload size
-  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d", profile_id);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,

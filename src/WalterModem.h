@@ -135,7 +135,7 @@ CONFIG_UINT8(WALTER_MODEM_TASK_QUEUE_MAX_ITEMS, 32)
  * @brief The size in bytes of the task queue.
  */
 #define WALTER_MODEM_TASK_QUEUE_SIZE                                                               \
-  WALTER_MODEM_TASK_QUEUE_MAX_ITEMS * sizeof(WalterModemTaskQueueItem)
+  WALTER_MODEM_TASK_QUEUE_MAX_ITEMS * sizeof(walter_modem_cmd_queue_t)
 
 /**
  * @brief The size of the stack of the command and response processing task.
@@ -2648,7 +2648,7 @@ typedef struct {
    * not in use and can be used to store the next response in.
    */
   volatile bool free = true;
-} WalterModemBuffer;
+} walter_modem_buffer_t;
 
 /**
  * @brief This structure represents an AT command to be added to the command queue.
@@ -2725,7 +2725,7 @@ typedef struct sWalterModemCmd {
    * @brief Optional temporary buffer (from the pool) used for non-static
    * string parameters
    */
-  WalterModemBuffer* stringsBuffer = NULL;
+  walter_modem_buffer_t* stringsBuffer = NULL;
 
   /**
    * @brief Memory used to save response data in. When the user doesn't pass a response object (in
@@ -2748,7 +2748,7 @@ typedef struct sWalterModemCmd {
    * @brief Pointer to an argument used by the completeHandler.
    */
   void* completeHandlerArg = NULL;
-} WalterModemCmd;
+} walter_modem_cmd_t;
 
 /**
  * @brief This structure groups commands which makes it easy to implement simple finite state
@@ -2794,13 +2794,13 @@ typedef struct {
   /**
    * @brief The buffer currently used by the parser.
    */
-  WalterModemBuffer* buf = NULL;
+  walter_modem_buffer_t* buf = NULL;
 
   /**
    * @brief In raw data chunk parser state, we remember nr expected bytes
    */
   size_t rawChunkSize = 0;
-} WalterModemATParserData;
+} walter_modem_at_parser_data_t;
 
 /**
  * @brief This structure represents an item in the task queue.
@@ -2809,13 +2809,13 @@ typedef struct {
   /**
    * @brief Pointer to an AT response or NULL when this is an AT command.
    */
-  WalterModemBuffer* rsp = NULL;
+  walter_modem_buffer_t* rsp = NULL;
 
   /**
    * @brief The AT command pointer in case rsp is NULL.
    */
-  WalterModemCmd* cmd = NULL;
-} WalterModemTaskQueueItem;
+  walter_modem_cmd_t* cmd = NULL;
+} walter_modem_cmd_queue_t;
 
 /**
  * @brief This structure represents the task queue. This is the queue which contains both incoming
@@ -2837,7 +2837,7 @@ typedef struct {
    * @brief The statically allocated queue memory.
    */
   uint8_t mem[WALTER_MODEM_TASK_QUEUE_SIZE] = { 0 };
-} WalterModemTaskQueue;
+} walter_modem_cmd_processing_task_t;
 
 typedef struct {
   /**
@@ -2854,7 +2854,7 @@ typedef struct {
    * @brief The statically allocated queue memory.
    */
   uint8_t mem[WALTER_MODEM_URC_EVENT_QUEUE_SIZE] = { 0 };
-} WalterModemURCEventQueue;
+} walter_modem_urc_processing_task_t;
 
 /**
  * @brief This structure represents the command queue. This queue is used inside the libraries
@@ -2864,7 +2864,7 @@ typedef struct {
   /**
    * @brief The FiFo command queue.
    */
-  WalterModemCmd* queue[WALTER_MODEM_MAX_PENDING_COMMANDS] = { NULL };
+  walter_modem_cmd_t* queue[WALTER_MODEM_MAX_PENDING_COMMANDS] = { NULL };
 
   /**
    * @brief Index of the outgoing queue item.
@@ -2875,7 +2875,7 @@ typedef struct {
    * @brief Index of the ingoing queue item.
    */
   uint8_t inIdx = 0;
-} WalterModemCmdQueue;
+} walter_modem_cmd_processing_queue_t;
 #pragma endregion
 
 #pragma region MOTA_STP
@@ -2976,22 +2976,22 @@ private:
   /**
    * @brief The pool of buffers used by the parser, command strings and responses
    */
-  static inline WalterModemBuffer _bufferPool[WALTER_MODEM_BUFFER_POOL_SIZE] = {};
+  static inline walter_modem_buffer_t _bufferPool[WALTER_MODEM_BUFFER_POOL_SIZE] = {};
 
   /**
    * @brief The queue used by the processing task.
    */
-  static inline WalterModemTaskQueue _taskQueue = {};
+  static inline walter_modem_cmd_processing_task_t _taskQueue = {};
 
   /**
    * @brief The queue used to store URC events in.
    */
-  static inline WalterModemURCEventQueue _urcEventQueue = {};
+  static inline walter_modem_urc_processing_task_t _urcEventQueue = {};
 
   /**
    * @brief The queue used to store pending tasks in.
    */
-  static inline WalterModemCmdQueue _cmdQueue = {};
+  static inline walter_modem_cmd_processing_queue_t _cmdQueue = {};
 
   /**
    * @brief The set with PDP contexts.
@@ -3033,12 +3033,12 @@ private:
   /**
    * @brief The data of the AT parser.
    */
-  static inline WalterModemATParserData _parserData = {};
+  static inline walter_modem_at_parser_data_t _parserData = {};
 
   /**
    * @brief The memory pool to save pending commands in.
    */
-  static inline WalterModemCmd _cmdPool[WALTER_MODEM_MAX_PENDING_COMMANDS] = {};
+  static inline walter_modem_cmd_t _cmdPool[WALTER_MODEM_MAX_PENDING_COMMANDS] = {};
 
   /**
    * @brief The current operational state of the modem.
@@ -3246,7 +3246,7 @@ private:
    *
    * @return Pointer to the command or NULL when no more free spaces are available.
    */
-  static WalterModemCmd* _cmdPoolGet();
+  static walter_modem_cmd_t* _cmdPoolGet();
 
   /**
    * @brief Pop the last item off the command queue.
@@ -3256,7 +3256,7 @@ private:
    *
    * @return Pointer to the command or NULL when the queue is empty.
    */
-  static WalterModemCmd* _cmdQueuePop();
+  static walter_modem_cmd_t* _cmdQueuePop();
 
   /**
    * @brief Put a new item onto the queue.
@@ -3267,7 +3267,7 @@ private:
    *
    * @return True on success, false when the queue is full.
    */
-  static bool _cmdQueuePut(WalterModemCmd* cmd);
+  static bool _cmdQueuePut(walter_modem_cmd_t* cmd);
 #pragma endregion
 
 #pragma region PDP_CONTEXT
@@ -3333,17 +3333,6 @@ private:
   static WalterModemSocket* _socketGet(int id = -1);
 
   /**
-   * @brief Release a socket structure back to the pool.
-   *
-   * This function will release the socket back to the socket set.
-   *
-   * @param sock The socket to release.
-   *
-   * @return None.
-   */
-  static void _socketRelease(WalterModemSocket* sock);
-
-  /**
    * @brief this function retrieves and updates all the socketStates
    *
    * @return True on success, false on error.
@@ -3361,17 +3350,11 @@ private:
   static size_t _extractPayloadSize();
 
   /**
-   * @brief this function extracts the current payloadSize in the _parserData buffer.
-   *
-   * @return currentSize fo the payload already received.
-   */
-  static size_t _getCurrentPayloadSize();
-  /**
    * @brief Get a free buffer from the buffer pool.
    *
    * @return None.
    */
-  static WalterModemBuffer* _getFreeBuffer(void);
+  static walter_modem_buffer_t* _getFreeBuffer(void);
 
   /**
    * @brief Handle an AT data byte.
@@ -3501,7 +3484,7 @@ private:
    *
    * @return None.
    */
-  static void _queueProcessingTask(void* args);
+  static void _cmdProcessingTask(void* args);
 #pragma endregion
 
 #pragma region QUEUE_CMD_RSP_PROCESSING
@@ -3529,12 +3512,12 @@ private:
    * @return Pointer to the command on success, NULL when no memory for the command was
    * available.
    */
-  static WalterModemCmd* _addQueueCmd(
+  static walter_modem_cmd_t* _queueModemCMD(
       const char* atCmd[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = { NULL }, const char* atRsp = NULL,
       WalterModemRsp* rsp = NULL, walterModemCb userCb = NULL, void* userCbArgs = NULL,
       void (*completeHandler)(struct sWalterModemCmd* cmd, WalterModemState result) = NULL,
       void* completeHandlerArg = NULL, WalterModemCmdType type = WALTER_MODEM_CMD_TYPE_TX_WAIT,
-      uint8_t* data = NULL, uint16_t dataSize = 0, WalterModemBuffer* stringsBuffer = NULL,
+      uint8_t* data = NULL, uint16_t dataSize = 0, walter_modem_buffer_t* stringsBuffer = NULL,
       uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMTS);
 
   /**
@@ -3549,7 +3532,8 @@ private:
    *
    * @return None.
    */
-  static void _finishQueueCmd(WalterModemCmd* cmd, WalterModemState result = WALTER_MODEM_STATE_OK);
+  static void _finishModemCMD(walter_modem_cmd_t* cmd,
+                              WalterModemState result = WALTER_MODEM_STATE_OK);
 
   /**
    * @brief Process an AT command from the queue.
@@ -3565,7 +3549,7 @@ private:
    * @return The number of ticks after which this function wants to be called again with the
    * command to process.
    */
-  static TickType_t _processQueueCmd(WalterModemCmd* cmd, bool queueError = false);
+  static TickType_t _processModemCMD(walter_modem_cmd_t* cmd, bool queueError = false);
 
   /**
    * @brief Process an AT response from the queue.
@@ -3580,7 +3564,7 @@ private:
    *
    * @return None.
    */
-  static void _processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* rsp);
+  static void _processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_t* rsp);
 #pragma endregion
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
