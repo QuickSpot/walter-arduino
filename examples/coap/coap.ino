@@ -154,6 +154,17 @@ bool lteConnect()
   return waitForNetwork();
 }
 
+/**
+ * @brief Modem URC event handler
+ *
+ * Handles unsolicited result codes (URC) from the modem.
+ *
+ * @note This method should not block for too long. Consider moving heavy processing and blocking
+ * functions to your main application thread.
+ *
+ * @param ev Pointer to the URC event data.
+ * @param args User argument pointer passed to urcSetEventHandler
+ */
 static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
@@ -183,7 +194,7 @@ void setup()
   Serial.begin(115200);
   delay(5000);
 
-  Serial.println("Error: Walter modem coap example v1.0.0");
+  Serial.printf("\r\n\r\n=== WalterModem CoAP example ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
@@ -209,7 +220,7 @@ void setup()
 void loop()
 {
   static unsigned long lastPublish = 0;
-  const unsigned long publishInterval = 15000; // 15 seconds
+  const unsigned long publishInterval = 15000;
 
   /* Periodically publish a message */
   if(millis() - lastPublish >= publishInterval) {

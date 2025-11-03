@@ -199,6 +199,17 @@ static bool mqttPublishMessage(const char* topic, const char* message)
   return false;
 }
 
+/**
+ * @brief Modem URC event handler
+ *
+ * Handles unsolicited result codes (URC) from the modem.
+ *
+ * @note This method should not block for too long. Consider moving heavy processing and blocking
+ * functions to your main application thread.
+ *
+ * @param ev Pointer to the URC event data.
+ * @param args User argument pointer passed to urcSetEventHandler
+ */
 static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
