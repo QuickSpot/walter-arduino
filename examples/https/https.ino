@@ -118,9 +118,11 @@ WalterModem modem;
 WalterModemRsp rsp = {};
 
 /**
- * @brief Buffer for incoming HTTPS response
+ * @brief The buffer to receive from the HTTP server.
+ * @note Make sure this is sufficiently large enough for incoming data. (Up to 1500 bytes supported
+ * by Sequans)
  */
-uint8_t incomingBuf[1024] = { 0 };
+uint8_t in_buf[1500] = { 0 };
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -265,29 +267,6 @@ bool setupTLSProfile(void)
 }
 
 /**
- * @brief Common routine to wait for and print an HTTP response.
- */
-static bool waitForHttpsResponse(uint8_t profile, const char* contentType)
-{
-  Serial.print("Waiting for reply...");
-  const uint16_t maxPolls = 30;
-  for(uint16_t i = 0; i < maxPolls; i++) {
-    Serial.print(".");
-    if(modem.httpDidRing(profile, incomingBuf, sizeof(incomingBuf), &rsp)) {
-      Serial.println();
-      Serial.printf("HTTPS status code (Modem): %d\r\n", rsp.data.httpResponse.httpStatus);
-      Serial.printf("Content type: %s\r\n", contentType);
-      Serial.printf("Payload:\r\n%s\r\n", incomingBuf);
-      return true;
-    }
-    delay(1000);
-  }
-  Serial.println();
-  Serial.println("Error: HTTPS response timeout");
-  return false;
-}
-
-/**
  * @brief Perform an HTTPS GET request.
  */
 bool httpsGet(const char* path)
@@ -301,7 +280,7 @@ bool httpsGet(const char* path)
     return false;
   }
   Serial.println("HTTPS GET successfully sent");
-  return waitForHttpsResponse(MODEM_HTTPS_PROFILE, ctBuf);
+  return true;
 }
 
 /**
@@ -321,7 +300,41 @@ bool httpsPost(const char* path, const uint8_t* body, size_t bodyLen,
     return false;
   }
   Serial.println("HTTPS POST successfully sent");
-  return waitForHttpsResponse(MODEM_HTTPS_PROFILE, ctBuf);
+  return true;
+}
+
+/**
+ * @brief Modem URC event handler
+ *
+ * Handles unsolicited result codes (URC) from the modem.
+ *
+ * @note This method should not block for too long. Consider moving heavy processing and blocking
+ * functions to your main application thread.
+ *
+ * @param ev Pointer to the URC event data.
+ * @param args User argument pointer passed to urcSetEventHandler
+ */
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+{
+  Serial.printf("URC received at %lld\n", ev->timestamp);
+  switch(ev->type) {
+  case WM_URC_TYPE_HTTP:
+    if(ev->http.event == WALTER_MODEM_HTTP_EVENT_RING) {
+      Serial.printf("HTTP Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
+                    ev->http.profileId, ev->http.status, ev->http.dataLen,
+                    ev->http.contentType ? ev->http.contentType : "(none)");
+      if(modem.httpReceiveMessage(ev->http.profileId, in_buf, ev->http.dataLen)) {
+        for(int i = 0; i < ev->http.dataLen; i++) {
+          Serial.printf("%c", in_buf[i]);
+        }
+        Serial.printf("\n");
+      }
+    }
+    break;
+  default:
+    /* Unhandled event */
+    break;
+  }
 }
 
 /**
@@ -335,12 +348,14 @@ void setup()
   Serial.printf("\r\n\r\n=== WalterModem HTTPS example ===\r\n\r\n");
 
   /* Start the modem */
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
     return;
   }
+
+  modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the lte network */
   if(!lteConnect()) {
@@ -396,4 +411,6 @@ void loop()
 
     Serial.println();
   }
+
+  delay(10);
 }
