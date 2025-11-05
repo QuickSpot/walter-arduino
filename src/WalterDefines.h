@@ -1,13 +1,14 @@
 /**
  * @file WalterDefines.h
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Mar 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 5 Nov 2025
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2025, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -223,7 +224,7 @@ bool strToFloat(const char* str, int len, float* result);
     }                                                                                              \
     return state == WALTER_MODEM_STATE_OK;                                                         \
   } else {                                                                                         \
-    WalterModemRsp cbRsp = {};                                                                     \
+    walter_modem_rsp_t cbRsp = {};                                                                 \
     cbRsp.result = state;                                                                          \
     cb(&cbRsp, args);                                                                              \
     return true;                                                                                   \
@@ -251,7 +252,7 @@ bool strToFloat(const char* str, int len, float* result);
  * @param atRsp The expected AT response from the modem.
  * @param rsp Pointer to the response structure to save the response in.
  * @param cb Optional user callback for asynchronous API.
- * @param args Optional argument to pass to the callback.
+ * @param[in] args Arguments to pass to the callback.
  * @param ... Optional arguments for the _queueModemCMD function.
  */
 #define _runCmd(atCmd, atRsp, rsp, cb, args, ...)                                                  \

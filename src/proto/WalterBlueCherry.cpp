@@ -1,13 +1,14 @@
 /**
  * @file WalterBlueCherry.cpp
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Mar 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 5 Nov 2025
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2025, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -97,7 +98,7 @@ bool WalterModem::_blueCherrySocketConfigure()
 
   success &= socketConfig(_blueCherry.bcProfileId);
   success &= socketConfigExtended(_blueCherry.bcProfileId);
-  success &= socketConfigSecure(_blueCherry.bcProfileId, true, _blueCherry.tlsProfileId);
+  success &= socketConfigSecure(_blueCherry.bcProfileId, true, _blueCherry.tls_profile_id);
 
   return success;
 }
@@ -283,26 +284,26 @@ bool WalterModem::_blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t*
 
 #pragma region PUBLIC_METHODS
 
-bool WalterModem::blueCherryProvision(const char* walterCertificate, const char* walterPrivateKey,
-                                      const char* caCertificate, WalterModemRsp* rsp,
-                                      walterModemCb cb, void* args)
+bool WalterModem::blueCherryProvision(const char* cert_pem, const char* priv_key_pem,
+                                      const char* ca_cert, walter_modem_rsp_t* rsp,
+                                      walter_modem_cb_t cb, void* args)
 {
   WalterModemState result = WALTER_MODEM_STATE_OK;
 
-  if(walterCertificate) {
-    if(!tlsWriteCredential(false, 5, walterCertificate)) {
+  if(cert_pem) {
+    if(!tlsWriteCredential(false, 5, cert_pem)) {
       result = WALTER_MODEM_STATE_ERROR;
     }
   }
 
-  if(walterPrivateKey) {
-    if(!tlsWriteCredential(true, 0, walterPrivateKey)) {
+  if(priv_key_pem) {
+    if(!tlsWriteCredential(true, 0, priv_key_pem)) {
       result = WALTER_MODEM_STATE_ERROR;
     }
   }
 
-  if(caCertificate) {
-    if(!tlsWriteCredential(false, 6, caCertificate)) {
+  if(ca_cert) {
+    if(!tlsWriteCredential(false, 6, ca_cert)) {
       result = WALTER_MODEM_STATE_ERROR;
     }
   }
@@ -327,11 +328,11 @@ bool WalterModem::blueCherryIsProvisioned()
   return true;
 }
 
-bool WalterModem::blueCherryInit(uint8_t tlsProfileId, uint8_t* otaBuffer, WalterModemRsp* rsp,
-                                 uint16_t ackTimeout)
+bool WalterModem::blueCherryInit(uint8_t tls_profile_id, uint8_t* ota_buffer,
+                                 walter_modem_rsp_t* rsp, uint16_t ack_timeout_s)
 {
   if((!blueCherryIsProvisioned() ||
-      !tlsConfigProfile(tlsProfileId, WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
+      !tlsConfigProfile(tls_profile_id, WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
                         WALTER_MODEM_TLS_VERSION_12, 6, 5, 0))) {
     _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED;
 
@@ -344,7 +345,7 @@ bool WalterModem::blueCherryInit(uint8_t tlsProfileId, uint8_t* otaBuffer, Walte
     return false;
   }
 
-  _blueCherry.tlsProfileId = tlsProfileId;
+  _blueCherry.tls_profile_id = tls_profile_id;
 
   _blueCherry.messageOutLen =
       WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE; // Reserve space for CoAP headers
@@ -354,8 +355,8 @@ bool WalterModem::blueCherryInit(uint8_t tlsProfileId, uint8_t* otaBuffer, Walte
 
   _blueCherry.emitErrorEvent = false;
   _blueCherry.otaSize = 0;
-  _blueCherry.otaBuffer = otaBuffer;
-  _blueCherry.ackTimeout = ackTimeout;
+  _blueCherry.ota_buffer = ota_buffer;
+  _blueCherry.ack_timeout_s = ack_timeout_s;
 
   if(_blueCherrySocketConnect()) {
     _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
@@ -385,9 +386,9 @@ bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data)
   return true;
 }
 
-bool WalterModem::blueCherrySync(WalterModemRsp* rsp)
+bool WalterModem::blueCherrySync(walter_modem_rsp_t* rsp)
 {
-  walterModemCb cb = NULL;
+  walter_modem_cb_t cb = NULL;
   void* args = NULL;
 
   if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
@@ -477,7 +478,7 @@ bool WalterModem::blueCherrySync(WalterModemRsp* rsp)
   _returnState(WALTER_MODEM_STATE_OK);
 }
 
-bool WalterModem::blueCherryClose(WalterModemRsp* rsp, walterModemCb cb, void* args)
+bool WalterModem::blueCherryClose(walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
   _runCmd({ "AT+SQNCOAPCLOSE=0" }, "+SQNCOAPCLOSED: ", rsp, cb, args);
   _returnAfterReply();

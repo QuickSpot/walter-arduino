@@ -244,7 +244,7 @@ bool lteConnect()
  * @return true  If assistance status was successfully retrieved and parsed.
  * @return false If the assistance status could not be retrieved.
  */
-bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
+bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullptr,
                            bool* updateEphemeris = nullptr)
 {
   /* Check assistance data status */
@@ -293,7 +293,7 @@ bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
  * @return true If the clock is valid or successfully synchronized.
  * @return false If synchronization fails or LTE connection fails.
  */
-bool validateGNSSClock(WalterModemRsp* rsp)
+bool validateGNSSClock(walter_modem_rsp_t* rsp)
 {
   /* Validate the GNSS subsystem clock */
   modem.gnssGetUTCTime(rsp);
@@ -339,7 +339,7 @@ bool validateGNSSClock(WalterModemRsp* rsp)
  * @return true  Assistance data is valid (or successfully updated).
  * @return false Failure to sync time, connect LTE, or update assistance data.
  */
-bool updateGNSSAssistance(WalterModemRsp* rsp)
+bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
 {
   bool updateAlmanac = false;
   bool updateEphemeris = false;
@@ -435,7 +435,7 @@ void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
  */
 bool attemptGNSSFix()
 {
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
 
   if(!validateGNSSClock(&rsp)) {
     Serial.println("Error: Could not validate GNSS clock");
@@ -558,7 +558,7 @@ void setup()
 
   modem.urcSetEventHandler(myURCHandler, NULL);
 
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
 
   /* Ensure we are using the preferred RAT */
   /* This is a reboot-persistent setting */
@@ -624,7 +624,7 @@ void setup()
  */
 void loop()
 {
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
 
   attemptGNSSFix();
 

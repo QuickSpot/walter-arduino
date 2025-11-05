@@ -64,7 +64,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-WalterModemRsp rsp = {};
+walter_modem_rsp_t rsp = {};
 
 /**
  * @brief The buffer to transmit to the CoAP server.
@@ -165,7 +165,7 @@ bool lteConnect()
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
