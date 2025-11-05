@@ -311,6 +311,7 @@ void setup()
     return;
   }
 
+  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the LTE network */
@@ -354,18 +355,13 @@ void setup()
  */
 void loop()
 {
-  static unsigned long lastSend = 0;
-  const unsigned long sendInterval = 30000;
-
-  if(millis() - lastSend >= sendInterval) {
-    lastSend = millis();
-
-    if(!tcpSendBasicInfoPacket()) {
-      Serial.println("TCP send failed, restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-    counter++;
-    Serial.println();
+  if(!tcpSendBasicInfoPacket()) {
+    Serial.println("TCP send failed, restarting...");
+    delay(1000);
+    ESP.restart();
   }
+
+  counter++;
+  Serial.println();
+  delay(15000);
 }

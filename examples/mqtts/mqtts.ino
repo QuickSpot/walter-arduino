@@ -291,7 +291,7 @@ static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
   switch(ev->type) {
   case WM_URC_TYPE_MQTT:
     if(ev->mqtt.event == WALTER_MODEM_MQTT_EVENT_RING) {
-      Serial.printf("MQTT Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
+      Serial.printf("MQTTS Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
                     ev->mqtt.topic, ev->mqtt.dataLen, ev->mqtt.qos, ev->mqtt.msgId);
       if(modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
         for(int i = 0; i < ev->mqtt.dataLen; i++) {

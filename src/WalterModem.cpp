@@ -848,7 +848,7 @@ size_t WalterModem::_uartWrite(uint8_t* buf, int writeSize)
 }
 
 #pragma endregion
-#pragma region CMD_POOL_QUEUE
+#pragma region STATE_CMD_POOL
 
 walter_modem_cmd_t* WalterModem::_cmdPoolGet()
 {
@@ -895,8 +895,8 @@ bool WalterModem::_cmdQueuePut(walter_modem_cmd_t* cmd)
   return true;
 }
 
-#pragma endregion
-#pragma region PDP_CONTEXT
+#pragma endregion // STATE_CMD_POOL
+#pragma region STATE_PDP_CONTEXT
 
 walter_modem_pdp_context_t* WalterModem::_pdpContextGet(int id)
 {
@@ -931,8 +931,8 @@ void WalterModem::_loadRTCPdpContextSet(walter_modem_pdp_context_t* _pdpCtxSetRT
   _pdpCtx = _pdpCtxSet;
 }
 
-#pragma endregion
-#pragma region UART_PARSING
+#pragma endregion // STATE_PDP_CONTEXT
+#pragma region UART_PROC_TASK
 
 walter_modem_buffer_t* WalterModem::_getFreeBuffer(void)
 {
@@ -1379,8 +1379,8 @@ void WalterModem::_cmdProcessingTask(void* args)
   }
 }
 
-#pragma endregion // UART_PARSING
-#pragma region URC_EVENT_PROCESSING
+#pragma endregion // UART_PROC_TASK
+#pragma region URC_PROC_TASK
 
 void WalterModem::_URCEventProcessingTask(void* args)
 {
@@ -1415,8 +1415,8 @@ void WalterModem::_URCEventProcessingTask(void* args)
   }
 }
 
-#pragma endregion // URC_EVENT_PROCESSING
-#pragma region CMD_RSP_PROCESSING
+#pragma endregion // URC_PROC_TASK
+#pragma region CMD_PROCESSING
 
 walter_modem_cmd_t* WalterModem::_queueModemCMD(
     const char* atCmd[WALTER_MODEM_COMMAND_MAX_ELEMS + 1], const char* atRsp,
@@ -1562,6 +1562,9 @@ TickType_t WalterModem::_processModemCMD(walter_modem_cmd_t* cmd, bool queueErro
 
   return WALTER_MODEM_CMD_TIMEOUT_TICKS;
 }
+
+#pragma endregion // CMD_PROCESSING
+#pragma region RSP_PROCESSING
 
 void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_t* buff)
 {
@@ -2850,10 +2853,6 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       }
     }
 
-    if(cmd != NULL) {
-      cmd->rsp->data.mqttResponse.mqttStatus = _mqttStatus;
-    }
-
     walter_modem_urc_event_t newEvent = {};
     newEvent.type = WalterModemURCType::WM_URC_TYPE_MQTT;
     newEvent.timestamp = esp_timer_get_time();
@@ -3062,9 +3061,11 @@ after_processing_logic:
   /* Finish processing the command */
   _finishModemCMD(cmd, result);
   buff->free = true;
-}
 
 #pragma endregion // RSP_PROC_FINISH
+}
+
+#pragma endregion // RSP_PROCESSING
 #pragma region OTA
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 

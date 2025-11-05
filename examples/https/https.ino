@@ -320,7 +320,7 @@ static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
   switch(ev->type) {
   case WM_URC_TYPE_HTTP:
     if(ev->http.event == WALTER_MODEM_HTTP_EVENT_RING) {
-      Serial.printf("HTTP Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
+      Serial.printf("HTTPS Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
                     ev->http.profileId, ev->http.status, ev->http.dataLen,
                     ev->http.contentType ? ev->http.contentType : "(none)");
       if(modem.httpReceiveMessage(ev->http.profileId, in_buf, ev->http.dataLen)) {

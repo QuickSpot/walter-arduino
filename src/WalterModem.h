@@ -70,13 +70,11 @@ for efficient configuration management."
 #endif
 
 #endif
-#pragma region WARNING_MACROS
 
 #ifndef DISABLE_USED_WARNING
 #define DISABLE_USED_WARNING __attribute__((unused))
 
 #endif
-#pragma endregion
 #pragma region CONFIG_MACRO
 #ifdef CONFIG_WALTER_MODEM_KCONFIG
 
@@ -138,9 +136,6 @@ for efficient configuration management."
 #define CONFIG_INT16(name, default_value) CONFIG(name, const int16_t, default_value)
 #define CONFIG_INT32(name, default_value) CONFIG(name, const int32_t, default_value)
 #define CONFIG_INT64(name, default_value) CONFIG(name, const int64_t, default_value)
-
-#pragma endregion
-#pragma region CONFIGURATION_CONSTANTS
 
 /**
  * @brief The maximum number of items in the task queue.
@@ -2602,7 +2597,7 @@ union WalterModemRspData {
   /**
    * @brief The ID of a PDP context.
    */
-  int pdp_ctx_id;
+  int pdpCtxId;
 
   /**
    * @brief The radio access technology.

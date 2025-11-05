@@ -54,7 +54,7 @@
 /**
  * @brief COAP profile used for COAP tests
  */
-#define COAP_PROFILE 1
+#define MODEM_COAP_PROFILE 1
 
 /**
  * @brief The modem instance.
@@ -175,7 +175,6 @@ static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
           "CoAP Ring Received for profile: %d Length: %u Type: %u Message ID: %u Code: %u\n",
           ev->coap.profileId, ev->coap.dataLen, ev->coap.type, ev->coap.msgId, ev->coap.rspCode);
       if(modem.coapReceiveMessage(ev->coap.profileId, ev->coap.msgId, in_buf, ev->coap.dataLen)) {
-        Serial.printf("Payload:\n");
         for(int i = 0; i < ev->coap.dataLen; i++) {
           Serial.printf("%c", in_buf[i]);
         }
@@ -208,6 +207,7 @@ void setup()
     return;
   }
 
+  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the lte network */
@@ -219,42 +219,33 @@ void setup()
 
 void loop()
 {
-  static unsigned long lastPublish = 0;
-  const unsigned long publishInterval = 15000;
+  out_buf[6] = counter >> 8;
+  out_buf[7] = counter & 0xFF;
+  counter++;
 
-  /* Periodically publish a message */
-  if(millis() - lastPublish >= publishInterval) {
-    lastPublish = millis();
-
-    out_buf[6] = counter >> 8;
-    out_buf[7] = counter & 0xFF;
-
-    counter++;
-
-    if(!modem.coapCreateContext(COAP_PROFILE, "coap.me", 5683)) {
-      Serial.println("Error: Could not create COAP context.");
-      return;
-    } else {
-      Serial.println("Successfully created or refreshed COAP context");
-    }
-
-    if(modem.coapSetHeader(COAP_PROFILE, counter)) {
-      Serial.printf("Set COAP header with message id %d\r\n", counter);
-    } else {
-      Serial.println("Error: Could not set COAP header");
-      delay(1000);
-      ESP.restart();
-    }
-
-    if(modem.coapSendData(COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
-                          WALTER_MODEM_COAP_SEND_METHOD_GET, 8, out_buf)) {
-      Serial.println("Sent COAP datagram");
-    } else {
-      Serial.println("Error: Could not send COAP datagram");
-      delay(1000);
-      ESP.restart();
-    }
+  if(!modem.coapCreateContext(MODEM_COAP_PROFILE, "coap.me", 5683)) {
+    Serial.println("Error: Could not create COAP context.");
+    return;
+  } else {
+    Serial.println("Successfully created or refreshed COAP context");
   }
 
-  delay(10);
+  if(modem.coapSetHeader(MODEM_COAP_PROFILE, counter)) {
+    Serial.printf("Set COAP header with message id %d\r\n", counter);
+  } else {
+    Serial.println("Error: Could not set COAP header");
+    delay(1000);
+    ESP.restart();
+  }
+
+  if(modem.coapSendData(MODEM_COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
+                        WALTER_MODEM_COAP_SEND_METHOD_GET, 8, out_buf)) {
+    Serial.println("Sent COAP datagram");
+  } else {
+    Serial.println("Error: Could not send COAP datagram");
+    delay(1000);
+    ESP.restart();
+  }
+
+  delay(15000);
 }

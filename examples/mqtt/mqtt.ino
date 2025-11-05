@@ -255,6 +255,7 @@ void setup()
     return;
   }
 
+  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the LTE network */
@@ -292,25 +293,17 @@ void setup()
  */
 void loop()
 {
-  static unsigned long lastPublish = 0;
-  const unsigned long publishInterval = 15000; // 15 seconds
-
   static int seq = 0;
   static char out_msg[64];
+  seq++;
 
-  /* Periodically publish a message */
-  if(millis() - lastPublish >= publishInterval) {
-    lastPublish = millis();
-    seq++;
-
-    sprintf(out_msg, "%s-%d", out_buf, seq);
-    if(!mqttPublishMessage(MQTT_TOPIC, out_msg)) {
-      Serial.println("MQTT publish failed, restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-    Serial.println();
+  sprintf(out_msg, "%s-%d", out_buf, seq);
+  if(!mqttPublishMessage(MQTT_TOPIC, out_msg)) {
+    Serial.println("MQTT publish failed, restarting...");
+    delay(1000);
+    ESP.restart();
   }
 
-  delay(10);
+  Serial.println();
+  delay(15000);
 }

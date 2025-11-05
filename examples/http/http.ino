@@ -274,6 +274,7 @@ void setup()
     return;
   }
 
+  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the lte network */
@@ -295,33 +296,25 @@ void setup()
  */
 void loop()
 {
-  static unsigned long lastRequest = 0;
-  const unsigned long requestInterval = 10000; // 10 seconds
-
-  if(millis() - lastRequest >= requestInterval) {
-    lastRequest = millis();
-
-    // Example GET
-    if(!httpGet(HTTP_GET_ENDPOINT)) {
-      Serial.println("HTTP GET failed, restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-
-    Serial.println();
-    delay(2000);
-
-    // Example POST
-    const char jsonBody[] = "{\"hello\":\"quickspot\"}";
-    if(!httpPost(HTTP_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
-                 "application/json")) {
-      Serial.println("HTTP POST failed, restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-
-    Serial.println();
+  // Example GET
+  if(!httpGet(HTTP_GET_ENDPOINT)) {
+    Serial.println("HTTP GET failed, restarting...");
+    delay(1000);
+    ESP.restart();
   }
 
-  delay(10);
+  Serial.println();
+  delay(5000);
+
+  // Example POST
+  const char jsonBody[] = "{\"hello\":\"quickspot\"}";
+  if(!httpPost(HTTP_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
+               "application/json")) {
+    Serial.println("HTTP POST failed, restarting...");
+    delay(1000);
+    ESP.restart();
+  }
+
+  Serial.println();
+  delay(15000);
 }

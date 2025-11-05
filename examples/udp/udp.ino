@@ -368,4 +368,6 @@ void loop()
     counter++;
     Serial.println();
   }
+
+  delay(10);
 }
