@@ -46,6 +46,7 @@
  */
 
 #include <WalterDefines.h>
+#include <esp_log.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && !CONFIG_WALTER_MODEM_ENABLE_MOTA
 #error Bluecherry cannot be enabled with OTA or MOTA disabled.

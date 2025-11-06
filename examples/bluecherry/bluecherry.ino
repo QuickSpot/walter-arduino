@@ -283,8 +283,8 @@ void setup()
     while(!modem.blueCherryInit(BC_TLS_PROFILE, ota_buffer, &rsp)) {
       if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
          attempt <= 2) {
-        Serial.println("Device is not provisioned for BlueCherry "
-                       "communication, starting Zero Touch Provisioning");
+        Serial.println("Device is not provisioned for BlueCherry communication, starting Zero "
+                       "Touch Provisioning");
 
         if(attempt == 0) {
           // Device is not provisioned yet, initialize BlueCherry zero touch

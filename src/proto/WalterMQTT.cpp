@@ -45,12 +45,13 @@
  */
 
 #include <WalterDefines.h>
+#include <esp_log.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 #pragma region PRIVATE_METHODS
 static void mqttResubscribeCallback(const walter_modem_rsp_t* rsp, void* args)
 {
-  /*This is an empty callback so the _runCmd() runs async*/
+  /* This is an empty callback so the _runCmd() runs async */
 }
 
 bool WalterModem::_mqttSubscribeRaw(const char* topicString, uint8_t qos, walter_modem_rsp_t* rsp,

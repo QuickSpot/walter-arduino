@@ -55,6 +55,7 @@
 #include <esp_log.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
