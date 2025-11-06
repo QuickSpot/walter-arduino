@@ -104,7 +104,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-WalterModemRsp rsp;
+walter_modem_rsp_t rsp;
 
 /**
  * @brief The buffer to transmit to the MQTT server.
@@ -285,13 +285,13 @@ static bool mqttsPublishMessage(const char* topic, const char* message)
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
   case WM_URC_TYPE_MQTT:
     if(ev->mqtt.event == WALTER_MODEM_MQTT_EVENT_RING) {
-      Serial.printf("MQTT Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
+      Serial.printf("MQTTS Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
                     ev->mqtt.topic, ev->mqtt.dataLen, ev->mqtt.qos, ev->mqtt.msgId);
       if(modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
         for(int i = 0; i < ev->mqtt.dataLen; i++) {

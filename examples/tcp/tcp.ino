@@ -72,7 +72,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-WalterModemRsp rsp = {};
+walter_modem_rsp_t rsp = {};
 
 /**
  * @brief The buffer to transmit to the TCP server. The first 6 bytes will be
@@ -269,7 +269,7 @@ bool tcpSendBasicInfoPacket()
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const WalterModemURCEvent* ev, void* args)
+static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
@@ -311,6 +311,7 @@ void setup()
     return;
   }
 
+  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the LTE network */
@@ -354,18 +355,13 @@ void setup()
  */
 void loop()
 {
-  static unsigned long lastSend = 0;
-  const unsigned long sendInterval = 30000;
-
-  if(millis() - lastSend >= sendInterval) {
-    lastSend = millis();
-
-    if(!tcpSendBasicInfoPacket()) {
-      Serial.println("TCP send failed, restarting...");
-      delay(1000);
-      ESP.restart();
-    }
-    counter++;
-    Serial.println();
+  if(!tcpSendBasicInfoPacket()) {
+    Serial.println("TCP send failed, restarting...");
+    delay(1000);
+    ESP.restart();
   }
+
+  counter++;
+  Serial.println();
+  delay(15000);
 }
