@@ -65,7 +65,7 @@
 #define ModemSerial Serial2
 
 // Buffer to store OTA firmware messages in
-byte otaBuffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
+byte ota_buffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
 
 // The modem instance
 WalterModem modem;
@@ -216,7 +216,7 @@ bool lteConnect()
 // new firmware.
 void syncBlueCherry()
 {
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
 
   do {
     if(!modem.blueCherrySync(&rsp)) {
@@ -274,17 +274,17 @@ void setup()
     ESP.restart();
   }
 
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
 
   // If this is the first boot, set up bluecherry and ZTP.
   if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
     // Initialize the BlueCherry connection
     unsigned short attempt = 0;
-    while(!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
+    while(!modem.blueCherryInit(BC_TLS_PROFILE, ota_buffer, &rsp)) {
       if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
          attempt <= 2) {
-        Serial.println("Device is not provisioned for BlueCherry "
-                       "communication, starting Zero Touch Provisioning");
+        Serial.println("Device is not provisioned for BlueCherry communication, starting Zero "
+                       "Touch Provisioning");
 
         if(attempt == 0) {
           // Device is not provisioned yet, initialize BlueCherry zero touch
@@ -358,7 +358,7 @@ void loop()
     ESP.restart();
   }
 
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
 
   // Send a message containing the measured RSRP value to an MQTT topic
   if(modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {

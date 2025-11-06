@@ -304,7 +304,7 @@ public:
    *
    * @return True on success, false if the Type ID is not valid.
    */
-  static bool begin(const char* typeId, const uint8_t tlsProfileId, const char* caCert,
+  static bool begin(const char* typeId, const uint8_t tls_profile_id, const char* caCert,
                     const WalterModem* modem);
 
   /**
