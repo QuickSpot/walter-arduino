@@ -79,7 +79,7 @@
 static bool _coapRingReceived = false;
 static uint16_t _coapRingMsgId = 0;
 
-static void ztpURCHandler(const WalterModemURCEvent* ev, void* args)
+static void ztpURCHandler(const walter_modem_urc_event_t* ev, void* args)
 {
   switch(ev->type) {
   case WM_URC_TYPE_COAP:
@@ -129,11 +129,11 @@ bool BlueCherryZTP::_seedRandom(bool rfEnabled)
   return ret == 0;
 }
 
-bool BlueCherryZTP::begin(const char* typeId, const uint8_t tlsProfileId, const char* caCert,
+bool BlueCherryZTP::begin(const char* typeId, const uint8_t tls_profile_id, const char* caCert,
                           const WalterModem* modem)
 {
-  if(typeId == nullptr || strlen(typeId) != BLUECHERRY_ZTP_ID_LEN || tlsProfileId == 0 ||
-     tlsProfileId == 0 || tlsProfileId > 6 || caCert == nullptr || modem == nullptr) {
+  if(typeId == nullptr || strlen(typeId) != BLUECHERRY_ZTP_ID_LEN || tls_profile_id == 0 ||
+     tls_profile_id == 0 || tls_profile_id > 6 || caCert == nullptr || modem == nullptr) {
     return false;
   }
 
@@ -142,10 +142,10 @@ bool BlueCherryZTP::begin(const char* typeId, const uint8_t tlsProfileId, const 
   }
 
   _bcTypeId = typeId;
-  _tlsProfileId = tlsProfileId;
+  _tlsProfileId = tls_profile_id;
   _modem = modem;
 
-  if(!modem->tlsConfigProfile(tlsProfileId, WALTER_MODEM_TLS_VALIDATION_CA,
+  if(!modem->tlsConfigProfile(tls_profile_id, WALTER_MODEM_TLS_VALIDATION_CA,
                               WALTER_MODEM_TLS_VERSION_12, 6)) {
     return false;
   }
@@ -242,7 +242,7 @@ bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type, unsigne
 bool BlueCherryZTP::requestDeviceId()
 {
   int ret;
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
   uint8_t cborBuf[256];
   uint8_t coapData[16];
   ZTP_CBOR cbor;
@@ -422,7 +422,7 @@ bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled)
 bool BlueCherryZTP::requestSignedCertificate()
 {
   int ret;
-  WalterModemRsp rsp = {};
+  walter_modem_rsp_t rsp = {};
   uint8_t buf[BLUECHERRY_ZTP_CERT_BUF_SIZE];
   uint8_t coapData[BLUECHERRY_ZTP_CERT_BUF_SIZE];
   ZTP_CBOR cbor;

@@ -95,7 +95,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-WalterModemRsp rsp;
+walter_modem_rsp_t rsp;
 
 /**
  * @brief Buffer for incoming response
