@@ -1385,8 +1385,13 @@ void WalterModem::_cmdProcessingTask(void* args)
 
 void WalterModem::_URCEventProcessingTask(void* args)
 {
+  if(_watchdogTimeout) {
+    esp_task_wdt_add(NULL);
+  }
+
   walter_modem_urc_event_t qItem;
   while(true) {
+    tickleWatchdog();
     vTaskDelay(pdMS_TO_TICKS(10));
     if(xQueueReceive(_urcEventQueue.handle, &qItem, 0) == pdTRUE) {
 
