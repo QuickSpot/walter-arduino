@@ -265,6 +265,14 @@ CONFIG(WALTER_MODEM_BLUECHERRY_HOSTNAME, const char*, "coap.bluecherry.io")
  */
 CONFIG(WALTER_MODEM_BLUECHERRY_PORT, uint16_t, 5684)
 
+/**
+ * @brief The maximum number of bluecherry messages the io queue will retain.
+ */
+CONFIG_UINT8(WALTER_MODEM_MAX_QUEUED_BLUECHERRY_MESSAGES, 16)
+
+#define WALTER_MODEM_BLUECHERRY_QUEUE_SIZE                                                         \
+  WALTER_MODEM_MAX_QUEUED_BLUECHERRY_MESSAGES * sizeof(walter_modem_bluecherry_coap_message_t)
+
 #endif
 
 /**
@@ -411,12 +419,14 @@ CONFIG_UINT8(SPI_SECTORS_PER_BLOCK, 16)
 
 #include <condition_variable>
 
-#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_MOTA
+#if CONFIG_WALTER_MODEM_ENABLE_OTA || CONFIG_WALTER_MODEM_ENABLE_MOTA
 
 #include <esp_partition.h>
 #include <esp_vfs.h>
 #include <esp_vfs_fat.h>
 #include <spi_flash_mmap.h>
+#include <esp_ota_ops.h>
+#include <esp_log.h>
 
 #endif
 
@@ -1205,6 +1215,16 @@ typedef enum {
 } WalterModemBlueCherryStatus;
 
 /**
+ * @brief The possible return codes of blueCherryInit().
+ */
+typedef enum {
+  WALTER_MODEM_BLUECHERRY_INIT_STATUS_UNINITIALIZED,
+  WALTER_MODEM_BLUECHERRY_INIT_STATUS_INITIALIZED,
+  WALTER_MODEM_BLUECHERRY_INIT_STATUS_NOT_PROVISIONED,
+  WALTER_MODEM_BLUECHERRY_INIT_STATUS_ERROR
+} WalterModemBlueCherryInitStatus;
+
+/**
  * @brief The possible statuses of the custom BlueCherry CoAP protocol.
  */
 typedef enum {
@@ -1233,7 +1253,8 @@ typedef enum {
   WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_INITIALIZE = 5,
   WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_CHUNK = 6,
   WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH = 7,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8
+  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8,
+  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_PARTITION_HASH = 9
 } WalterModemBlueCherryEventType;
 
 #endif
@@ -1998,6 +2019,22 @@ typedef struct {
 } WalterModemBlueCherryMessage;
 
 /**
+ * @brief This structure represents a BlueCherry IO message.
+ */
+typedef struct {
+  bool is_input;
+  uint8_t version;
+  uint8_t type;
+  uint8_t token_len;
+  uint8_t code;
+  uint16_t message_id;
+  uint64_t token;
+  uint8_t data[WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN]; // TODO: Test if server can handle 1500
+                                                       // bytes. If not, implement with v2
+  uint16_t data_len;
+} walter_modem_bluecherry_coap_message_t;
+
+/**
  * @brief This structure represents the BlueCherry data with the individual messages.
  */
 typedef struct {
@@ -2030,7 +2067,7 @@ typedef struct {
   /**
    * @brief CoAP message id of the message being composed or sent. Start at 1, 0 is invalid.
    */
-  uint16_t curMessageId = 1;
+  uint16_t lastTransmittedMsgID = 0x0001;
 
   /**
    * @brief The UDP socket ID of the bluecherry CoAP socket.
@@ -2053,31 +2090,24 @@ typedef struct {
   uint16_t ack_timeout_s = 60;
 
   /**
-   * @brief The outgoing CoAP message buffer.
+   * @brief The incoming CoAP message structure.
    */
-  uint8_t messageOut[WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN];
+  walter_modem_bluecherry_coap_message_t message_in;
 
   /**
-   * @brief Length of the CoAP message being composed so far
-   *
-   * Reserved space for CoAP headers on initial boot without token.
+   * @brief The outgoing CoAP message structure.
    */
-  uint16_t messageOutLen = 5;
+  walter_modem_bluecherry_coap_message_t message_out;
 
   /**
-   * @brief Buffer for the incoming CoAP message.
+   * @brief The CoAP message being currently processed.
    */
-  uint8_t messageIn[WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN];
-
-  /**
-   * @brief Length of the incoming CoAP message.
-   */
-  uint16_t messageInLen = 0;
+  walter_modem_bluecherry_coap_message_t message_processing;
 
   /**
    * @brief Last acknowledged message id, 0 means nothing received yet.
    */
-  uint16_t lastAckedMessageId = 0;
+  uint16_t lastReceivedMsgID = 0x0000;
 
   /**
    * @brief Flag that indicates whether more data is ready on bridge, meaning an extra
@@ -2098,7 +2128,7 @@ typedef struct {
   /**
    * @brief Pointer to where the incoming OTA data should be saved.
    */
-  uint8_t* ota_buffer = NULL;
+  uint8_t ota_buffer[SPI_FLASH_SEC_SIZE];
 
   /**
    * @brief The current position in the OTA buffer.
@@ -2130,6 +2160,21 @@ typedef struct {
    * @brief The current OTA partition.
    */
   const esp_partition_t* otaPartition = NULL;
+
+  /**
+   * @brief Whether auto sync is enabled or not.
+   */
+  bool auto_sync_enabled = false;
+
+  /**
+   * @brief The auto sync interval in milliseconds.
+   */
+  uint32_t auto_sync_interval_ms = 60000;
+
+  /**
+   * @brief Whether the BlueCherry state has been initialized.
+   */
+  bool initialized = false;
 } WalterModemBlueCherryState;
 
 #endif
@@ -2941,7 +2986,7 @@ typedef struct {
    * @brief The statically allocated queue memory.
    */
   uint8_t mem[WALTER_MODEM_TASK_QUEUE_SIZE] = { 0 };
-} walter_modem_cmd_processing_task_t;
+} walter_modem_cmd_processing_task_queue_t;
 
 typedef struct {
   /**
@@ -2958,7 +3003,7 @@ typedef struct {
    * @brief The statically allocated queue memory.
    */
   uint8_t mem[WALTER_MODEM_URC_EVENT_QUEUE_SIZE] = { 0 };
-} walter_modem_urc_processing_task_t;
+} walter_modem_urc_processing_queue_t;
 
 /**
  * @brief This structure represents the command queue. This queue is used inside the libraries
@@ -2981,6 +3026,26 @@ typedef struct {
   uint8_t inIdx = 0;
 } walter_modem_cmd_processing_queue_t;
 
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+
+typedef struct {
+  /**
+   * @brief The queue handle.
+   */
+  QueueHandle_t handle;
+
+  /**
+   * @brief The memory handle.
+   */
+  StaticQueue_t memHandle;
+
+  /**
+   * @brief The statically allocated queue memory.
+   */
+  uint8_t mem[WALTER_MODEM_BLUECHERRY_QUEUE_SIZE] = { 0 };
+} walter_modem_bluecherry_io_message_queue_t;
+
+#endif
 #pragma endregion
 #pragma region MOTA_STP
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
@@ -3093,12 +3158,36 @@ private:
   /**
    * @brief The queue used by the processing task.
    */
-  static inline walter_modem_cmd_processing_task_t _taskQueue = {};
+  static inline walter_modem_cmd_processing_task_queue_t _taskQueue = {};
 
   /**
    * @brief The queue used to store URC events in.
    */
-  static inline walter_modem_urc_processing_task_t _urcEventQueue = {};
+  static inline walter_modem_urc_processing_queue_t _urcEventQueue = {};
+
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+
+  /**
+   * @brief The queue used to store BlueCherry IO messages in.
+   */
+  static inline walter_modem_bluecherry_io_message_queue_t _bluecherryIOMessageQueue = {};
+
+  /**
+   * @brief The task in which BlueCherry synchronization is performed.
+   */
+  static inline TaskHandle_t _bc_sync_task_handle;
+
+  /**
+   * @brief Handle used to manage the BlueCherry synchronization task stack.
+   */
+  static inline StaticTask_t _bc_sync_task_buf;
+
+  /**
+   * @brief The statically allocated BlueCherry synchronization task stack memory.
+   */
+  static inline StackType_t _bc_sync_task_stack[WALTER_MODEM_TASK_STACK_SIZE];
+
+#endif
 
   /**
    * @brief The queue used to store pending tasks in.
