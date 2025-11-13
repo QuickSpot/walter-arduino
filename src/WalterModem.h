@@ -3909,7 +3909,7 @@ private:
    * @return true if the message was successfully processed, false otherwise.
    */
   static bool _blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_message_t* msg,
-                                             walter_modem_rsp_t* rsp = NULL);
+                                             walter_modem_rsp_t* rsp);
 
   /**
    * @brief Synchronize with the BlueCherry cloud platform.
@@ -3917,13 +3917,13 @@ private:
    * This function handles the synchronization process with the BlueCherry cloud platform,
    * including sending and receiving CoAP messages as needed.
    *
-   * @param[in] force_sync If true, forces a synchronization even if nothing was published.
    * @param[out] rsp Response structure to populate with the incoming messages from the cloud.
    * Consider using the bluecherry message handler callback instead.
+   * @param[in] force_sync If true, forces a synchronization even if nothing was published.
    *
    * @return True if synchronization was successful, false otherwise.
    */
-  static bool _blueCherrySynchronize(bool force_sync = true, walter_modem_rsp_t* rsp = NULL);
+  static bool _blueCherrySynchronize(walter_modem_rsp_t* rsp, bool force_sync = true);
 
   /**
    * @brief The BlueCherry synchronization task.
@@ -4913,14 +4913,6 @@ public:
   static bool blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data, bool urgent = false);
 
   /**
-   * @brief Send accumulated MQTT messages and poll for incoming data.
-   *
-   * @deprecated This method is deprecated and will be removed in a future release.
-   */
-  [[deprecated("Use blueCherrySync(force_sync, rsp) instead")]]
-  static bool blueCherrySync(walter_modem_rsp_t* rsp);
-
-  /**
    * @brief Send accumulated messages and poll for incoming data.
    *
    * This function will send all accumulated MQTT publish messages to the BlueCherry cloud
@@ -4933,13 +4925,13 @@ public:
    * A response might not fit in a single datagram response. As long as syncFinished is false,
    * this function needs to be called again repeatedly.
    *
+   * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] force_sync When set to true, the sync will be performed even if there are no
    * messages to send.
-   * @param[out] rsp Pointer to the response structure to save the result in.
    *
    * @return True on success, false on error.
    */
-  static bool blueCherrySync(bool force_sync = true, walter_modem_rsp_t* rsp = NULL);
+  static bool blueCherrySync(walter_modem_rsp_t* rsp, bool force_sync = true);
 
   /**
    * @brief Close the BlueCherry platform CoAP connection.
