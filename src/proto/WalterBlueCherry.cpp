@@ -342,7 +342,7 @@ bool WalterModem::_blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_me
   return true;
 }
 
-bool WalterModem::_blueCherrySynchronize(bool force_sync, walter_modem_rsp_t* rsp)
+bool WalterModem::_blueCherrySynchronize(walter_modem_rsp_t* rsp, bool force_sync)
 {
   // Reject if modem is busy with another BlueCherry operation
   if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
@@ -353,10 +353,8 @@ bool WalterModem::_blueCherrySynchronize(bool force_sync, walter_modem_rsp_t* rs
   }
 
   // Initialize response if provided
-  if(rsp) {
-    rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
-    rsp->data.blueCherry.messageCount = 0;
-  }
+  rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
+  rsp->data.blueCherry.messageCount = 0;
 
   _blueCherry.lastTransmittedMsgID++;
   bool ack_received = false;
@@ -366,10 +364,10 @@ bool WalterModem::_blueCherrySynchronize(bool force_sync, walter_modem_rsp_t* rs
     if(!_blueCherry.connected) {
       _blueCherry.connected = _blueCherrySocketConnect();
       if(!_blueCherry.connected) {
-        vTaskDelay(pdMS_TO_TICKS(200 * (1 << attempt)));
+        vTaskDelay(pdMS_TO_TICKS(1000 * (1 << attempt)));
         continue;
       }
-      attempt = 0; // Reset attempt counter after successful reconnect
+      attempt = 0;
     }
 
     // Default values for message transmission with bluecherry CoAP server
@@ -411,7 +409,7 @@ bool WalterModem::_blueCherrySynchronize(bool force_sync, walter_modem_rsp_t* rs
 
       // Wait for ACK with exponential backoff
       TickType_t start = xTaskGetTickCount();
-      TickType_t timeout = pdMS_TO_TICKS(200 * (1 << attempt));
+      TickType_t timeout = pdMS_TO_TICKS(1000 * (1 << attempt));
       while(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE &&
             (xTaskGetTickCount() - start) < timeout) {
         vTaskDelay(pdMS_TO_TICKS(10));
@@ -454,6 +452,8 @@ void WalterModem::_blueCherrySyncTask(void* args)
 
   bool force_sync = true;
 
+  walter_modem_rsp_t rsp;
+
   while(true) {
     tickleWatchdog();
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -471,7 +471,7 @@ void WalterModem::_blueCherrySyncTask(void* args)
     }
 
     if(force_sync) {
-      _blueCherrySynchronize(force_sync);
+      _blueCherrySynchronize(&rsp, force_sync);
     }
 
     force_sync = false;
@@ -573,7 +573,7 @@ WalterModem::blueCherryInit(WalterModemBluecherryMessageHandlerCB msg_handler,
 
   if(auto_sync_enable) {
     _bc_sync_task_handle = xTaskCreateStaticPinnedToCore(
-        _blueCherrySyncTask, "bc_sync", 4096, NULL, 10, _bc_sync_task_stack, &_bc_sync_task_buf, 0);
+        _blueCherrySyncTask, "bc_sync", 4096, NULL, 1, _bc_sync_task_stack, &_bc_sync_task_buf, 0);
     if(!_bc_sync_task_handle) {
       ESP_LOGW("WalterModem", "Failed to create BlueCherry sync task (Not enough memory?)");
       return WALTER_MODEM_BLUECHERRY_INIT_STATUS_ERROR;
@@ -636,19 +636,7 @@ bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data, b
   return true;
 }
 
-bool WalterModem::blueCherrySync(walter_modem_rsp_t* rsp)
-{
-  ESP_LOGW("DEPRECATION", "Use blueCherrySync(bool force_sync, walter_modem_rsp_t* rsp) instead.");
-
-  if(_blueCherry.auto_sync_enabled) {
-    ESP_LOGW("WalterModem",
-             "blueCherrySync called while auto sync is enabled. Ignoring manual sync request.");
-  }
-
-  return blueCherrySync(true, rsp);
-}
-
-bool WalterModem::blueCherrySync(bool force_sync, walter_modem_rsp_t* rsp)
+bool WalterModem::blueCherrySync(walter_modem_rsp_t* rsp, bool force_sync)
 {
   if(_blueCherry.auto_sync_enabled) {
     ESP_LOGW("WalterModem",
@@ -663,7 +651,7 @@ bool WalterModem::blueCherrySync(bool force_sync, walter_modem_rsp_t* rsp)
     return false;
   }
 
-  return _blueCherrySynchronize(force_sync, rsp);
+  return _blueCherrySynchronize(rsp, force_sync);
 }
 
 bool WalterModem::blueCherryClose(walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
