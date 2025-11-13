@@ -519,25 +519,25 @@ uint16_t WalterModem::_modemFirmwareUpgradeStart(void)
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 6);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "sent AT, got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 6);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "sent AT, got %d:%s", len, _bc_ota_buffer);
 
   atCmd[0] = (char*) "AT+SMLOG?";
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 25);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "sent AT+SMLOG?, got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 25);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "sent AT+SMLOG?, got %d:%s", len, _bc_ota_buffer);
 
   atCmd[0] = (char*) "AT+SMOD?";
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 7);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "sent AT+SMOD?, got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 7);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "sent AT+SMOD?, got %d:%s", len, _bc_ota_buffer);
 
   /* prepare modem firmware data transfer - must wait for OK still!! */
   atCmd[0] = (char*) "AT+SMSTPU=\"ON_THE_FLY\"";
@@ -545,9 +545,9 @@ uint16_t WalterModem::_modemFirmwareUpgradeStart(void)
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
   vTaskDelay(pdMS_TO_TICKS(2000));
-  len = _uartRead(_blueCherry.ota_buffer, 64);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "started STP mode, got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 64);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "started STP mode, got %d:%s", len, _bc_ota_buffer);
 
   size_t bytesSent, bytesReceived;
 
@@ -668,11 +668,11 @@ void WalterModem::_modemFirmwareUpgradeFinish(bool success)
     _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
     /* reuse ota_buffer which is guaranteed to be 4K */
-    len = _uartRead(_blueCherry.ota_buffer, 32);
-    _blueCherry.ota_buffer[len] = 0;
-    ESP_LOGD("WalterModem", "sent AT, got %d:%s", len, _blueCherry.ota_buffer);
+    len = _uartRead(_bc_ota_buffer, 32);
+    _bc_ota_buffer[len] = 0;
+    ESP_LOGD("WalterModem", "sent AT, got %d:%s", len, _bc_ota_buffer);
 
-    if(!strcmp((char*) _blueCherry.ota_buffer, "\r\nOK\r\n")) {
+    if(!strcmp((char*) _bc_ota_buffer, "\r\nOK\r\n")) {
       break;
     }
   }
@@ -682,9 +682,9 @@ void WalterModem::_modemFirmwareUpgradeFinish(bool success)
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 16);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "switched modem to FFF mode, got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 16);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "switched modem to FFF mode, got %d:%s", len, _bc_ota_buffer);
 
   /* now reboot into new firmware */
   atCmd[0] = (char*) "AT^RESET";
@@ -693,34 +693,34 @@ void WalterModem::_modemFirmwareUpgradeFinish(bool success)
   ESP_LOGD("WalterModem", "sent reset command, waiting 10 seconds");
   vTaskDelay(pdMS_TO_TICKS(10000));
 
-  len = _uartRead(_blueCherry.ota_buffer, 64);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "assuming modem boot complete; got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 64);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "assuming modem boot complete; got %d:%s", len, _bc_ota_buffer);
 
   /* check if we are back in fff mode and check update status */
   atCmd[0] = (char*) "AT+SMLOG?";
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 64);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "AT+SMLOG? got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 64);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "AT+SMLOG? got %d:%s", len, _bc_ota_buffer);
 
   atCmd[0] = (char*) "AT+SMOD?";
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 64);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "AT+SMOD? got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 64);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "AT+SMOD? got %d:%s", len, _bc_ota_buffer);
 
   atCmd[0] = (char*) "AT+SMUPGRADE?";
   atCmd[1] = NULL;
   _transmitCmd(WALTER_MODEM_CMD_TYPE_TX, atCmd);
 
-  len = _uartRead(_blueCherry.ota_buffer, 64);
-  _blueCherry.ota_buffer[len] = 0;
-  ESP_LOGD("WalterModem", "AT+SMUPGRADE? got %d:%s", len, _blueCherry.ota_buffer);
+  len = _uartRead(_bc_ota_buffer, 64);
+  _bc_ota_buffer[len] = 0;
+  ESP_LOGD("WalterModem", "AT+SMUPGRADE? got %d:%s", len, _bc_ota_buffer);
 
   _rxHandlerInterrupted = false;
 }
@@ -774,7 +774,7 @@ void WalterModem::_modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transact
   stpRequest.payloadLength = _switchEndian16(blockSize);
   stpRequest.transactionId = _switchEndian32(transactionId + 1);
   stpRequest.headerCrc16 = 0;
-  stpRequest.payloadCrc16 = _calculateStpCrc16(_blueCherry.ota_buffer, blockSize);
+  stpRequest.payloadCrc16 = _calculateStpCrc16(_bc_ota_buffer, blockSize);
   stpRequest.headerCrc16 = _calculateStpCrc16(&stpRequest, sizeof(stpRequest));
 
   bytesSent = _uartWrite((uint8_t*) &stpRequest, sizeof(stpRequest));
@@ -786,7 +786,7 @@ void WalterModem::_modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transact
       _switchEndian16(stpRequest.payloadLength), _switchEndian32(stpRequest.transactionId),
       _switchEndian16(stpRequest.headerCrc16), _switchEndian16(stpRequest.payloadCrc16));
 
-  bytesSent = _uartWrite(_blueCherry.ota_buffer, blockSize);
+  bytesSent = _uartWrite(_bc_ota_buffer, blockSize);
 
   ESP_LOGD("WalterModem",
            "sent STP transfer block data: tx=%d payload: %d bytes data from flash dup file",
@@ -3077,7 +3077,7 @@ after_processing_logic:
 
 bool WalterModem::_processOtaInitializeEvent(uint8_t* data, uint16_t len)
 {
-  if(!_blueCherry.ota_buffer || len != sizeof(uint32_t)) {
+  if(!_bc_ota_buffer || len != sizeof(uint32_t)) {
     return true;
   }
 
@@ -3093,7 +3093,7 @@ bool WalterModem::_processOtaInitializeEvent(uint8_t* data, uint16_t len)
   }
 
   /* initialize buffer and state */
-  _blueCherry.otaBufferPos = 0;
+  _bc_ota_buffer_pos = 0;
   _blueCherry.otaProgress = 0;
 
   ESP_LOGD("WalterModem", "OTA init: size %lu <= partition size %lu", _blueCherry.otaSize,
@@ -3111,13 +3111,13 @@ bool WalterModem::_otaBufferToFlash(void)
 
   if(!_blueCherry.otaProgress) {
     /* meanwhile check for the magic byte */
-    if(_blueCherry.ota_buffer[0] != ESP_IMAGE_HEADER_MAGIC) {
+    if(_bc_ota_buffer[0] != ESP_IMAGE_HEADER_MAGIC) {
       ESP_LOGD("WalterModem", "OTA chunk: magic header not found");
       return false;
     }
 
     skip = ENCRYPTED_BLOCK_SIZE;
-    memcpy(_blueCherry.otaSkipBuffer, _blueCherry.ota_buffer, skip);
+    memcpy(_blueCherry.otaSkipBuffer, _bc_ota_buffer, skip);
   }
 
   size_t flashOffset = _blueCherry.otaPartition->address + _blueCherry.otaProgress;
@@ -3147,14 +3147,14 @@ bool WalterModem::_otaBufferToFlash(void)
   }
 
   if(esp_partition_write(_blueCherry.otaPartition, _blueCherry.otaProgress + skip,
-                         (uint32_t*) _blueCherry.ota_buffer + skip / sizeof(uint32_t),
-                         _blueCherry.otaBufferPos - skip) != ESP_OK) {
+                         (uint32_t*) _bc_ota_buffer + skip / sizeof(uint32_t),
+                         _bc_ota_buffer_pos - skip) != ESP_OK) {
     ESP_LOGD("WalterModem", "OTA chunk: could not write data to partition");
     return false;
   }
 
-  _blueCherry.otaProgress += _blueCherry.otaBufferPos;
-  _blueCherry.otaBufferPos = 0;
+  _blueCherry.otaProgress += _bc_ota_buffer_pos;
+  _bc_ota_buffer_pos = 0;
 
   return true;
 }
@@ -3176,11 +3176,11 @@ bool WalterModem::_processOtaChunkEvent(uint8_t* data, uint16_t len)
 
   size_t left = len;
 
-  while((_blueCherry.otaBufferPos + left) > SPI_FLASH_SEC_SIZE) {
-    size_t toBuff = SPI_FLASH_SEC_SIZE - _blueCherry.otaBufferPos;
+  while((_bc_ota_buffer_pos + left) > SPI_FLASH_SEC_SIZE) {
+    size_t toBuff = SPI_FLASH_SEC_SIZE - _bc_ota_buffer_pos;
 
-    memcpy(_blueCherry.ota_buffer + _blueCherry.otaBufferPos, data + (len - left), toBuff);
-    _blueCherry.otaBufferPos += toBuff;
+    memcpy(_bc_ota_buffer + _bc_ota_buffer_pos, data + (len - left), toBuff);
+    _bc_ota_buffer_pos += toBuff;
 
     if(!_otaBufferToFlash()) {
       ESP_LOGD("WalterModem", "OTA chunk: failed to write to flash (within loop)");
@@ -3193,10 +3193,10 @@ bool WalterModem::_processOtaChunkEvent(uint8_t* data, uint16_t len)
     left -= toBuff;
   }
 
-  memcpy(_blueCherry.ota_buffer + _blueCherry.otaBufferPos, data + (len - left), left);
-  _blueCherry.otaBufferPos += left;
+  memcpy(_bc_ota_buffer + _bc_ota_buffer_pos, data + (len - left), left);
+  _bc_ota_buffer_pos += left;
 
-  if(_blueCherry.otaProgress + _blueCherry.otaBufferPos == _blueCherry.otaSize) {
+  if(_blueCherry.otaProgress + _bc_ota_buffer_pos == _blueCherry.otaSize) {
     if(!_otaBufferToFlash()) {
       ESP_LOGD("WalterModem", "OTA chunk: failed to write to flash (remainder)");
       return true;
@@ -3318,7 +3318,7 @@ bool WalterModem::_motaFormatAndMount(void)
 
 bool WalterModem::_processMotaInitializeEvent(uint8_t* data, uint16_t len)
 {
-  if(!_blueCherry.ota_buffer || len != sizeof(uint32_t)) {
+  if(!_bc_ota_buffer || len != sizeof(uint32_t)) {
     return true;
   }
 
@@ -3390,7 +3390,7 @@ bool WalterModem::_processMotaFinishEvent(void)
 
   while(bytesLeft > 0) {
     /* we can reuse ota_buffer since we expect it to be at least 4K (SPI_FLASH_BLOCK_SIZE) */
-    size_t bytesRead = fread(_blueCherry.ota_buffer, 1, blockSize, _mota_file_ptr);
+    size_t bytesRead = fread(_bc_ota_buffer, 1, blockSize, _mota_file_ptr);
     if(bytesRead <= 0) {
       break;
     }
@@ -3449,8 +3449,6 @@ void WalterModem::offlineMotaUpgrade(uint8_t* ota_buffer)
     if(!_mota_file_ptr) {
       ESP_LOGD("WalterModem", "Could not open MOTA update package");
     } else {
-      _blueCherry.ota_buffer = ota_buffer;
-
       fseek(_mota_file_ptr, 0L, SEEK_END);
       _blueCherry.otaProgress = _blueCherry.otaSize = ftell(_mota_file_ptr);
       fseek(_mota_file_ptr, 0L, SEEK_SET);
@@ -3642,6 +3640,12 @@ void WalterModem::_sleepWakeup()
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
   _blueCherry = blueCherryRTC;
+
+  // Force BlueCherry to check connection status after wakeup
+  _blueCherry.connected = false;
+
+  // Bluecherry init should be called again after wakeup
+  _blueCherry.initialized = false;
 
 #endif
 }

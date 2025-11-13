@@ -1643,6 +1643,22 @@ typedef void (*walterModemSocketEventHandler)(WalterModemSocketEvent ev, int soc
                                               void* args);
 
 #endif
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+
+/**
+ * @brief Header of a Bluecherry message handler callback
+ *
+ * @param topic The topic of the Bluecherry message
+ * @param data The data buffer containing the message payload
+ * @param data_len The length of the data buffer
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*WalterModemBluecherryMessageHandlerCB)(const uint8_t topic, const uint8_t* data,
+                                                      size_t data_len, void* args);
+
+#endif
 
 /**
  * @brief Header of an URC event handler
@@ -2022,13 +2038,15 @@ typedef struct {
  * @brief This structure represents a BlueCherry IO message.
  */
 typedef struct {
-  bool is_input;
+  bool should_process;
+
   uint8_t version;
   uint8_t type;
   uint8_t token_len;
   uint8_t code;
   uint16_t message_id;
-  uint64_t token;
+  uint8_t token[8];
+
   uint8_t data[WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN]; // TODO: Test if server can handle 1500
                                                        // bytes. If not, implement with v2
   uint16_t data_len;
@@ -2090,21 +2108,6 @@ typedef struct {
   uint16_t ack_timeout_s = 60;
 
   /**
-   * @brief The incoming CoAP message structure.
-   */
-  walter_modem_bluecherry_coap_message_t message_in;
-
-  /**
-   * @brief The outgoing CoAP message structure.
-   */
-  walter_modem_bluecherry_coap_message_t message_out;
-
-  /**
-   * @brief The CoAP message being currently processed.
-   */
-  walter_modem_bluecherry_coap_message_t message_processing;
-
-  /**
    * @brief Last acknowledged message id, 0 means nothing received yet.
    */
   uint16_t lastReceivedMsgID = 0x0000;
@@ -2123,17 +2126,7 @@ typedef struct {
   /**
    * @brief Time when the last message was sent.
    */
-  time_t lastTransmissionTime = 0;
-
-  /**
-   * @brief Pointer to where the incoming OTA data should be saved.
-   */
-  uint8_t ota_buffer[SPI_FLASH_SEC_SIZE];
-
-  /**
-   * @brief The current position in the OTA buffer.
-   */
-  uint32_t otaBufferPos = 0;
+  TickType_t lastTransmissionTick = 0;
 
   /**
    * @brief A buffer used to store the start of an OTA file, this is metadata and not actual
@@ -2175,6 +2168,11 @@ typedef struct {
    * @brief Whether the BlueCherry state has been initialized.
    */
   bool initialized = false;
+
+  /**
+   * @brief Whether the BlueCherry connection is currently established.
+   */
+  bool connected = false;
 } WalterModemBlueCherryState;
 
 #endif
@@ -3345,6 +3343,31 @@ private:
    */
   static inline WalterModemBlueCherryState _blueCherry = {};
 
+  /**
+   * @brief The incoming CoAP message structure.
+   */
+  static inline walter_modem_bluecherry_coap_message_t _bc_msg_in = {};
+
+  /**
+   * @brief The outgoing CoAP message structure.
+   */
+  static inline walter_modem_bluecherry_coap_message_t _bc_msg_out = {};
+
+  /**
+   * @brief The CoAP message being currently processed.
+   */
+  static inline walter_modem_bluecherry_coap_message_t _bc_msg_processing = {};
+
+  /**
+   * @brief Pointer to where the incoming OTA data should be saved.
+   */
+  static inline uint8_t _bc_ota_buffer[SPI_FLASH_SEC_SIZE] = { 0 };
+
+  /**
+   * @brief The current position in the OTA buffer.
+   */
+  static inline uint32_t _bc_ota_buffer_pos = 0;
+
 #endif
 #pragma region MOTA
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
@@ -3820,30 +3843,99 @@ private:
   static bool _blueCherrySocketConnect();
 
   /**
-   * @brief The custom socket event handler for bluecherry communications.
+   * @brief Calculate the length of the BlueCherry CoAP header.
+   *
+   * This method calculates the length of the BlueCherry CoAP header based on the provided
+   * message structure.
+   *
+   * @param[in] msg Pointer to the BlueCherry CoAP message structure.
+   *
+   * @return The length of the BlueCherry CoAP header in bytes.
+   */
+  static size_t _blueCherryGetCoapHeaderLength(walter_modem_bluecherry_coap_message_t* msg);
+
+  /**
+   * @brief Parse a BlueCherry CoAP message from a buffer.
+   *
+   * This method will attempt to parse a BlueCherry CoAP message from the provided buffer. It
+   * extracts the header from the binary data and populates the provided message structure.
+   *
+   * @param[in] data Pointer to the buffer containing the BlueCherry CoAP message.
+   * @param[in] data_len The length of the data buffer.
+   * @param[out] msg Pointer to the BlueCherry CoAP message structure to populate.
+   *
+   * @return true if the message was successfully parsed, false otherwise.
+   */
+  static bool _blueCherryCoapParse(uint8_t* data, size_t data_len,
+                                   walter_modem_bluecherry_coap_message_t* msg);
+
+  /**
+   * @brief Transmit a BlueCherry CoAP message over the socket.
+   *
+   * This method will transmit the provided BlueCherry CoAP message over the established socket. It
+   * will set the coap headers from the message structure and send the message data (offset by
+   * header size).
+   *
+   * @param[in] msg Pointer to the BlueCherry CoAP message structure to transmit.
+   *
+   * @return true if the message was successfully transmitted, false otherwise.
+   */
+  static bool _blueCherryCoapTransmit(walter_modem_bluecherry_coap_message_t* msg);
+
+  /**
+   * @brief Handle BlueCherry socket events.
+   *
+   * This method processes events received on the BlueCherry socket, such as incoming data or
+   * connection events.
+   *
+   * @param[in] event The type of socket event.
+   * @param[in] dataReceived The amount of data received (if applicable).
+   * @param[in] dataBuffer Pointer to the buffer containing the received data (if applicable).
+   *
+   * @return void
    */
   static void _blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived,
                                             uint8_t* dataBuffer);
 
   /**
-   * @brief Write the outgoing buffer's CoAP headers and set them accordingly.
+   * @brief Process a received BlueCherry CoAP message.
+   *
+   * This method processes a received BlueCherry CoAP message and populates the provided
+   * response structure with the relevant data.
+   *
+   * @param[in] msg Pointer to the received BlueCherry CoAP message structure.
+   * @param[out] rsp Pointer to the response structure to populate.
+   *
+   * @return true if the message was successfully processed, false otherwise.
    */
-  static void _blueCherrySetCoapHeaders(uint8_t code, uint8_t tokenLen, uint16_t msgId);
+  static bool _blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_message_t* msg,
+                                             walter_modem_rsp_t* rsp = NULL);
 
   /**
-   * @brief Send data to bluecherry over a UDP socket using a custom tailored CoAP protocol.
+   * @brief Synchronize with the BlueCherry cloud platform.
    *
-   * @return True on successfull transmission and received acknowledgement. False when no
-   * acknowledgement was received in the CoAP timeout period.
+   * This function handles the synchronization process with the BlueCherry cloud platform,
+   * including sending and receiving CoAP messages as needed.
+   *
+   * @param[in] force_sync If true, forces a synchronization even if nothing was published.
+   * @param[out] rsp Response structure to populate with the incoming messages from the cloud.
+   * Consider using the bluecherry message handler callback instead.
+   *
+   * @return True if synchronization was successful, false otherwise.
    */
-  static bool _blueCherryCoapSend();
+  static bool _blueCherrySynchronize(bool force_sync = true, walter_modem_rsp_t* rsp = NULL);
 
   /**
-   * @brief Process the incoming bluecherry CoAP datagram.
+   * @brief The BlueCherry synchronization task.
    *
-   * @return True if successfully processed the datagram, False if malformed.
+   * This task is responsible for periodically synchronizing with the BlueCherry cloud
+   * platform.
+   *
+   * @param[in] args A NULL pointer.
+   *
+   * @return None.
    */
-  static bool _blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t* dataBuffer);
+  static void _blueCherrySyncTask(void* args);
 
 #endif
 #pragma region OTA
@@ -4785,6 +4877,25 @@ public:
                              walter_modem_rsp_t* rsp = NULL, uint16_t ack_timeout_s = 60);
 
   /**
+   * @brief Initialize BlueCherry CoAP <-> MQTT bridge with message handler callback.
+   *
+   * This function will set the TLS profile id and initialize the accumulated outgoing
+   * datagram, initialize the current message id to 1, the last acknowledged id to 0 and set
+   * the state machine to IDLE.
+   *
+   * @param[in] msg_handler Callback function to handle incoming BlueCherry messages.
+   * @param[in] msg_handler_args Arguments to pass to the message handler callback.
+   * @param[in] auto_sync_enable When set to true, blueCherrySync will be called automatically.
+   * @param[in] tls_profile_id DTLS is used with the given profile (1-6).
+   *
+   * @return Status of the BlueCherry initialization.
+   */
+  static WalterModemBlueCherryInitStatus
+  blueCherryInit(WalterModemBluecherryMessageHandlerCB msg_handler = NULL,
+                 void* msg_handler_args = NULL, bool auto_sync_enable = true,
+                 int tls_profile_id = 1, int socket_profile_id = 1);
+
+  /**
    * @brief Enqueue a MQTT publish message.
    *
    * This function will add the message to the accumulated outgoing datagram, which will -
@@ -4793,17 +4904,28 @@ public:
    * @param[in] topic The topic of the message, passed as the topic index.
    * @param[in] len The length of the data.
    * @param[in] data The data to send.
+   * @param[in] urgent When set to true, the message will be sent immediately on the next call
+   * to blueCherrySync. When false, the message might be delayed until more messages are
+   * accumulated.
    *
    * @return True on success, false on error.
    */
-  static bool blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data);
+  static bool blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data, bool urgent = false);
 
   /**
    * @brief Send accumulated MQTT messages and poll for incoming data.
    *
+   * @deprecated This method is deprecated and will be removed in a future release.
+   */
+  [[deprecated("Use blueCherrySync(force_sync, rsp) instead")]]
+  static bool blueCherrySync(walter_modem_rsp_t* rsp);
+
+  /**
+   * @brief Send accumulated messages and poll for incoming data.
+   *
    * This function will send all accumulated MQTT publish messages to the BlueCherry cloud
-   * server, and ask the server for an acknowledgement and for the new incoming MQTT messages
-   * since the last blueCherrySync call.
+   * server, and ask the server for an acknowledgement and process incoming messages since the last
+   * call.
    *
    * Even if nothing was enqueued for publish, this call must frequently be executed if Walter
    * is subscribed to one or more MQTT topics or has enabled BlueCherry OTA updates.
@@ -4811,9 +4933,13 @@ public:
    * A response might not fit in a single datagram response. As long as syncFinished is false,
    * this function needs to be called again repeatedly.
    *
+   * @param[in] force_sync When set to true, the sync will be performed even if there are no
+   * messages to send.
+   * @param[out] rsp Pointer to the response structure to save the result in.
+   *
    * @return True on success, false on error.
    */
-  static bool blueCherrySync(walter_modem_rsp_t* rsp);
+  static bool blueCherrySync(bool force_sync = true, walter_modem_rsp_t* rsp = NULL);
 
   /**
    * @brief Close the BlueCherry platform CoAP connection.
