@@ -1,7 +1,8 @@
 /**
- * @file bluecherry.ino
+ * @file bluecherry-low-power.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 28 Apr 2025
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 14 Nov 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -45,7 +46,9 @@
  *
  * This sketch sends and receives mqtt data using the DPTechnics BlueCherry cloud
  * platform. It also supports OTA updates which are scheduled through the BlueCherry web interface.
+ * Synchronization is done in the application loop to allow the modem to enter low power modes.
  */
+
 #include <BlueCherryZTP.h>
 #include <WalterModem.h>
 #include <Arduino.h>
@@ -219,7 +222,7 @@ void syncBlueCherry()
   walter_modem_rsp_t rsp = {};
 
   do {
-    if(!modem.blueCherrySync(&rsp)) {
+    if(!modem.blueCherrySync(&rsp, true)) {
       Serial.printf("Error during BlueCherry cloud platform synchronisation: %d\r\n",
                     rsp.data.blueCherry.state);
       modem.reset();
@@ -261,7 +264,8 @@ void setup()
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
-    return;
+    delay(10000);
+    ESP.restart();
   }
 
   modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive);
@@ -276,75 +280,72 @@ void setup()
 
   walter_modem_rsp_t rsp = {};
 
-  // If this is the first boot, set up bluecherry and ZTP.
-  if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
-    // Initialize the BlueCherry connection
-    unsigned short attempt = 0;
-    while(!modem.blueCherryInit(BC_TLS_PROFILE, ota_buffer, &rsp)) {
-      if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
-         attempt <= 2) {
-        Serial.println("Device is not provisioned for BlueCherry communication, starting Zero "
-                       "Touch Provisioning");
+  // Initialize the BlueCherry connection
+  auto bc_init_status = modem.blueCherryInit(NULL, NULL, false, 1, 1);
+  if(bc_init_status == WALTER_MODEM_BLUECHERRY_INIT_STATUS_NOT_PROVISIONED) {
+    Serial.println("Device is not provisioned for BlueCherry communication, starting Zero "
+                   "Touch Provisioning");
 
-        if(attempt == 0) {
-          // Device is not provisioned yet, initialize BlueCherry zero touch
-          // provisioning
-          if(!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert, &modem)) {
-            Serial.println("Error: Failed to initialize ZTP");
-            continue;
-          }
-
-          // Fetch MAC address
-          uint8_t mac[8] = { 0 };
-          esp_read_mac(mac, ESP_MAC_WIFI_STA);
-          if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
-            Serial.println("Error: Could not add MAC address as ZTP device ID parameter");
-          }
-
-          // Fetch IMEI number
-          if(!modem.getIdentity(&rsp)) {
-            Serial.println("Error: Could not fetch IMEI number from modem");
-          }
-          if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI,
-                                                  rsp.data.identity.imei)) {
-            Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
-          }
-        }
-        attempt++;
-
-        // Request the BlueCherry device ID
-        if(!BlueCherryZTP::requestDeviceId()) {
-          Serial.println("Error: Could not request device ID");
-          continue;
-        }
-
-        // Generate the private key and CSR
-        if(!BlueCherryZTP::generateKeyAndCsr()) {
-          Serial.println("Error: Could not generate private key");
-        }
-        delay(1000);
-
-        // Request the signed certificate
-        if(!BlueCherryZTP::requestSignedCertificate()) {
-          Serial.println("Error: Could not request signed certificate");
-          continue;
-        }
-
-        // Store BlueCherry TLS certificates + private key in the modem
-        if(!modem.blueCherryProvision(BlueCherryZTP::getCert(), BlueCherryZTP::getPrivKey(),
-                                      bc_ca_cert)) {
-          Serial.println("Error: Failed to upload the DTLS certificates");
-          continue;
-        }
-      } else {
-        Serial.println("Error: Failed to initialize BlueCherry cloud platform, "
-                       "restarting Walter in 10 seconds");
-        delay(10000);
-        ESP.restart();
-      }
+    // Device is not provisioned yet, initialize BlueCherry zero touch
+    // provisioning
+    if(!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert, &modem)) {
+      Serial.println("Error: Failed to initialize ZTP");
+      delay(10000);
+      ESP.restart();
     }
-    Serial.println("Successfully initialized BlueCherry cloud platform");
+
+    // Fetch MAC address
+    uint8_t mac[8] = { 0 };
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
+      Serial.println("Error: Could not add MAC address as ZTP device ID parameter");
+    }
+
+    // Fetch IMEI number
+    if(!modem.getIdentity(&rsp)) {
+      Serial.println("Error: Could not fetch IMEI number from modem");
+    }
+    if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI,
+                                            rsp.data.identity.imei)) {
+      Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
+    }
+
+    // Request the BlueCherry device ID
+    if(!BlueCherryZTP::requestDeviceId()) {
+      Serial.println("Error: Could not request device ID");
+      delay(10000);
+      ESP.restart();
+    }
+
+    // Generate the private key and CSR
+    if(!BlueCherryZTP::generateKeyAndCsr()) {
+      Serial.println("Error: Could not generate private key");
+    }
+
+    delay(1000);
+
+    // Request the signed certificate
+    if(!BlueCherryZTP::requestSignedCertificate()) {
+      Serial.println("Error: Could not request signed certificate");
+      delay(10000);
+      ESP.restart();
+    }
+
+    // Store BlueCherry TLS certificates + private key in the modem
+    if(!modem.blueCherryProvision(BlueCherryZTP::getCert(), BlueCherryZTP::getPrivKey(),
+                                  bc_ca_cert)) {
+      Serial.println("Error: Failed to upload the DTLS certificates");
+      delay(10000);
+      ESP.restart();
+    }
+  } else if(bc_init_status != WALTER_MODEM_BLUECHERRY_INIT_STATUS_INITIALIZED) {
+    Serial.println("Error: Failed to initialize BlueCherry cloud platform, "
+                   "restarting Walter in 10 seconds");
+    delay(10000);
+    ESP.restart();
   }
+
+  Serial.println("Successfully initialized BlueCherry cloud platform");
 }
 
 void loop()
@@ -367,9 +368,8 @@ void loop()
     modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
   }
 
-  // Poll BlueCherry platform if an incoming message or firmware update is available
   syncBlueCherry();
 
   // Go sleep for 5 minutes
-  modem.sleep(60 * 5);
+  modem.sleep(30);
 }
