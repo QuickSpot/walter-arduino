@@ -1,7 +1,8 @@
 /**
- * @file bluecherry.ino
+ * @file bluecherry-low-power.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 28 Apr 2025
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 14 Nov 2025
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
@@ -45,7 +46,9 @@
  *
  * This sketch sends and receives mqtt data using the DPTechnics BlueCherry cloud
  * platform. It also supports OTA updates which are scheduled through the BlueCherry web interface.
+ * Synchronization is done in the application loop to allow the modem to enter low power modes.
  */
+
 #include <BlueCherryZTP.h>
 #include <WalterModem.h>
 #include <Arduino.h>
@@ -219,7 +222,7 @@ void syncBlueCherry()
   walter_modem_rsp_t rsp = {};
 
   do {
-    if(!modem.blueCherrySync(&rsp)) {
+    if(!modem.blueCherrySync(&rsp, true)) {
       Serial.printf("Error during BlueCherry cloud platform synchronisation: %d\r\n",
                     rsp.data.blueCherry.state);
       modem.reset();
@@ -250,16 +253,6 @@ void syncBlueCherry()
   return;
 }
 
-void myBlueCherryMessageHandler(const uint8_t topic, const uint8_t* data, size_t data_len,
-                                void* args)
-{
-  Serial.printf("Received BlueCherry message on topic %02x with size %d:\r\n", topic, data_len);
-  for(size_t i = 0; i < data_len; i++) {
-    Serial.printf("%c", data[i]);
-  }
-  Serial.print("\r\n");
-}
-
 void setup()
 {
   Serial.begin(115200);
@@ -288,7 +281,7 @@ void setup()
   walter_modem_rsp_t rsp = {};
 
   // Initialize the BlueCherry connection
-  auto bc_init_status = modem.blueCherryInit(myBlueCherryMessageHandler, NULL, false, 1, 1);
+  auto bc_init_status = modem.blueCherryInit(NULL, NULL, false, 1, 1);
   if(bc_init_status == WALTER_MODEM_BLUECHERRY_INIT_STATUS_NOT_PROVISIONED) {
     Serial.println("Device is not provisioned for BlueCherry communication, starting Zero "
                    "Touch Provisioning");
@@ -375,7 +368,7 @@ void loop()
     modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
   }
 
-  modem.blueCherrySync(&rsp, true);
+  syncBlueCherry();
 
   // Go sleep for 5 minutes
   modem.sleep(30);

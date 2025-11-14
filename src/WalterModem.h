@@ -3368,6 +3368,16 @@ private:
    */
   static inline uint32_t _bc_ota_buffer_pos = 0;
 
+  /**
+   * @brief The user defined bluecherry message handler callback.
+   */
+  static inline WalterModemBluecherryMessageHandlerCB _BCMessageHandler = NULL;
+
+  /**
+   * @brief The user defined bluecherry message handler callback arguments.
+   */
+  static inline void* _BCMessageHandlerArgs = NULL;
+
 #endif
 #pragma region MOTA
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
