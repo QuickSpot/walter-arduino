@@ -159,14 +159,11 @@ bool WalterModem::_blueCherrySocketConnect()
 size_t WalterModem::_blueCherryGetCoapHeaderLength(walter_modem_bluecherry_coap_message_t* msg)
 {
   // CoAP header: 1 byte (ver/type/tkl) + 1 byte (code) + 2 bytes (message ID)
-  // Then token_len bytes of token (0–8)
+  // Then token_len bytes of token (0-8)
   size_t length = 4 + msg->token_len;
 
-  // If there’s a payload, we’ll have a payload marker (0xFF)
+  // If there's a payload, we'll have a payload marker (0xFF)
   // CoAP uses this to indicate the start of the payload
-  if(msg->data_len > length + 1) {
-    length += 1; // payload marker
-  }
 
   return length;
 }
@@ -200,11 +197,11 @@ bool WalterModem::_blueCherryCoapParse(uint8_t* data, size_t data_len,
   // Byte 1: Code
   msg->code = data[byteOffset++];
 
-  // Bytes 2–3: Message ID
+  // Bytes 2-3: Message ID
   msg->message_id = ((uint16_t) data[byteOffset] << 8) | data[byteOffset + 1];
   byteOffset += 2;
 
-  // Token (0–8 bytes)
+  // Token (0-8 bytes)
   if(msg->token_len > 0) {
     memcpy(msg->token, &data[byteOffset], msg->token_len);
   } else {
@@ -247,17 +244,19 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
          _bc_msg_in.message_id == _blueCherry.lastTransmittedMsgID &&
          _bc_msg_in.message_id > _blueCherry.lastReceivedMsgID) {
         _blueCherry.lastReceivedMsgID = _bc_msg_in.message_id;
+        _bc_msg_in.should_process = true;
+        xQueueSend(_bluecherryIOMessageQueue.handle, &_bc_msg_in, 0);
         _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY;
       } else if(_bc_msg_in.type == WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_CON) {
         _bc_msg_in.type = WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK;
+        _bc_msg_in.should_process = true;
         _blueCherryCoapTransmit(&_bc_msg_in);
+        xQueueSend(_bluecherryIOMessageQueue.handle, &_bc_msg_in, 0);
       } else {
         ESP_LOGD("WalterModem", "Dropping invalid (or duplicate) BlueCherry CoAP message");
         return;
       }
 
-      _bc_msg_in.should_process = true;
-      xQueueSend(_bluecherryIOMessageQueue.handle, &_bc_msg_in, 0);
       break;
 
     case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
@@ -274,8 +273,7 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
 bool WalterModem::_blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_message_t* msg,
                                                  walter_modem_rsp_t* rsp)
 {
-  uint16_t payloadOffset =
-      _blueCherryGetCoapHeaderLength(msg) + 1; // TODO: bclite v1 always sends payload marker
+  uint16_t payloadOffset = _blueCherryGetCoapHeaderLength(msg) + 1; // +1 for payload marker
   while(payloadOffset < msg->data_len) {
     uint8_t topic = msg->data[payloadOffset++];
     uint8_t dataLen = msg->data[payloadOffset++];
@@ -291,6 +289,10 @@ bool WalterModem::_blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_me
         _blueCherry.emitErrorEvent = true;
         _blueCherry.otaSize = 0;
       }
+    } else {
+      if(_BCMessageHandler != NULL) {
+        _BCMessageHandler(topic, msg->data + payloadOffset, dataLen, _BCMessageHandlerArgs);
+      }
     }
 
     WalterModemBlueCherryMessage* message =
@@ -302,16 +304,6 @@ bool WalterModem::_blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_me
     rsp->data.blueCherry.messageCount++;
 
     payloadOffset += dataLen;
-  }
-
-  // Mark the sync as finished whether we were successfull or not. This prevents an endless
-  // loop and offloads any connectivity issues to the application.
-  rsp->data.blueCherry.syncFinished = true;
-
-  _blueCherry.lastTransmittedMsgID++;
-  if(_blueCherry.lastTransmittedMsgID == 0) {
-    /* on wrap around, skip msg id 0 which we use as a special/error value */
-    _blueCherry.lastTransmittedMsgID++;
   }
 
   if(_blueCherry.emitErrorEvent) {
@@ -344,7 +336,7 @@ bool WalterModem::_blueCherryCoapProcessReceived(walter_modem_bluecherry_coap_me
 
 bool WalterModem::_blueCherrySynchronize(walter_modem_rsp_t* rsp, bool force_sync)
 {
-  // Reject if modem is busy with another BlueCherry operation
+  // Reject when modem is in a different BC operation
   if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
      _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES &&
      _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT &&
@@ -352,94 +344,106 @@ bool WalterModem::_blueCherrySynchronize(walter_modem_rsp_t* rsp, bool force_syn
     return false;
   }
 
-  // Initialize response if provided
+  // Prepare response if requested
   rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
   rsp->data.blueCherry.messageCount = 0;
+  rsp->data.blueCherry.syncFinished = true;
 
-  _blueCherry.lastTransmittedMsgID++;
   bool ack_received = false;
 
-  for(int attempt = 0; attempt < 4; ++attempt) {
-    // Attempt reconnect if disconnected
-    if(!_blueCherry.connected) {
-      _blueCherry.connected = _blueCherrySocketConnect();
-      if(!_blueCherry.connected) {
-        vTaskDelay(pdMS_TO_TICKS(1000 * (1 << attempt)));
-        continue;
-      }
-      attempt = 0;
+reconnect:
+  if(!_blueCherry.connected) {
+    if(!_blueCherrySocketConnect()) {
+      _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
+      return false;
+    }
+    _blueCherry.connected = true;
+  }
+
+  // Inject forced message if needed
+  if(xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0) != pdPASS) {
+    if(!force_sync) {
+      _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+      return false;
     }
 
-    // Default values for message transmission with bluecherry CoAP server
+    // Create an empty CoAP CON message
     _bc_msg_processing.should_process = false;
     _bc_msg_processing.version = 1;
     _bc_msg_processing.type = WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_CON;
     _bc_msg_processing.token_len = 0;
-    _bc_msg_processing.code = _blueCherry.lastTransmittedMsgID - _blueCherry.lastReceivedMsgID - 1;
     _bc_msg_processing.data_len = _blueCherryGetCoapHeaderLength(&_bc_msg_processing);
 
-    // Peek the next message (or prepare empty message for force_sync)
-    bool has_queue_msg =
-        (xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0) == pdPASS);
-    if(!has_queue_msg && !force_sync) {
-      _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
-      return ack_received;
-    }
-
-    // Transmit messages in queue or empty forced message
-    do {
-      _bc_msg_processing.message_id = _blueCherry.lastTransmittedMsgID;
-
-      if(_bc_msg_processing.should_process) {
-        _blueCherryCoapProcessReceived(&_bc_msg_processing, rsp);
-        xQueueReceive(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0);
-        has_queue_msg =
-            (xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0) == pdPASS);
-        continue;
-      }
-
-      _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
-
-      // Transmit with possible failure
-      if(!_blueCherryCoapTransmit(&_bc_msg_processing)) {
-        ESP_LOGW("WalterModem", "Failed to transmit BlueCherry message.");
-        _blueCherry.connected = false;
-        break;
-      }
-
-      // Wait for ACK with exponential backoff
-      TickType_t start = xTaskGetTickCount();
-      TickType_t timeout = pdMS_TO_TICKS(1000 * (1 << attempt));
-      while(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE &&
-            (xTaskGetTickCount() - start) < timeout) {
-        vTaskDelay(pdMS_TO_TICKS(10));
-      }
-
-      if(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY) {
-        ack_received = true;
-        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
-        if(has_queue_msg) {
-          xQueueReceive(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0);
-        }
-      } else {
-        // Retry next attempt
-        break;
-      }
-
-      has_queue_msg =
-          (xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0) == pdPASS);
-      force_sync = false;
-
-    } while(has_queue_msg || force_sync);
-
-    // Exit early if at least one ACK received and no more messages
-    if(ack_received && !has_queue_msg) {
-      _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
-      return true;
-    }
+    xQueueSend(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0);
+    xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0);
   }
 
-  // All attempts failed
+  // RETRANSMISSION LOOP — retry failed transmits
+  for(int attempt = 0; attempt < 4; ++attempt) {
+    // Prepare message IDs
+    if(_blueCherry.lastTransmittedMsgID == 0) {
+      _blueCherry.lastTransmittedMsgID = 1;
+    }
+
+    _bc_msg_processing.message_id = _blueCherry.lastTransmittedMsgID;
+    _bc_msg_processing.code = _blueCherry.lastTransmittedMsgID - _blueCherry.lastReceivedMsgID - 1;
+
+    // Process incoming received message
+    if(_bc_msg_processing.should_process) {
+      _blueCherryCoapProcessReceived(&_bc_msg_processing, rsp);
+      xQueueReceive(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0);
+
+      if(xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0) != pdPASS) {
+        _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+        return true;
+      }
+
+      // Continue to next message without consuming a retry
+      attempt--;
+      continue;
+    }
+
+    // Transmit
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE;
+
+    if(!_blueCherryCoapTransmit(&_bc_msg_processing)) {
+      ESP_LOGW("WalterModem", "BC transmit failed, reconnecting.");
+      _blueCherry.connected = false;
+      goto reconnect;
+    }
+
+    // Wait for ACK with exponential backoff
+    TickType_t start = xTaskGetTickCount();
+    TickType_t timeout = pdMS_TO_TICKS(1000 * (1 << attempt));
+
+    while(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE &&
+          (xTaskGetTickCount() - start) < timeout) {
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY) {
+      ack_received = true;
+      _blueCherry.lastTransmittedMsgID++;
+      _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+
+      // Consume message
+      xQueueReceive(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0);
+
+      // Done?
+      if(xQueuePeek(_bluecherryIOMessageQueue.handle, &_bc_msg_processing, 0) != pdPASS) {
+        return true;
+      }
+
+      // More messages → continue send loop with attempt=0
+      attempt = -1;
+      continue;
+    }
+
+    // No ACK → retry (normal retransmission behavior)
+  }
+
+  // ---- ALL RETRIES FAILED ----
+  _blueCherry.lastTransmittedMsgID++;
   _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
   return false;
 }
@@ -472,9 +476,8 @@ void WalterModem::_blueCherrySyncTask(void* args)
 
     if(force_sync) {
       _blueCherrySynchronize(&rsp, force_sync);
+      force_sync = !rsp.data.blueCherry.syncFinished;
     }
-
-    force_sync = false;
   }
 }
 
@@ -570,6 +573,8 @@ WalterModem::blueCherryInit(WalterModemBluecherryMessageHandlerCB msg_handler,
   _blueCherry.tls_profile_id = tls_profile_id;
   _blueCherry.bcProfileId = socket_profile_id;
   _blueCherry.auto_sync_enabled = auto_sync_enable;
+  _BCMessageHandler = msg_handler;
+  _BCMessageHandlerArgs = msg_handler_args;
 
   if(auto_sync_enable) {
     _bc_sync_task_handle = xTaskCreateStaticPinnedToCore(
@@ -611,14 +616,17 @@ WalterModem::blueCherryInit(WalterModemBluecherryMessageHandlerCB msg_handler,
 bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data, bool urgent)
 {
   _bc_msg_out.should_process = false;
+  _bc_msg_out.version = 1;
+  _bc_msg_out.type = WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_CON;
+  _bc_msg_out.token_len = 0;
 
-  if(_bc_msg_out.data_len + len + _blueCherryGetCoapHeaderLength(&_bc_msg_out) >=
+  if(_bc_msg_out.data_len + len + _blueCherryGetCoapHeaderLength(&_bc_msg_out) + 1 >=
      WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN) {
     if(xQueueSend(_bluecherryIOMessageQueue.handle, &_bc_msg_out, 0) != pdPASS) {
       ESP_LOGW("WalterModem", "BlueCherry IO queue full, cannot enqueue message.");
       return false;
     }
-    _bc_msg_out.data_len = _blueCherryGetCoapHeaderLength(&_bc_msg_out);
+    _bc_msg_out.data_len = _blueCherryGetCoapHeaderLength(&_bc_msg_out) + 1;
   }
 
   _bc_msg_out.data[_bc_msg_out.data_len] = topic;
@@ -631,7 +639,7 @@ bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data, b
       ESP_LOGW("WalterModem", "BlueCherry IO queue full, cannot enqueue message.");
       return false;
     }
-    _bc_msg_out.data_len = _blueCherryGetCoapHeaderLength(&_bc_msg_out);
+    _bc_msg_out.data_len = _blueCherryGetCoapHeaderLength(&_bc_msg_out) + 1;
   }
   return true;
 }
