@@ -89,15 +89,15 @@ bool WalterModem::_blueCherryProcessEvent(uint8_t* data, uint8_t len)
 
 bool WalterModem::_blueCherrySocketConfigure()
 {
-  if(_blueCherry.bcProfileId == 0) {
+  if(_blueCherry.bcSocketId == 0) {
     return false;
   }
 
   bool success = true;
 
-  success &= socketConfig(_blueCherry.bcProfileId);
-  success &= socketConfigExtended(_blueCherry.bcProfileId);
-  success &= socketConfigSecure(_blueCherry.bcProfileId, true, _blueCherry.tlsProfileId);
+  success &= socketConfig(NULL, NULL, NULL, 1, 300, 0, 60, 5000, _blueCherry.bcSocketId);
+  success &= socketConfigExtended(NULL, NULL, NULL, _blueCherry.bcSocketId);
+  success &= socketConfigSecure(true, _blueCherry.tlsProfileId, _blueCherry.bcSocketId);
 
   return success;
 }
@@ -105,17 +105,17 @@ bool WalterModem::_blueCherrySocketConfigure()
 bool WalterModem::_blueCherrySocketConnect()
 {
 
-  WalterModem::socketGetState();
+  WalterModem::socketGetState(); // Update the socket statuses to the latest available data.
 
-  if(_blueCherry.bcProfileId == 0) {
+  if(_blueCherry.bcSocketId == 0) {
     if(WalterModemSocket* sock = _socketReserve(); sock != NULL) {
-      _blueCherry.bcProfileId = sock->id;
+      _blueCherry.bcSocketId = sock->id;
     } else {
       return false;
     }
   }
 
-  WalterModemSocket* sock = _socketGet(_blueCherry.bcProfileId);
+  WalterModemSocket* sock = _socketGet(_blueCherry.bcSocketId);
 
   for(int attempt = 0; attempt < 5; ++attempt) {
     switch(sock->state) {
@@ -127,9 +127,10 @@ bool WalterModem::_blueCherrySocketConnect()
       }
       continue;
 
-    case WALTER_MODEM_SOCKET_STATE_READY:
-      if(!socketDial(_blueCherry.bcProfileId, WALTER_MODEM_SOCKET_PROTO_UDP,
-                     WALTER_MODEM_BLUECHERRY_PORT, WALTER_MODEM_BLUECHERRY_HOSTNAME)) {
+    case WALTER_MODEM_SOCKET_STATE_CONFIGURED:
+      if(!socketDial(WALTER_MODEM_BLUECHERRY_HOSTNAME, WALTER_MODEM_BLUECHERRY_PORT, 0, NULL, NULL,
+                     NULL, WALTER_MODEM_SOCKET_PROTO_UDP, WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
+                     _blueCherry.bcSocketId)) {
         break;
       }
       continue;
@@ -147,7 +148,7 @@ bool WalterModem::_blueCherrySocketConnect()
     }
   }
 
-  _blueCherry.bcProfileId = 0;
+  _blueCherry.bcSocketId = 0;
   return false;
 }
 
@@ -169,7 +170,7 @@ void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, ui
     break;
 
   case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
-    _blueCherry.bcProfileId = 0;
+    _blueCherry.bcSocketId = 0;
 
   case WALTER_MODEM_SOCKET_EVENT_CONNECTED:
   default:
@@ -210,7 +211,8 @@ bool WalterModem::_blueCherryCoapSend()
   for(uint8_t attempt = 1; attempt <= MAX_RETRANSMIT; ++attempt) {
     _blueCherry.lastTransmissionTime = time(NULL);
 
-    socketSend(_blueCherry.bcProfileId, _blueCherry.messageOut, _blueCherry.messageOutLen);
+    socketSend(_blueCherry.messageOut, _blueCherry.messageOutLen, NULL, NULL, NULL,
+               WALTER_MODEM_RAI_NO_INFO, _blueCherry.bcSocketId);
 
     while(true) {
       if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
@@ -220,11 +222,11 @@ bool WalterModem::_blueCherryCoapSend()
       vTaskDelay(pdMS_TO_TICKS(10));
 
       if(difftime(time(NULL), _blueCherry.lastTransmissionTime) >= timeout) {
-        break;
+        break; // retransmit or give up
       }
     }
 
-    timeout *= 2;
+    timeout *= 2; // exponential backoff
   }
 
   _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;

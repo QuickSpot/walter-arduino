@@ -56,7 +56,7 @@
 #define CELLULAR_APN ""
 
 // Define BlueCherry cloud device ID
-#define BC_DEVICE_TYPE "dbmatic2"
+#define BC_DEVICE_TYPE "walter01"
 
 // Define modem TLS profile used for BlueCherry cloud platform
 #define BC_TLS_PROFILE 1
@@ -257,7 +257,7 @@ void setup()
   Serial.printf("\r\n\r\n=== WalterModem BlueCherry example ===\r\n\r\n");
 
   /* Start the modem */
-  if(modem.begin(&Serial2)) {
+  if(WalterModem::begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
