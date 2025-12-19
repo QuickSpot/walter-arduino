@@ -244,7 +244,7 @@ bool lteConnect()
  * @return true  If assistance status was successfully retrieved and parsed.
  * @return false If the assistance status could not be retrieved.
  */
-bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullptr,
+bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
                            bool* updateEphemeris = nullptr)
 {
   /* Check assistance data status */
@@ -293,7 +293,7 @@ bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullpt
  * @return true If the clock is valid or successfully synchronized.
  * @return false If synchronization fails or LTE connection fails.
  */
-bool validateGNSSClock(walter_modem_rsp_t* rsp)
+bool validateGNSSClock(WalterModemRsp* rsp)
 {
   /* Validate the GNSS subsystem clock */
   modem.gnssGetUTCTime(rsp);
@@ -339,7 +339,7 @@ bool validateGNSSClock(walter_modem_rsp_t* rsp)
  * @return true  Assistance data is valid (or successfully updated).
  * @return false Failure to sync time, connect LTE, or update assistance data.
  */
-bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
+bool updateGNSSAssistance(WalterModemRsp* rsp)
 {
   bool updateAlmanac = false;
   bool updateEphemeris = false;
@@ -384,6 +384,43 @@ bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
 }
 
 /**
+ * @brief GNSS event handler
+ *
+ * Handles GNSS fix events.
+ * @note This callback is invoked from the modem driver’s event context.
+ *       It must never block or call modem methods directly.
+ *       Use it only to set flags or copy data for later processing.
+ *
+ * @param fix The fix data.
+ * @param args User argument pointer passed to gnssSetEventHandler
+ *
+ * @return None.
+ */
+void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
+{
+  memcpy(&latestGnssFix, fix, sizeof(WalterModemGNSSFix));
+
+  /* Count satellites with good signal strength */
+  uint8_t goodSatCount = 0;
+  for(int i = 0; i < latestGnssFix.satCount; ++i) {
+    if(latestGnssFix.sats[i].signalStrength >= 30) {
+      ++goodSatCount;
+    }
+  }
+  Serial.println();
+  Serial.printf("GNSS fix received:"
+                "  Confidence: %.02f"
+                "  Latitude: %.06f"
+                "  Longitude: %.06f"
+                "  Satcount: %d"
+                "  Good sats: %d\r\n",
+                latestGnssFix.estimatedConfidence, latestGnssFix.latitude, latestGnssFix.longitude,
+                latestGnssFix.satCount, goodSatCount);
+
+  gnssFixRcvd = true;
+}
+
+/**
  * @brief Attempt to obtain a GNSS position fix with acceptable confidence.
  *
  * This function:
@@ -398,7 +435,7 @@ bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
  */
 bool attemptGNSSFix()
 {
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   if(!validateGNSSClock(&rsp)) {
     Serial.println("Error: Could not validate GNSS clock");
@@ -461,43 +498,6 @@ bool attemptGNSSFix()
 }
 
 /**
- * @brief GNSS event handler
- *
- * Handles GNSS fix events.
- * @note This callback is invoked from the modem driver’s event context.
- *       It must never block or call modem methods directly.
- *       Use it only to set flags or copy data for later processing.
- *
- * @param fix The fix data.
- * @param args User argument pointer passed to gnssSetEventHandler
- *
- * @return None.
- */
-void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
-{
-  memcpy(&latestGnssFix, fix, sizeof(WalterModemGNSSFix));
-
-  /* Count satellites with good signal strength */
-  uint8_t goodSatCount = 0;
-  for(int i = 0; i < latestGnssFix.satCount; ++i) {
-    if(latestGnssFix.sats[i].signalStrength >= 30) {
-      ++goodSatCount;
-    }
-  }
-  Serial.println();
-  Serial.printf("GNSS fix received:"
-                "  Confidence: %.02f"
-                "  Latitude: %.06f"
-                "  Longitude: %.06f"
-                "  Satcount: %d"
-                "  Good sats: %d\r\n",
-                latestGnssFix.estimatedConfidence, latestGnssFix.latitude, latestGnssFix.longitude,
-                latestGnssFix.satCount, goodSatCount);
-
-  gnssFixRcvd = true;
-}
-
-/**
  * @brief Modem URC event handler
  *
  * Handles unsolicited result codes (URC) from the modem.
@@ -508,7 +508,7 @@ void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
@@ -556,14 +556,9 @@ void setup()
     ESP.restart();
   }
 
-  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
-  /* Set the GNSS fix event handler */
-  /* This method will be merged with the URC handler in a future release */
-  modem.gnssSetEventHandler(gnssEventHandler, NULL);
-
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   /* Ensure we are using the preferred RAT */
   /* This is a reboot-persistent setting */
@@ -619,6 +614,9 @@ void setup()
     Serial.println("Error: Could not disable socket TLS");
     return;
   }
+
+  /* Set the GNSS fix event handler */
+  modem.gnssSetEventHandler(gnssEventHandler, NULL);
 }
 
 /**
@@ -626,7 +624,7 @@ void setup()
  */
 void loop()
 {
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   attemptGNSSFix();
 

@@ -69,7 +69,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-walter_modem_rsp_t rsp = {};
+WalterModemRsp rsp = {};
 
 /**
  * @brief The buffer to receive from the HTTP server.
@@ -233,7 +233,7 @@ bool httpPost(const char* path, const uint8_t* body, size_t bodyLen,
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myURCHandler(const WalterModemURCEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
@@ -274,7 +274,6 @@ void setup()
     return;
   }
 
-  /* Set the modem URC event handler */
   modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the lte network */
@@ -296,25 +295,33 @@ void setup()
  */
 void loop()
 {
-  // Example GET
-  if(!httpGet(HTTP_GET_ENDPOINT)) {
-    Serial.println("HTTP GET failed, restarting...");
-    delay(1000);
-    ESP.restart();
+  static unsigned long lastRequest = 0;
+  const unsigned long requestInterval = 10000; // 10 seconds
+
+  if(millis() - lastRequest >= requestInterval) {
+    lastRequest = millis();
+
+    // Example GET
+    if(!httpGet(HTTP_GET_ENDPOINT)) {
+      Serial.println("HTTP GET failed, restarting...");
+      delay(1000);
+      ESP.restart();
+    }
+
+    Serial.println();
+    delay(2000);
+
+    // Example POST
+    const char jsonBody[] = "{\"hello\":\"quickspot\"}";
+    if(!httpPost(HTTP_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
+                 "application/json")) {
+      Serial.println("HTTP POST failed, restarting...");
+      delay(1000);
+      ESP.restart();
+    }
+
+    Serial.println();
   }
 
-  Serial.println();
-  delay(5000);
-
-  // Example POST
-  const char jsonBody[] = "{\"hello\":\"quickspot\"}";
-  if(!httpPost(HTTP_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
-               "application/json")) {
-    Serial.println("HTTP POST failed, restarting...");
-    delay(1000);
-    ESP.restart();
-  }
-
-  Serial.println();
-  delay(15000);
+  delay(10);
 }

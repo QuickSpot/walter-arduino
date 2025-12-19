@@ -1,14 +1,13 @@
 /**
  * @file WalterCoAP.cpp
  * @author Daan Pape <daan@dptechnics.com>
- * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 5 Nov 2025
- * @copyright DPTechnics bv <info@dptechnics.com>
+ * @date 28 Mar 2025
+ * @copyright DPTechnics bv
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2023, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -51,8 +50,19 @@
 #pragma endregion
 
 #pragma region PUBLIC_METHODS
-bool WalterModem::coapReceiveMessage(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
-                                     walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
+                              WalterModemRsp* rsp)
+{
+  ESP_LOGW("DEPRECATION",
+           "this coapDidRing method is deprecated and will be removed in future releases. Use "
+           "coapReceiveMessage(...) instead.");
+
+  return coapReceiveMessage(profileId, -1, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
+}
+
+bool WalterModem::coapReceiveMessage(uint8_t profile_id, int message_id, uint8_t* buf,
+                                     size_t buf_size, WalterModemRsp* rsp, walterModemCb cb,
+                                     void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_COAP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -60,7 +70,7 @@ bool WalterModem::coapReceiveMessage(int profile_id, int message_id, uint8_t* bu
 
   size_t readable_size = (buf_size > 1024) ? 1024 : buf_size;
 
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
                                  message_id, readable_size);
 
@@ -69,33 +79,33 @@ bool WalterModem::coapReceiveMessage(int profile_id, int message_id, uint8_t* bu
   _returnAfterReply();
 }
 
-bool WalterModem::coapCreateContext(int profile_id, const char* hostname, int port,
-                                    int tls_profile_id, int local_port, walter_modem_rsp_t* rsp,
-                                    walter_modem_cb_t cb, void* args)
+bool WalterModem::coapCreateContext(uint8_t profileId, const char* serverName, int port,
+                                    uint8_t tlsProfileId, int localPort, WalterModemRsp* rsp,
+                                    walterModemCb cb, void* args)
 {
-  if(profile_id >= WALTER_MODEM_MAX_COAP_PROFILES) {
+  if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  if(_coapContextSet[profile_id].connected) {
+  if(_coapContextSet[profileId].connected) {
     _returnState(WALTER_MODEM_STATE_OK);
   }
 
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPCREATE=%d,\"%s\",%d,",
-                                 profile_id, hostname, port);
+                                 profileId, serverName, port);
 
-  if(local_port > -1) {
+  if(localPort > -1) {
     stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%d", local_port);
+        sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%d", localPort);
   }
 
   stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",%d,60", tls_profile_id != 0);
+      sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",%d,60", tlsProfileId != 0);
 
-  if(tls_profile_id) {
+  if(tlsProfileId) {
     stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",,%d", tls_profile_id);
+        sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",,%d", tlsProfileId);
   }
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
@@ -103,34 +113,42 @@ bool WalterModem::coapCreateContext(int profile_id, const char* hostname, int po
   _returnAfterReply();
 }
 
-bool WalterModem::coapClose(int profile_id, walter_modem_rsp_t* rsp, walter_modem_cb_t cb,
-                            void* args)
+bool WalterModem::coapClose(uint8_t profileId, WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  if(profile_id == 0) {
+  if(profileId == 0) {
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
-  if(profile_id >= WALTER_MODEM_MAX_COAP_PROFILES) {
+  if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  _runCmd(arr("AT+SQNCOAPCLOSE=", _atNum(profile_id)), "OK", rsp, cb, args);
+  _runCmd(arr("AT+SQNCOAPCLOSE=", _atNum(profileId)), "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
-bool WalterModem::coapSetHeader(int profile_id, int message_id, const char* token,
-                                walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::coapGetContextStatus(uint8_t profileId)
 {
-  _runCmd(arr("AT+SQNCOAPHDR=", _atNum(profile_id), ",", _atNum(message_id), ",\"", token, "\""),
+  if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
+    return false;
+  }
+
+  return _coapContextSet[profileId].connected;
+}
+
+bool WalterModem::coapSetHeader(uint8_t profileId, int messageId, const char* token,
+                                WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+SQNCOAPHDR=", _atNum(profileId), ",", _atNum(messageId), ",\"", token, "\""),
           "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
-bool WalterModem::coapSetOptions(int profile_id, WalterModemCoapOptAction action,
+bool WalterModem::coapSetOptions(uint8_t profileId, WalterModemCoapOptAction action,
                                  WalterModemCoapOptCode code, const char* const values,
-                                 walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+                                 WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  if(profile_id == 0) {
+  if(profileId == 0) {
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
@@ -139,19 +157,19 @@ bool WalterModem::coapSetOptions(int profile_id, WalterModemCoapOptAction action
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
 
   if(action == WALTER_MODEM_COAP_OPT_SET || action == WALTER_MODEM_COAP_OPT_EXTEND) {
     if(values && *values) {
       stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d,\"%s\"",
-                                     profile_id, action, code, values);
+                                     profileId, action, code, values);
     } else {
       stringsBuffer->size +=
-          sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d", profile_id, action, code);
+          sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d", profileId, action, code);
     }
   } else if(action == WALTER_MODEM_COAP_OPT_DELETE) {
     stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d", profile_id, action, code);
+        sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d", profileId, action, code);
   } else {
     /* make sure something sane is in the buffer if wrong action */
     stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT");
@@ -162,13 +180,13 @@ bool WalterModem::coapSetOptions(int profile_id, WalterModemCoapOptAction action
   _returnAfterReply();
 }
 
-bool WalterModem::coapSendData(int profile_id, WalterModemCoapSendType type,
-                               WalterModemCoapSendMethodRsp method_rsp, int buf_size, uint8_t* buf,
-                               walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::coapSendData(uint8_t profileId, WalterModemCoapSendType type,
+                               WalterModemCoapSendMethodRsp methodRsp, int length, uint8_t* payload,
+                               WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  _runCmd(arr("AT+SQNCOAPSEND=", _atNum(profile_id), ",", _atNum(type), ",", _atNum(method_rsp),
-              ",", _atNum(buf_size)),
-          "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
+  _runCmd(arr("AT+SQNCOAPSEND=", _atNum(profileId), ",", _atNum(type), ",", _atNum(methodRsp), ",",
+              _atNum(length)),
+          "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, payload, length);
   _returnAfterReply();
 }
 #pragma endregion
@@ -178,29 +196,6 @@ void WalterModem::coapSetEventHandler(walterModemCoAPEventHandler handler, void*
   ESP_LOGE("DEPRECATION",
            "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
   return;
-}
-
-bool WalterModem::coapGetContextStatus(int profileId)
-{
-  if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
-    return false;
-  }
-
-  ESP_LOGW(
-      "DEPRECATION",
-      "this coapGetContextStatus method is deprecated and will be removed in future releases.");
-
-  return _coapContextSet[profileId].connected;
-}
-
-bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
-                              walter_modem_rsp_t* rsp)
-{
-  ESP_LOGW("DEPRECATION",
-           "this coapDidRing method is deprecated and will be removed in future releases. Use "
-           "coapReceiveMessage(...) instead.");
-
-  return coapReceiveMessage(profileId, -1, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
 }
 #pragma endregion
 #endif
