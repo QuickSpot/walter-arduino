@@ -104,19 +104,17 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-walter_modem_rsp_t rsp;
+WalterModemRsp rsp;
 
 /**
- * @brief The buffer to transmit to the MQTT server.
+ * @brief Buffer for incoming response
  */
-uint8_t out_buf[32] = { 0 };
+uint8_t incomingBuf[256] = { 0 };
 
 /**
- * @brief The buffer to receive from the MQTT server.
- * @note Make sure this is sufficiently large enough for incoming data. (Up to 4096 bytes supported
- * by Sequans)
+ * @brief MQTT client and message prefix based on mac address
  */
-uint8_t in_buf[4096] = { 0 };
+char macString[32];
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -275,35 +273,18 @@ static bool mqttsPublishMessage(const char* topic, const char* message)
 }
 
 /**
- * @brief Modem URC event handler
- *
- * Handles unsolicited result codes (URC) from the modem.
- *
- * @note This method should not block for too long. Consider moving heavy processing and blocking
- * functions to your main application thread.
- *
- * @param ev Pointer to the URC event data.
- * @param args User argument pointer passed to urcSetEventHandler
+ * @brief Common routine to check for and print incoming MQTTS messages.
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void mqttsCheckIncoming(const char* topic)
 {
-  Serial.printf("URC received at %lld\n", ev->timestamp);
-  switch(ev->type) {
-  case WM_URC_TYPE_MQTT:
-    if(ev->mqtt.event == WALTER_MODEM_MQTT_EVENT_RING) {
-      Serial.printf("MQTTS Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
-                    ev->mqtt.topic, ev->mqtt.dataLen, ev->mqtt.qos, ev->mqtt.msgId);
-      if(modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
-        for(int i = 0; i < ev->mqtt.dataLen; i++) {
-          Serial.printf("%c", in_buf[i]);
-        }
-        Serial.printf("\n");
-      }
+  while(modem.mqttDidRing(topic, incomingBuf, sizeof(incomingBuf), &rsp)) {
+    Serial.printf("Incoming MQTTS message on '%s'\r\n", topic);
+    Serial.printf("  QoS: %d, Message ID: %d, Length: %d\r\n", rsp.data.mqttResponse.qos,
+                  rsp.data.mqttResponse.messageId, rsp.data.mqttResponse.length);
+    Serial.println("  Payload:");
+    for(int i = 0; i < rsp.data.mqttResponse.length; i++) {
+      Serial.printf("  '%c' 0x%02X\r\n", incomingBuf[i], incomingBuf[i]);
     }
-    break;
-  default:
-    /* Unhandled event */
-    break;
   }
 }
 
@@ -317,10 +298,10 @@ void setup()
 
   Serial.printf("\r\n\r\n=== WalterModem MQTTS example ===\r\n\r\n");
 
-  uint8_t mac[6] = { 0 };
-  esp_read_mac(mac, ESP_MAC_WIFI_STA);
-  sprintf((char*) out_buf, "walter%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
-          mac[4], mac[5]);
+  /* Build a unique client ID from the ESP MAC address */
+  esp_read_mac(incomingBuf, ESP_MAC_WIFI_STA);
+  sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X", incomingBuf[0], incomingBuf[1],
+          incomingBuf[2], incomingBuf[3], incomingBuf[4], incomingBuf[5]);
 
   /* Start the modem */
   if(WalterModem::begin(&Serial2)) {
@@ -329,8 +310,6 @@ void setup()
     Serial.println("Error: Could not initialize the modem");
     return;
   }
-
-  modem.urcSetEventHandler(myURCHandler, NULL);
 
   /* Connect the modem to the LTE network */
   if(!lteConnect()) {
@@ -379,21 +358,24 @@ void loop()
   const unsigned long publishInterval = 15000; // 15 seconds
 
   static int seq = 0;
-  static char out_msg[64];
+  static char outgoingMsg[64];
 
   /* Periodically publish a message */
   if(millis() - lastPublish >= publishInterval) {
     lastPublish = millis();
     seq++;
 
-    sprintf(out_msg, "%s-%d", out_buf, seq);
-    if(!mqttsPublishMessage(MQTTS_TOPIC, out_msg)) {
-      Serial.println("MQTTS publish failed, restarting...");
-      delay(1000);
-      ESP.restart();
+    if(seq % 3 == 0) {
+      sprintf(outgoingMsg, "%s-%d", macString, seq);
+      if(!mqttsPublishMessage(MQTTS_TOPIC, outgoingMsg)) {
+        Serial.println("MQTTS publish failed, restarting...");
+        delay(1000);
+        ESP.restart();
+      }
+      Serial.println();
     }
-    Serial.println();
   }
 
-  delay(10);
+  /* Check for incoming messages */
+  mqttsCheckIncoming(MQTTS_TOPIC);
 }

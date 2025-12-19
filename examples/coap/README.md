@@ -24,4 +24,4 @@ Make sure to connect the LTE antenna to Walter. Running the example without the
 antenna connected could damage the radio frontend of the modem. Also insert the
 SIM card before starting the sketch.
 
-You should now be able to see the incoming message from the [coap.me](coap.me) demo server in the serial monitor.
+You should now be able to see the incomming message from the [coap.me](coap.me) demo server in the serial monitor.

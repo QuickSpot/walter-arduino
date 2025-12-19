@@ -62,7 +62,7 @@
  *
  * Used to validate the server's TLS certificate.
  */
-const char ca_cert[] PROGMEM = R"EOF(
+const char ca_cert[] PROGMEM  = R"EOF(
   -----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----)EOF";
 
 /**
@@ -95,12 +95,12 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-walter_modem_rsp_t rsp;
+WalterModemRsp rsp;
 
 /**
  * @brief Buffer for incoming response
  */
-uint8_t in_buf[256] = { 0 };
+uint8_t incomingBuf[256] = {0};
 
 /**
  * @brief MQTT client and message prefix based on mac address
@@ -111,8 +111,7 @@ char macString[32];
  * @brief This function checks if we are connected to the lte network
  * @return True when connected, False otherwise
  */
-bool lteConnected()
-{
+bool lteConnected() {
   WalterModemNetworkRegState regState = modem.getNetworkRegState();
   return (regState == WALTER_MODEM_NETWORK_REG_REGISTERED_HOME ||
           regState == WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING);
@@ -122,14 +121,13 @@ bool lteConnected()
  * @brief This function waits for the modem to be connected to the Lte network.
  * @return true if the connected, else false on timeout.
  */
-bool waitForNetwork()
-{
+bool waitForNetwork() {
   /* Wait for the network to become available */
   int timeout = 0;
-  while(!lteConnected()) {
+  while (!lteConnected()) {
     delay(1000);
     timeout++;
-    if(timeout > 300)
+    if (timeout > 300)
       return false;
   }
   Serial.println("Connected to the network");
@@ -140,9 +138,8 @@ bool waitForNetwork()
  * @brief This function tries to connect the modem to the cellular network.
  * @return true if the connection attempt is successful, else false.
  */
-bool lteConnect()
-{
-  if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
+bool lteConnect() {
+  if (modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
   } else {
     Serial.println("Error: Could not set operational state to NO RF");
@@ -150,7 +147,7 @@ bool lteConnect()
   }
 
   /* Create PDP context */
-  if(modem.definePDPContext()) {
+  if (modem.definePDPContext()) {
     Serial.println("Created PDP context");
   } else {
     Serial.println("Error: Could not create PDP context");
@@ -158,7 +155,7 @@ bool lteConnect()
   }
 
   /* Set the operational state to full */
-  if(modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
+  if (modem.setOpState(WALTER_MODEM_OPSTATE_FULL)) {
     Serial.println("Successfully set operational state to FULL");
   } else {
     Serial.println("Error: Could not set operational state to FULL");
@@ -166,10 +163,11 @@ bool lteConnect()
   }
 
   /* Set the network operator selection to automatic */
-  if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
+  if (modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
     Serial.println("Network selection mode to was set to automatic");
   } else {
-    Serial.println("Error: Could not set the network selection mode to automatic");
+    Serial.println(
+        "Error: Could not set the network selection mode to automatic");
     return false;
   }
 
@@ -192,24 +190,28 @@ bool lteConnect()
  * - true if the credentials were successfully written and the profile configured.
  * - false otherwise.
  */
-bool setupTLSProfile(void)
-{
+bool setupTLSProfile(void) {
 
-  if(!modem.tlsWriteCredential(false, 12, ca_cert)) {
+  if (!modem.tlsWriteCredential(false, 12, ca_cert)) {
     Serial.println("Error: CA cert upload failed");
     return false;
   }
-  if(!modem.tlsWriteCredential(false, 11, client_cert)) {
+  if (!modem.tlsWriteCredential(false, 11, client_cert)) {
     Serial.println("Error: client cert upload failed");
     return false;
   }
-  if(!modem.tlsWriteCredential(true, 1, client_private_key)) {
+  if (!modem.tlsWriteCredential(true, 1, client_private_key)) {
     Serial.println("Error: private key upload failed");
     return false;
   }
 
-  if(modem.tlsConfigProfile(AWS_MQTT_TLS_PROFILE, WALTER_MODEM_TLS_VALIDATION_CA,
-                            WALTER_MODEM_TLS_VERSION_12, 12, 11, 1)) {
+  if (modem.tlsConfigProfile(
+          AWS_MQTT_TLS_PROFILE,
+          WALTER_MODEM_TLS_VALIDATION_CA,
+          WALTER_MODEM_TLS_VERSION_12,
+          12,
+          11,
+          1)) {
     Serial.println("TLS profile configured");
   } else {
     Serial.println("Error: TLS profile configuration failed");
@@ -219,25 +221,25 @@ bool setupTLSProfile(void)
   return true;
 }
 
-void setup()
-{
+void setup() {
   Serial.begin(115200);
   delay(5000);
 
   Serial.println("Walter modem AWS IoT example v1.0.0\r\n");
 
-  esp_read_mac(in_buf, ESP_MAC_WIFI_STA);
-  sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X", in_buf[0], in_buf[1], in_buf[2],
-          in_buf[3], in_buf[4], in_buf[5]);
+  esp_read_mac(incomingBuf, ESP_MAC_WIFI_STA);
+  sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X", incomingBuf[0],
+          incomingBuf[1], incomingBuf[2], incomingBuf[3], incomingBuf[4],
+          incomingBuf[5]);
 
-  if(WalterModem::begin(&Serial2)) {
+  if (WalterModem::begin(&Serial2)) {
     Serial.println("Modem initialization OK");
   } else {
     Serial.println("Error: Modem initialization ERROR");
     return;
   }
   /* Connect the modem to the lte network */
-  if(!lteConnect()) {
+  if (!lteConnect()) {
     Serial.println("Error: Could Not Connect to LTE");
     return;
   }
@@ -250,47 +252,49 @@ void setup()
   }
 
   /* Configure MQTT with TLS profile (MQTTS) */
-  if(modem.mqttConfig(AWS_MQTTS_CLIENT_ID, 0, 0, AWS_MQTT_TLS_PROFILE)) {
+  if (modem.mqttConfig(AWS_MQTTS_CLIENT_ID, 0, 0, AWS_MQTT_TLS_PROFILE)) {
     Serial.println("MQTTS configuration succeeded");
   } else {
     Serial.println("Error: MQTTS configuration failed");
     return;
   }
 
-  if(modem.mqttConnect(AWS_MQTTS_ENDPOINT, AWS_MQTTS_PORT)) {
+  if (modem.mqttConnect(AWS_MQTTS_ENDPOINT, AWS_MQTTS_PORT)) {
     Serial.println("MQTTS connection succeeded");
   } else {
     Serial.println("Error: MQTTS connection failed");
   }
 
-  if(modem.mqttSubscribe(AWS_MQTTS_TOPIC)) {
+  if (modem.mqttSubscribe(AWS_MQTTS_TOPIC)) {
     Serial.println("MQTTS subscribed to topic");
   } else {
     Serial.println("Error: MQTTS subscribe failed");
   }
 }
 
-void loop()
-{
+void loop() {
   delay(15000);
 
   static int seq = 0;
   static char outgoingMsg[64];
   seq++;
-  if(seq % 3 == 0) {
+  if (seq % 3 == 0) {
     sprintf(outgoingMsg, "%s-%d", macString, seq);
-    if(modem.mqttPublish(AWS_MQTTS_TOPIC, (uint8_t*) outgoingMsg, strlen(outgoingMsg))) {
+    if (modem.mqttPublish(AWS_MQTTS_TOPIC, (uint8_t *)outgoingMsg,
+                          strlen(outgoingMsg))) {
       Serial.printf("published '%s' on topic", outgoingMsg);
     } else {
       Serial.print("MQTTS publish failed\r\n");
     }
   }
 
-  while(modem.mqttDidRing(AWS_MQTTS_TOPIC, in_buf, sizeof(in_buf), &rsp)) {
-    Serial.printf("incoming: qos=%d msgid=%d len=%d:\r\n", rsp.data.mqttResponse.qos,
-                  rsp.data.mqttResponse.messageId, rsp.data.mqttResponse.length);
-    for(int i = 0; i < rsp.data.mqttResponse.length; i++) {
-      Serial.printf("'%c' 0x%02x\r\n", in_buf[i], in_buf[i]);
+  while (modem.mqttDidRing(AWS_MQTTS_TOPIC, incomingBuf,
+                           sizeof(incomingBuf), &rsp)) {
+    Serial.printf("incoming: qos=%d msgid=%d len=%d:\r\n",
+                  rsp.data.mqttResponse.qos, rsp.data.mqttResponse.messageId,
+                  rsp.data.mqttResponse.length);
+    for (int i = 0; i < rsp.data.mqttResponse.length; i++) {
+      Serial.printf("'%c' 0x%02x\r\n", incomingBuf[i], incomingBuf[i]);
     }
   }
 }

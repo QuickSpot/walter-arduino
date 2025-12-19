@@ -76,24 +76,6 @@
 #define ZTP_SERV_DEVID_PATH "devid"
 #define ZTP_SERV_CSR_PATH "sign"
 
-static bool _coapRingReceived = false;
-static uint16_t _coapRingMsgId = 0;
-
-static void ztpURCHandler(const walter_modem_urc_event_t* ev, void* args)
-{
-  switch(ev->type) {
-  case WM_URC_TYPE_COAP:
-    if(ev->coap.event == WALTER_MODEM_COAP_EVENT_RING) {
-      _coapRingMsgId = ev->coap.msgId;
-      _coapRingReceived = true;
-    }
-    break;
-  default:
-    /* Unhandled event */
-    break;
-  }
-}
-
 int BlueCherryZTP::_hardwareRandomEntropyFunc(void* data, unsigned char* output, size_t len)
 {
   esp_fill_random(output, len);
@@ -129,11 +111,11 @@ bool BlueCherryZTP::_seedRandom(bool rfEnabled)
   return ret == 0;
 }
 
-bool BlueCherryZTP::begin(const char* typeId, const uint8_t tls_profile_id, const char* caCert,
+bool BlueCherryZTP::begin(const char* typeId, const uint8_t tlsProfileId, const char* caCert,
                           const WalterModem* modem)
 {
-  if(typeId == nullptr || strlen(typeId) != BLUECHERRY_ZTP_ID_LEN || tls_profile_id == 0 ||
-     tls_profile_id == 0 || tls_profile_id > 6 || caCert == nullptr || modem == nullptr) {
+  if(typeId == nullptr || strlen(typeId) != BLUECHERRY_ZTP_ID_LEN || tlsProfileId == 0 ||
+     tlsProfileId == 0 || tlsProfileId > 6 || caCert == nullptr || modem == nullptr) {
     return false;
   }
 
@@ -142,10 +124,10 @@ bool BlueCherryZTP::begin(const char* typeId, const uint8_t tls_profile_id, cons
   }
 
   _bcTypeId = typeId;
-  _tlsProfileId = tls_profile_id;
+  _tlsProfileId = tlsProfileId;
   _modem = modem;
 
-  if(!modem->tlsConfigProfile(tls_profile_id, WALTER_MODEM_TLS_VALIDATION_CA,
+  if(!modem->tlsConfigProfile(tlsProfileId, WALTER_MODEM_TLS_VALIDATION_CA,
                               WALTER_MODEM_TLS_VERSION_12, 6)) {
     return false;
   }
@@ -242,7 +224,7 @@ bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type, unsigne
 bool BlueCherryZTP::requestDeviceId()
 {
   int ret;
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
   uint8_t cborBuf[256];
   uint8_t coapData[16];
   ZTP_CBOR cbor;
@@ -310,8 +292,6 @@ bool BlueCherryZTP::requestDeviceId()
     }
   }
 
-  _modem->urcSetEventHandler(ztpURCHandler, NULL);
-
   // Send first CoAP
   if(!_modem->coapCreateContext(COAP_PROFILE, ZTP_SERV_ADDR, ZTP_SERV_PORT, _tlsProfileId)) {
     printf("Failed to create ZTP CoAP context\n");
@@ -334,20 +314,19 @@ bool BlueCherryZTP::requestDeviceId()
     return false;
   }
 
-  _coapRingReceived = false;
   int i = BLUECHERRY_ZTP_COAP_TIMEOUT;
   printf("Awaiting ZTP CoAP ring.");
-  while(i && !_coapRingReceived) {
+  while(i && !_modem->coapDidRing(COAP_PROFILE, coapData, sizeof(coapData), &rsp)) {
     printf(".");
     DELAY(1000);
     i--;
   }
   printf("\n");
 
-  if(!_modem->coapReceiveMessage(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
-    printf("Failed to receive ZTP CoAP message\n");
-    return false;
-  }
+  // if(!_modem->coapClose(COAP_PROFILE)) {
+  //   printf("Failed to close ZTP CoAP connection\n");
+  //   return false;
+  // }
 
   if(i < 1) {
     printf("Failed to receive response from ZTP COAP server\n");
@@ -422,7 +401,7 @@ bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled)
 bool BlueCherryZTP::requestSignedCertificate()
 {
   int ret;
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
   uint8_t buf[BLUECHERRY_ZTP_CERT_BUF_SIZE];
   uint8_t coapData[BLUECHERRY_ZTP_CERT_BUF_SIZE];
   ZTP_CBOR cbor;
@@ -434,8 +413,6 @@ bool BlueCherryZTP::requestSignedCertificate()
     printf("Failed to encode CSR\n");
     return false;
   }
-
-  _modem->urcSetEventHandler(ztpURCHandler, NULL);
 
   // Send second CoAP
   if(!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_SET,
@@ -454,20 +431,14 @@ bool BlueCherryZTP::requestSignedCertificate()
     return false;
   }
 
-  _coapRingReceived = false;
   int i = BLUECHERRY_ZTP_COAP_TIMEOUT;
   printf("Awaiting ZTP CoAP ring.");
-  while(i && !_coapRingReceived) {
+  while(i && !_modem->coapDidRing(COAP_PROFILE, coapData, sizeof(coapData), &rsp)) {
     printf(".");
     DELAY(1000);
     i--;
   }
   printf("\n");
-
-  if(!_modem->coapReceiveMessage(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
-    printf("Failed to receive ZTP CoAP message\n");
-    return false;
-  }
 
   if(i < 1) {
     printf("Failed to receive response from ZTP COAP server\n");

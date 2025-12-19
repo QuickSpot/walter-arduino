@@ -56,7 +56,7 @@
 #define CELLULAR_APN ""
 
 // Define BlueCherry cloud device ID
-#define BC_DEVICE_TYPE "dbmatic2"
+#define BC_DEVICE_TYPE "walter01"
 
 // Define modem TLS profile used for BlueCherry cloud platform
 #define BC_TLS_PROFILE 1
@@ -65,7 +65,7 @@
 #define ModemSerial Serial2
 
 // Buffer to store OTA firmware messages in
-byte ota_buffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
+byte otaBuffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
 
 // The modem instance
 WalterModem modem;
@@ -216,7 +216,7 @@ bool lteConnect()
 // new firmware.
 void syncBlueCherry()
 {
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   do {
     if(!modem.blueCherrySync(&rsp)) {
@@ -257,7 +257,7 @@ void setup()
   Serial.printf("\r\n\r\n=== WalterModem BlueCherry example ===\r\n\r\n");
 
   /* Start the modem */
-  if(modem.begin(&Serial2)) {
+  if(WalterModem::begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
@@ -274,17 +274,17 @@ void setup()
     ESP.restart();
   }
 
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   // If this is the first boot, set up bluecherry and ZTP.
   if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
     // Initialize the BlueCherry connection
     unsigned short attempt = 0;
-    while(!modem.blueCherryInit(BC_TLS_PROFILE, ota_buffer, &rsp)) {
+    while(!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
       if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
          attempt <= 2) {
-        Serial.println("Device is not provisioned for BlueCherry communication, starting Zero "
-                       "Touch Provisioning");
+        Serial.println("Device is not provisioned for BlueCherry "
+                       "communication, starting Zero Touch Provisioning");
 
         if(attempt == 0) {
           // Device is not provisioned yet, initialize BlueCherry zero touch
@@ -358,7 +358,7 @@ void loop()
     ESP.restart();
   }
 
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   // Send a message containing the measured RSRP value to an MQTT topic
   if(modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
