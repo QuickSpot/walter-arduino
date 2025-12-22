@@ -3106,6 +3106,11 @@ private:
   static inline walter_modem_cmd_processing_queue_t _cmdQueue = {};
 
   /**
+   * @brief The current command being processed.
+   */
+  static inline walter_modem_cmd_t* _curCmd = NULL;
+
+  /**
    * @brief The set with PDP contexts.
    */
   static inline walter_modem_pdp_context_t _pdpCtxSet[WALTER_MODEM_MAX_PDP_CTXTS] = {};
@@ -3534,8 +3539,8 @@ private:
    *     - Sets `pos` to the index of the `\r` in that pair (if provided).
    *     - Returns true if a full `\r\n` pair is found, false otherwise.
    *
-   * @param rxData Pointer to the incoming data buffer.
-   * @param len Number of bytes in the rxData buffer.
+   * @param rx_data Pointer to the incoming data buffer.
+   * @param len Number of bytes in the rx_data buffer.
    * @param findWhole Whether to search for the full "\r\n" pair (true) or just the first CR or LF
    * (false).
    * @param pos Optional pointer to store the position of the first found character or pair. Will be
@@ -3543,7 +3548,7 @@ private:
    *
    * @return true if a "\r\n" pair is found (according to the mode), false otherwise.
    */
-  static bool _getCRLFPosition(const char* rxData, size_t len, bool findWhole,
+  static bool _getCRLFPosition(const char* rx_data, size_t len, bool findWhole,
                                size_t* pos = nullptr);
 
   /**
@@ -3567,12 +3572,12 @@ private:
   /**
    * @brief Parse incoming modem data.
    *
-   * @param rxData The incoming data buffer.
-   * @param len The number of bytes in the rxData buffer.
+   * @param rx_data The incoming data buffer.
+   * @param rx_len The number of bytes in the rx_data buffer.
    *
    * @return None.
    */
-  static void _parseRxData(char* rxData, size_t len);
+  static void _parseRxData(char* rx_data, size_t rx_len);
 
 #ifdef ARDUINO
 

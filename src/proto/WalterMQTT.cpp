@@ -106,15 +106,8 @@ bool WalterModem::mqttConnect(const char* hostname, uint16_t port, uint16_t keep
 bool WalterModem::mqttPublish(const char* topic, uint8_t* buf, uint16_t buf_size, uint8_t qos,
                               walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
-  if(getNetworkRegState() != WALTER_MODEM_NETWORK_REG_REGISTERED_HOME &&
-     getNetworkRegState() != WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING) {
-    ESP_LOGD("WalterModem", "network is not connected!");
-    _returnState(WALTER_MODEM_STATE_ERROR);
-  }
-
   _runCmd(arr("AT+SQNSMQTTPUBLISH=0,", _atStr(topic), ",", _atNum(qos), ",", _atNum(buf_size)),
-          "+SQNSMQTTONPUBLISH:0,", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT,
-          buf, buf_size);
+          "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
   _returnAfterReply();
 }
 
@@ -179,12 +172,13 @@ bool WalterModem::mqttReceiveMessage(const char* topic, int message_id, uint8_t*
 
   if(message_id == 0) {
     /* no msg id means qos 0 message */
-    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)), "OK", rsp, cb, args, NULL, NULL,
-            WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
+    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(readable_size)), "OK", rsp,
+            cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
     _returnAfterReply();
   } else {
-    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(message_id)), "OK", rsp, cb,
-            args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
+    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(message_id), ",",
+                _atNum(readable_size)),
+            "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
     _returnAfterReply();
   }
 }
