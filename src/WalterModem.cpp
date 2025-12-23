@@ -1011,35 +1011,38 @@ void WalterModem::_queueRxBuffer()
         _parserData.buf->free = true;
         ESP_LOGW("WalterParser", "unable to queue the buffer");
       }
+    } else {
+      /* Release empty buffers immediately */
+      _parserData.buf->free = true;
     }
 
     _parserData.buf = NULL;
   }
 }
 
-bool WalterModem::_getCRLFPosition(const char* rxData, size_t len, bool findWhole, size_t* pos)
+bool WalterModem::_getCRLFPosition(const char* rx_data, size_t len, bool findWhole, size_t* pos)
 {
   if(!findWhole) {
-    const char* crPtr = (const char*) memchr(rxData, '\r', len);
-    const char* lfPtr = (const char*) memchr(rxData, '\n', len);
+    const char* crPtr = (const char*) memchr(rx_data, '\r', len);
+    const char* lfPtr = (const char*) memchr(rx_data, '\n', len);
 
     if(pos != nullptr) {
       if(crPtr) {
-        *pos = (size_t) (crPtr - rxData);
+        *pos = (size_t) (crPtr - rx_data);
       } else if(lfPtr) {
-        *pos = (size_t) (lfPtr - rxData);
+        *pos = (size_t) (lfPtr - rx_data);
       } else {
         *pos = SIZE_MAX;
       }
     }
 
-    if(crPtr && (size_t) (crPtr - rxData) + 1 < len && rxData[(crPtr - rxData) + 1] == '\n') {
+    if(crPtr && (size_t) (crPtr - rx_data) + 1 < len && rx_data[(crPtr - rx_data) + 1] == '\n') {
       return true;
     }
     return false;
   } else {
     for(size_t i = 0; i + 1 < len; ++i) {
-      if(rxData[i] == '\r' && rxData[i + 1] == '\n') {
+      if(rx_data[i] == '\r' && rx_data[i + 1] == '\n') {
         if(pos)
           *pos = i;
         return true;
@@ -1097,27 +1100,19 @@ bool WalterModem::_checkPayloadComplete()
 
 bool WalterModem::_expectingPayload()
 {
-  /* Fallback if no payload size is defined (e.g. for AT+SQNSNVR) */
   _receivedPayloadSize = SIZE_MAX;
 
-  // Check for "+SQNSRECV: "
+  /**
+   * Payload headers with payload length.
+   * This is very reliable as the length is explicitly stated.
+   */
+
   if(strncmp((const char*) _parserData.buf, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
-    // Check for "+SQNSRECV: <ignored>,<length>"
     sscanf((const char*) _parserData.buf, "+SQNSRECV: %*d,%d", &_receivedPayloadSize);
     return true;
   }
 
-  // Check for "+SQNSMQTTRCVMESSAGE: "
-  if(strncmp((const char*) _parserData.buf,
-             "+SQNSMQTTRCVMESSAGE: ", strlen("+SQNSMQTTRCVMESSAGE: ")) == 0) {
-    // Check for "+SQNSMQTTRCVMESSAGE=0,<ignored>,<length>"
-    sscanf((const char*) _parserData.buf, "+SQNSMQTTRCVMESSAGE=0,%*[^,],%d", &_receivedPayloadSize);
-    return true;
-  }
-
-  // Check for "+SQNCOAPRCV: "
   if(strncmp((const char*) _parserData.buf, "+SQNCOAPRCV: ", strlen("+SQNCOAPRCV: ")) == 0) {
-    // Check for "+SQNCOAPRCV: <ignored>,<length>"
     sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,,%*d,%*d,%*d,%d",
            &_receivedPayloadSize);
     sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,%*[^,],%*d,%*d,%*d,%d",
@@ -1125,48 +1120,137 @@ bool WalterModem::_expectingPayload()
     return true;
   }
 
+  /**
+   * Payload headers are present, but do not contain payload length. This is less reliable but still
+   * very unlikely to fail.
+   *
+   * @warning The payload must NOT contain:
+   * - "\r\nOK\r\n"
+   * - "\r\nERROR\r\n"
+   * - "\r\n+CME ERROR: "
+   */
+
   // Check for "+SQNSNVR: "
   if(strncmp((const char*) _parserData.buf, "+SQNSNVR: ", strlen("+SQNSNVR: ")) == 0) {
     return true;
   }
 
+  /**
+   * No payload header. But the transmitted message expects a payload with specified length as
+   * response. This might fail due to race conditions but is still very unlikely.
+   *
+   * @note This is an unfortunate quirk of the Sequans modem AT command set.
+   *
+   * @warning The payload must NOT start with:
+   * - "> " or ">>>"
+   * - "<<<"
+   * - "OK\r\n"
+   * - "ERROR\r\n"
+   * - "+CME ERROR: "
+   */
+
+  if(strncmp((const char*) _parserData.buf, "OK\r\n", 4) == 0 ||
+     strncmp((const char*) _parserData.buf, "ERROR\r\n", 7) == 0 ||
+     strncmp((const char*) _parserData.buf, "+CME ERROR: ", 12) == 0) {
+    return false;
+  }
+
+  if(_curCmd == NULL) {
+    return false;
+  }
+
+  if(_curCmd->atCmd[0] && strcmp(_curCmd->atCmd[0], "AT+SQNHTTPRCV=") == 0) {
+    char sizeStr[16] = { 0 };
+    for(int i = 3; i < WALTER_MODEM_COMMAND_MAX_ELEMS && _curCmd->atCmd[i]; ++i) {
+      if(_curCmd->atCmd[i][0] != '\0' && strcmp(_curCmd->atCmd[i], ",") != 0) {
+        strcat(sizeStr, _curCmd->atCmd[i]);
+      } else if(strcmp(_curCmd->atCmd[i], ",") == 0) {
+        break;
+      }
+    }
+    if(sizeStr[0] != '\0') {
+      _receivedPayloadSize = atoi(sizeStr);
+      if(_receivedPayloadSize >= _parserData.buf->size) {
+        // Incomplete payload received so far
+        _receivedPayloadSize -= _parserData.buf->size;
+      } else {
+        // Complete payload already received - no more bytes expected
+        _receivedPayloadSize = 0;
+        return false;
+      }
+      return true;
+    }
+  }
+
+  if(_curCmd->atCmd[0] &&
+     strncmp(_curCmd->atCmd[0], "AT+SQNSMQTTRCVMESSAGE=", strlen("AT+SQNSMQTTRCVMESSAGE=")) == 0) {
+    int lastCommaIdx = -1;
+    for(int i = 0; i < WALTER_MODEM_COMMAND_MAX_ELEMS && _curCmd->atCmd[i]; ++i) {
+      if(strcmp(_curCmd->atCmd[i], ",") == 0) {
+        lastCommaIdx = i;
+      }
+    }
+
+    if(lastCommaIdx >= 0) {
+      char sizeStr[16] = { 0 };
+      for(int i = lastCommaIdx + 1; i < WALTER_MODEM_COMMAND_MAX_ELEMS && _curCmd->atCmd[i]; ++i) {
+        if(_curCmd->atCmd[i][0] != '\0' && strcmp(_curCmd->atCmd[i], ",") != 0) {
+          strcat(sizeStr, _curCmd->atCmd[i]);
+        } else if(strcmp(_curCmd->atCmd[i], ",") == 0) {
+          break;
+        }
+      }
+      if(sizeStr[0] != '\0') {
+        _receivedPayloadSize = atoi(sizeStr);
+        if(_receivedPayloadSize >= _parserData.buf->size) {
+          // Incomplete payload received so far
+          _receivedPayloadSize -= _parserData.buf->size;
+        } else {
+          // Complete payload already received - no more bytes expected
+          _receivedPayloadSize = 0;
+          return false;
+        }
+        return true;
+      }
+    }
+  }
+
   return false;
 }
 
-void WalterModem::_parseRxData(char* rxData, size_t len)
+void WalterModem::_parseRxData(char* rx_data, size_t rx_len)
 {
-  if(len == 0 || _hardwareReset || len > UART_BUF_SIZE)
+  if(rx_len == 0 || _hardwareReset || rx_len > UART_BUF_SIZE)
     return;
 
-  char* ptr = rxData;
-  size_t size = len;
-
   /* Main processing loop: parse until all bytes consumed */
-  for(size_t offset = 0; offset < size;) {
-    const char* chunk = ptr + offset;
-    size_t remaining = size - offset, chunkLen = 0;
+  for(size_t offset = 0; offset < rx_len;) {
+    size_t rx_remaining = rx_len - offset;
+    const char* message = rx_data + offset;
+    size_t message_len = 0;
 
-    /* A new buffer can never start with a CRLF, so if necessary, we strip it here */
-    /* This will not affect payload data as it will already have a buffer reserved */
-    if(!_parserData.buf) {
-      while(remaining && (*chunk == '\r' || *chunk == '\n')) {
-        chunk++;
-        remaining--;
-        offset++;
+    /* A new message always starts with a leading CRLF. We don't use it so we strip it once. */
+    if(!_parserData.buf && rx_remaining > 0) {
+      if(rx_remaining >= 2 && message[0] == '\r' && message[1] == '\n') {
+        message += 2;
+        rx_remaining -= 2;
+        offset += 2;
       }
-      if(remaining == 0)
-        break;
+
+      if(rx_remaining == 0)
+        continue;
     }
 
     bool payloadSizeKnown = (_receivedPayloadSize != SIZE_MAX);
 
     /* Receiving binary payload with a known total size */
-    /* Here we count the amount of bytes to read, and add them to the buffer. Queue when complete */
+    /* Here we count the amount of bytes to read, and add them to the buffer. Queue when complete
+     */
     if(_receivingPayload && payloadSizeKnown) {
-      chunkLen = (_receivedPayloadSize > remaining) ? remaining : _receivedPayloadSize;
-      _addATBytesToBuffer(chunk, chunkLen);
-      _receivedPayloadSize -= chunkLen;
-      offset += chunkLen;
+      message_len = (_receivedPayloadSize > rx_remaining) ? rx_remaining : _receivedPayloadSize;
+      _addATBytesToBuffer(message, message_len);
+      _receivedPayloadSize -= message_len;
+      offset += message_len;
       if(_receivedPayloadSize == 0) {
         _receivingPayload = false;
         _queueRxBuffer();
@@ -1177,21 +1261,21 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
     /* Receiving messages with undefined size (AT-commands, URCs, payloads with unknown size) */
     /* We keep appending the message to the buffer until the CRLF is found. Queue when complete */
     size_t crlfPos;
-    if(_getCRLFPosition(chunk, remaining, false, &crlfPos)) {
+    if(_getCRLFPosition(message, rx_remaining, false, &crlfPos)) {
       /* If we found a full CRLF, we can read until the end of it */
-      chunkLen += crlfPos + 2;
+      message_len += crlfPos + 2;
     } else {
       if(crlfPos != SIZE_MAX) {
         /* If we found a CR or LF, but not the full CRLF, we read until the found position */
-        chunkLen += crlfPos + 1;
+        message_len += crlfPos + 1;
       } else {
         /* If no CR or LF found, we read all remaining bytes */
-        chunkLen = remaining;
+        message_len = rx_remaining;
       }
     }
 
-    _addATBytesToBuffer(chunk, chunkLen);
-    offset += chunkLen;
+    _addATBytesToBuffer(message, message_len);
+    offset += message_len;
 
     /* We need to check if the CRLF symbol is part of the payload, or if it marks the end */
     if(_receivingPayload && !payloadSizeKnown) {
@@ -1203,9 +1287,10 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       _receivingPayload = false;
     }
 
-    /* Check if the full \r\n CRLF is already present in the buffer */
-    /* If not present, we assume the message was split by the UART buffer, so we continue until we
-     * can "stitch" the message(s) back together */
+    /* Check if the full message or payload is received by looking for the \r\n CRLF in the
+     * buffer. If not present, we assume the message was split by the UART buffer, so we continue
+     * buffering.
+     */
     if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size, true)) {
 
       /* Check for special prompts (e.g. "> " or ">>>") which don't use CRLF's */
@@ -1221,16 +1306,19 @@ void WalterModem::_parseRxData(char* rxData, size_t len)
       continue;
     }
 
-    /* If binnary payload is expected after the CRLF, set the flag */
+    /* Set a flag and continue buffering if the current message expects a binary payload, or the
+     * current message is payload and we expect more data */
     if(_expectingPayload()) {
       _receivingPayload = true;
       continue;
-    }
+    } else {
+      _receivingPayload = false;
 
-    /* Finally, queue the buffer if we are sure it is complete */
-    /* Optionally strip the ending CRLF \r\n because the rspProcessor doesn't use it */
-    _parserData.buf->size -= 2;
-    _queueRxBuffer();
+      /* Finally, queue the buffer if we are sure the message is complete */
+      /* Optionally strip the ending CRLF \r\n because the rspProcessor doesn't use it */
+      _parserData.buf->size -= 2;
+      _queueRxBuffer();
+    }
   }
 }
 
@@ -1314,7 +1402,6 @@ void WalterModem::_cmdProcessingTask(void* args)
   }
 
   walter_modem_cmd_queue_t qItem = {};
-  walter_modem_cmd_t* curCmd = NULL;
   TickType_t blockTime = WALTER_MODEM_CMD_TIMEOUT_TICKS;
 
   while(true) {
@@ -1322,41 +1409,41 @@ void WalterModem::_cmdProcessingTask(void* args)
 
     if(xQueueReceive(_taskQueue.handle, &qItem, blockTime) == pdTRUE) {
       if(qItem.cmd != NULL) {
-        if(curCmd == NULL) {
-          curCmd = qItem.cmd;
+        if(_curCmd == NULL) {
+          _curCmd = qItem.cmd;
         } else {
           if(!_cmdQueuePut(qItem.cmd)) {
             _processModemCMD(qItem.cmd, true);
           }
         }
       } else if(qItem.rsp != NULL) {
-        _processModemRSP(curCmd, qItem.rsp);
+        _processModemRSP(_curCmd, qItem.rsp);
       }
     }
 
     blockTime = WALTER_MODEM_CMD_TIMEOUT_TICKS;
 
-    if(curCmd != NULL) {
-      switch(curCmd->state) {
+    if(_curCmd != NULL) {
+      switch(_curCmd->state) {
       case WALTER_MODEM_CMD_STATE_FREE:
       case WALTER_MODEM_CMD_STATE_POOLED:
         /*
          * There was a programming issue, commands with these states should never be
          * sent to the queue. We are going to ignore them.
          */
-        curCmd = NULL;
+        _curCmd = NULL;
         break;
 
       case WALTER_MODEM_CMD_STATE_RETRY_AFTER_ERROR:
-        blockTime = _processModemCMD(curCmd);
+        blockTime = _processModemCMD(_curCmd);
         break;
 
       case WALTER_MODEM_CMD_STATE_NEW:
       case WALTER_MODEM_CMD_STATE_PENDING:
-        blockTime = _processModemCMD(curCmd);
-        if(curCmd->state == WALTER_MODEM_CMD_STATE_COMPLETE) {
-          curCmd->state = WALTER_MODEM_CMD_STATE_FREE;
-          curCmd = NULL;
+        blockTime = _processModemCMD(_curCmd);
+        if(_curCmd->state == WALTER_MODEM_CMD_STATE_COMPLETE) {
+          _curCmd->state = WALTER_MODEM_CMD_STATE_FREE;
+          _curCmd = NULL;
         }
         break;
 
@@ -1365,15 +1452,15 @@ void WalterModem::_cmdProcessingTask(void* args)
         break;
 
       case WALTER_MODEM_CMD_STATE_COMPLETE:
-        curCmd->state = WALTER_MODEM_CMD_STATE_FREE;
-        curCmd = NULL;
+        _curCmd->state = WALTER_MODEM_CMD_STATE_FREE;
+        _curCmd = NULL;
         break;
       }
     }
 
-    if(curCmd == NULL) {
-      curCmd = _cmdQueuePop();
-      if(curCmd != NULL) {
+    if(_curCmd == NULL) {
+      _curCmd = _cmdQueuePop();
+      if(_curCmd != NULL) {
         blockTime = 0;
       }
     }
@@ -2599,8 +2686,8 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       }
 
       /*
-       * If cmd->payload and cmd->payloadSize are null, we cannot store the result. We can only hope
-       * the user is using a callback which has access to the raw buffer.
+       * If cmd->payload and cmd->payloadSize are null, we cannot store the result. We can only
+       * hope the user is using a callback which has access to the raw buffer.
        */
       if(cmd->payload) {
         memcpy(cmd->payload, payload, cmd->rsp->data.coapResponse.length);
@@ -2940,64 +3027,66 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
     goto after_processing_logic;
   }
 
-  /* MQTT message received event (URC) */
+  /* MQTT receive message event (URC) */
   if(_buffStartsWith(buff, "+SQNSMQTTONMESSAGE:0,")) {
-    const char* rspStr = _buffStr(buff);
-    char* commaPos = strchr(rspStr, ',');
-    char* start = (char*) rspStr + _strLitLen("+SQNSMQTTONMESSAGE:0");
+    char* rsp = (char*) _buffStr(buff);
+    char* p = rsp + _strLitLen("+SQNSMQTTONMESSAGE:");
 
-    char* topic = NULL;
-    char* lenStr = NULL;
-    char* qosStr = NULL;
+    // profile (must be 0)
+    char* comma = strchr(p, ',');
+    if(!comma)
+      goto after_processing_logic;
+    *comma = '\0';
+    // atoi(p) == 0
+    p = comma + 1;
+
+    // topic (quoted)
+    if(*p != '"')
+      goto after_processing_logic;
+    char* topicStart = ++p;
+    char* topicEnd = strchr(topicStart, '"');
+    if(!topicEnd)
+      goto after_processing_logic;
+    *topicEnd = '\0';
+    p = topicEnd + 1;
+
+    if(*p != ',')
+      goto after_processing_logic;
+    p++;
+
+    // length
+    char* lenStr = p;
+    comma = strchr(p, ',');
+    if(!comma)
+      goto after_processing_logic;
+    *comma = '\0';
+    p = comma + 1;
+
+    // qos
+    char* qosStr = p;
+    comma = strchr(p, ',');
     char* midStr = NULL;
 
-    if(commaPos) {
-      /* got mqtt profile (must be 0) */
-      *commaPos = '\0';
-      // atoi(start) should be 0
-      start = ++commaPos;
-      commaPos = strchr(commaPos, ',');
+    if(comma) {
+      *comma = '\0';
+      midStr = comma + 1;
     }
 
-    if(commaPos) {
-      /* got topic */
-      *commaPos = '\0';
-      commaPos[-1] = '\0';
-      topic = start + 1;
-      start = ++commaPos;
-      commaPos = strchr(commaPos, ',');
-    }
+    uint16_t length = atoi(lenStr);
+    uint8_t qos = atoi(qosStr);
+    uint16_t messageId = midStr ? atoi(midStr) : 0;
 
-    if(commaPos) {
-      /* got len and qos */
-      *commaPos = '\0';
-      lenStr = start;
-      qosStr = commaPos + 1;
-      start = ++commaPos;
-      commaPos = strchr(commaPos, ',');
+    walter_modem_urc_event_t newEvent = {};
+    newEvent.type = WalterModemURCType::WM_URC_TYPE_MQTT;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.mqtt.event = WALTER_MODEM_MQTT_EVENT_RING;
+    _strncpy_s(newEvent.mqtt.topic, topicStart, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
+    newEvent.mqtt.dataLen = length;
+    newEvent.mqtt.qos = qos;
+    newEvent.mqtt.msgId = messageId;
 
-      if(commaPos) {
-        /* got optional msg id */
-        *commaPos = '\0';
-        midStr = commaPos + 1;
-      }
-
-      /* convert parameters to int */
-      uint16_t length = atoi(lenStr);
-      uint8_t qos = atoi(qosStr);
-      uint16_t messageId = midStr ? atoi(midStr) : 0;
-
-      walter_modem_urc_event_t newEvent = {};
-      newEvent.type = WalterModemURCType::WM_URC_TYPE_MQTT;
-      newEvent.timestamp = esp_timer_get_time();
-      newEvent.mqtt.event = WALTER_MODEM_MQTT_EVENT_RING;
-      _strncpy_s(newEvent.mqtt.topic, topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
-      newEvent.mqtt.dataLen = length;
-      newEvent.mqtt.qos = qos;
-      newEvent.mqtt.msgId = messageId;
-      xQueueSend(_urcEventQueue.handle, &newEvent, 0);
-      goto after_processing_logic;
-    }
+    xQueueSend(_urcEventQueue.handle, &newEvent, 0);
+    goto after_processing_logic;
   }
 
   /* MQTT receive message response */
@@ -3046,8 +3135,8 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
 after_processing_logic:
 
   /**
-   * If the message doesn't contain an expected response, or if the received message is unsolicited
-   * (URC or multi-part response), free the buffer and return.
+   * If the message doesn't contain an expected response, or if the received message is
+   * unsolicited (URC or multi-part response), free the buffer and return.
    */
   if(cmd == NULL || cmd->type == WALTER_MODEM_CMD_TYPE_TX ||
      cmd->state == WALTER_MODEM_CMD_STATE_FREE || cmd->atRsp == NULL ||
