@@ -1647,18 +1647,15 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
       if(inICCID) {
         if(buff->data[i] == '"' || offset >= 22) {
           cmd->rsp->data.simCardID.iccid[offset] = '\0';
-          i += 3;
-
-          if(offset >= 22) {
-            break;
-          } else {
-            continue;
-          }
+          inICCID = false;
+          offset = 0;
+          i += 2; 
+          continue;
         }
 
         cmd->rsp->data.simCardID.iccid[offset++] = buff->data[i];
       } else {
-        if(buff->data[i] == '"' || offset >= 22) {
+        if(buff->data[i] == '"' || offset >= 32) {
           cmd->rsp->data.simCardID.euiccid[offset] = '\0';
           break;
         }
