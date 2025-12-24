@@ -44,6 +44,7 @@
  */
 
 #include <WalterDefines.h>
+#include <esp_log.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 #pragma region PRIVATE_METHODS
