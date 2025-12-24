@@ -1,0 +1,57 @@
+name: Sync src folder to walter-esp-idf
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+
+jobs:
+  sync-src:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Setup SSH key for deploy
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SRC_REPO_SYNC_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Checkout walter-esp-idf via SSH
+        uses: actions/checkout@v4
+        with:
+          repository: QuickSpot/walter-esp-idf
+          ssh-key: ${{ secrets.SRC_REPO_SYNC_KEY }}
+          path: walter-esp-idf
+
+      - name: Copy src folder from walter-arduino to walter-esp-idf
+        run: |
+          rm -rf walter-esp-idf/src
+          cp -R src walter-esp-idf/src
+
+      - name: Prepare commit info
+        run: |
+          LAST_SRC_COMMIT_MSG=$(git log -1 --pretty=format:"%s" -- src)
+          LAST_SRC_COMMIT_SHA=${{ github.sha }}
+          COMMIT_LINK="https://github.com/QuickSpot/walter-arduino/commit/${LAST_SRC_COMMIT_SHA}"
+          COMMIT_MESSAGE="Sync src from walter-arduino: (${COMMIT_LINK}) [skip ci]"
+          COMMIT_DESCRIPTION="Commit message: \"${LAST_SRC_COMMIT_MSG}\", SHA: ${LAST_SRC_COMMIT_SHA}"
+          echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
+          echo "COMMIT_DESCRIPTION=$COMMIT_DESCRIPTION" >> $GITHUB_ENV
+
+      - name: Commit and push changes in walter-esp-idf
+        run: |
+          cd walter-esp-idf
+          git config user.name "src sync action"
+          git config user.email "src-sync-action@users.noreply.github.com"
+          git add src
+          if ! git diff --cached --quiet; then
+            git commit -m "${COMMIT_MESSAGE}" -m "${COMMIT_DESCRIPTION}"
+            git push origin main
+          else
+            echo "No changes to sync"
+          fi
