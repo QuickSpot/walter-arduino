@@ -1814,7 +1814,7 @@ typedef struct {
   /**
    * @brief A 0-terminated string representation of the SIM eUICCID.
    */
-  char euiccid[23];
+  char euiccid[33];
 } WalterModemSIMCardID;
 
 /**
