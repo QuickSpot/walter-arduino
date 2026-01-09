@@ -294,6 +294,12 @@ bool WalterModem::socketResume(int profile_id, walter_modem_rsp_t* rsp, walter_m
   _returnAfterReply();
 }
 
+void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void* args)
+{
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].socketHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].args = args;
+}
+
 #pragma endregion
 #pragma region DEPRECATION
 bool WalterModem::socketConfig(walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args,
@@ -491,11 +497,5 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
   return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
-void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void* args = NULL)
-{
-  ESP_LOGE("DEPRECATION",
-           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
-  return;
-}
 #pragma endregion
 #endif

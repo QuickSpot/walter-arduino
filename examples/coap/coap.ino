@@ -165,7 +165,7 @@ bool lteConnect()
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myURCHandler(const WalterModemEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
@@ -173,8 +173,8 @@ static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
     if(ev->coap.event == WALTER_MODEM_COAP_EVENT_RING) {
       Serial.printf(
           "CoAP Ring Received for profile: %d Length: %u Type: %u Message ID: %u Code: %u\n",
-          ev->coap.profileId, ev->coap.dataLen, ev->coap.type, ev->coap.msgId, ev->coap.rspCode);
-      if(modem.coapReceiveMessage(ev->coap.profileId, ev->coap.msgId, in_buf, ev->coap.dataLen)) {
+          ev->coap.profile_id, ev->coap.dataLen, ev->coap.type, ev->coap.msgId, ev->coap.rspCode);
+      if(modem.coapReceiveMessage(ev->coap.profile_id, ev->coap.msgId, in_buf, ev->coap.dataLen)) {
         for(int i = 0; i < ev->coap.dataLen; i++) {
           Serial.printf("%c", in_buf[i]);
         }

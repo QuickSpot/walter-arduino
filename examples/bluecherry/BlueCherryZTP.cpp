@@ -79,12 +79,12 @@
 static bool _coapRingReceived = false;
 static uint16_t _coapRingMsgId = 0;
 
-static void ztpURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void ztpURCHandler(const WalterModemEvent* ev, void* args)
 {
   switch(ev->type) {
   case WM_URC_TYPE_COAP:
     if(ev->coap.event == WALTER_MODEM_COAP_EVENT_RING) {
-      _coapRingMsgId = ev->coap.msgId;
+      _coapRingMsgId = ev->coap.msg_id;
       _coapRingReceived = true;
     }
     break;

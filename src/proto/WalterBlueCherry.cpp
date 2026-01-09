@@ -153,7 +153,7 @@ bool WalterModem::_blueCherrySocketConnect()
   return false;
 }
 
-void WalterModem::_blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived,
+void WalterModem::_blueCherrySocketEventHandler(WMSocketEventType event, uint16_t dataReceived,
                                                 uint8_t* dataBuffer)
 {
   switch(event) {

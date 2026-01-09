@@ -314,7 +314,7 @@ bool httpsPost(const char* path, const uint8_t* body, size_t bodyLen,
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myURCHandler(const WalterModemEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {
@@ -322,7 +322,7 @@ static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
     if(ev->http.event == WALTER_MODEM_HTTP_EVENT_RING) {
       Serial.printf("HTTPS Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
                     ev->http.profileId, ev->http.status, ev->http.dataLen,
-                    ev->http.contentType ? ev->http.contentType : "(none)");
+                    ev->http.content_type ? ev->http.content_type : "(none)");
       if(modem.httpReceiveMessage(ev->http.profileId, in_buf, ev->http.dataLen)) {
         for(int i = 0; i < ev->http.dataLen; i++) {
           Serial.printf("%c", in_buf[i]);

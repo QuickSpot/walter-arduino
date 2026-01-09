@@ -171,15 +171,15 @@ bool WalterModem::coapSendData(int profile_id, WalterModemCoapSendType type,
           "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
   _returnAfterReply();
 }
-#pragma endregion
-#pragma region DEPRICATION
+
 void WalterModem::coapSetEventHandler(walterModemCoAPEventHandler handler, void* args)
 {
-  ESP_LOGE("DEPRECATION",
-           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
-  return;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].coapHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].args = args;
 }
 
+#pragma endregion
+#pragma region DEPRICATION
 bool WalterModem::coapGetContextStatus(int profileId)
 {
   if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {

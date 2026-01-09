@@ -106,7 +106,7 @@ volatile bool gnssFixRcvd = false;
 /**
  * @brief The last received GNSS fix.
  */
-WalterModemGNSSFix latestGnssFix = {};
+WalterModemURCGNSSFix latestGnssFix = {};
 
 /**
  * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
@@ -473,9 +473,9 @@ bool attemptGNSSFix()
  *
  * @return None.
  */
-void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
+void gnssEventHandler(const WalterModemURCGNSSFix* fix, void* args)
 {
-  memcpy(&latestGnssFix, fix, sizeof(WalterModemGNSSFix));
+  memcpy(&latestGnssFix, fix, sizeof(WalterModemURCGNSSFix));
 
   /* Count satellites with good signal strength */
   uint8_t goodSatCount = 0;
@@ -508,7 +508,7 @@ void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
  * @param ev Pointer to the URC event data.
  * @param args User argument pointer passed to urcSetEventHandler
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myURCHandler(const WalterModemEvent* ev, void* args)
 {
   Serial.printf("URC received at %lld\n", ev->timestamp);
   switch(ev->type) {

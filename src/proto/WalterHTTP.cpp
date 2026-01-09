@@ -202,15 +202,15 @@ bool WalterModem::httpReceiveMessage(int profile_id, uint8_t* buf, size_t buf_si
           WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
   _returnAfterReply();
 }
-#pragma endregion
-#pragma region DEPRICATION
+
 void WalterModem::httpSetEventHandler(walterModemHttpEventHandler handler, void* args)
 {
-  ESP_LOGE("DEPRECATION",
-           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
-  return;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].httpHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].args = args;
 }
 
+#pragma endregion
+#pragma region DEPRICATION
 bool WalterModem::httpGetContextStatus(uint8_t profile_id)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
