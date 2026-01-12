@@ -1487,7 +1487,7 @@ void WalterModem::_eventProcessingTask(void* args)
         if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
           uint16_t bcdatalen = qItem.socket.data.data_len;
           uint8_t bcdata[bcdatalen];
-          if(socketReceiveMessage(_blueCherry.bcProfileId, bcdata, bcdatalen)) {
+          if(socketReceive(_blueCherry.bcProfileId, bcdata, bcdatalen)) {
             _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_RING, bcdatalen, bcdata);
           }
         } else if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_DISCONNECTED) {
@@ -2524,18 +2524,17 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       contentTypeLen = (size_t) (commaPos - start);
       *commaPos = '\0';
       contentLength = atoi(commaPos + 1);
-
-      // WalterModemEvent newEvent = {};
-      // newEvent.type = WalterModemURCType::WM_URC_TYPE_HTTP;
-      // newEvent.timestamp = esp_timer_get_time();
-      // newEvent.http.event = WALTER_MODEM_HTTP_EVENT_RING;
-      // newEvent.http.profileId = profileId;
-      // newEvent.http.data_len = contentLength;
-      // newEvent.http.status = httpStatus;
-      // _strncpy_s(newEvent.http.content_type, contentType, contentTypeLen);
-      // xQueueSend(_eventQueue.handle, &newEvent, 0);
     }
 
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_HTTP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.http.event = WALTER_MODEM_HTTP_EVENT_RING;
+    newEvent.http.data.profile_id = profileId;
+    newEvent.http.data.status = httpStatus;
+    _strncpy_s(newEvent.http.data.content_type, contentType, contentTypeLen);
+    newEvent.http.data.data_len = contentLength;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -2562,13 +2561,13 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       }
     }
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_HTTP;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.http.event = WALTER_MODEM_HTTP_EVENT_CONNECTED;
-    // newEvent.http.profileId = profileId;
-    // newEvent.http.resultCode = resultCode;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_HTTP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.http.event = WALTER_MODEM_HTTP_EVENT_CONNECTED;
+    newEvent.http.data.profile_id = profileId;
+    newEvent.http.data.rc = resultCode;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -2581,30 +2580,41 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       _httpContextSet[profileId].connected = false;
     }
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_HTTP;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.http.event = WALTER_MODEM_HTTP_EVENT_DISCONNECTED;
-    // newEvent.http.profileId = profileId;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_HTTP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.http.event = WALTER_MODEM_HTTP_EVENT_DISCONNECTED;
+    newEvent.http.data.profile_id = profileId;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
   /* HTTP connection closed event (URC) */
   if(_buffStartsWith(buff, "+SQNHTTPSH: ")) {
     const char* rspStr = _buffStr(buff);
-    uint8_t profileId = atoi(rspStr + _strLitLen("+SQNHTTPSH: "));
+    char* commaPos = strchr(rspStr, ',');
+    uint8_t profileId, resultCode;
+
+    if(commaPos) {
+      *commaPos = '\0';
+      resultCode = atoi(commaPos + 1);
+    } else {
+      resultCode = 0;
+    }
+
+    profileId = atoi(rspStr + _strLitLen("+SQNHTTPSH: "));
 
     if(profileId < WALTER_MODEM_MAX_HTTP_PROFILES) {
       _httpContextSet[profileId].connected = false;
     }
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_HTTP;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.http.event = WALTER_MODEM_HTTP_EVENT_CONNECTION_CLOSED;
-    // newEvent.http.profileId = profileId;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_HTTP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.http.event = WALTER_MODEM_HTTP_EVENT_CONNECTION_CLOSED;
+    newEvent.http.data.profile_id = profileId;
+    newEvent.http.data.rc = resultCode;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -2709,6 +2719,7 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
 
     char* profileIdStr = NULL;
     char* messageIdStr = NULL;
+    char* reqOrRspStr = NULL;
     char* sendTypeStr = NULL;
     char* reqRspCodeRawStr = NULL;
     char* lengthStr = NULL;
@@ -2718,13 +2729,6 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       profileIdStr = start;
       start = ++commaPos;
       commaPos = strchr(commaPos, ',');
-
-      if(!_coapContextSet[atoi(profileIdStr)].connected ||
-         atoi(profileIdStr) >= WALTER_MODEM_MAX_COAP_PROFILES) {
-        // TODO: return error if modem returns invalid profile id.
-        buff->free = true;
-        return;
-      }
     }
 
     if(commaPos) {
@@ -2736,6 +2740,7 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
 
     if(commaPos) {
       *commaPos = '\0';
+      reqOrRspStr = start;
       start = ++commaPos;
       commaPos = strchr(commaPos, ',');
     }
@@ -2751,28 +2756,27 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       *commaPos = '\0';
       reqRspCodeRawStr = start;
       lengthStr = commaPos + 1;
-
-      /* convert parameters to int */
-      uint8_t profileId = atoi(profileIdStr);
-      uint16_t messageId = atoi(messageIdStr);
-      WalterModemCoapSendType sendType = (WalterModemCoapSendType) atoi(sendTypeStr);
-      uint8_t reqRspCodeRaw = atoi(reqRspCodeRawStr);
-      uint16_t length = atoi(lengthStr);
-
-      _httpContextSet[profileId].state = WALTER_MODEM_HTTP_CONTEXT_STATE_GOT_RING;
-
-      // WalterModemEvent newEvent = {};
-      // newEvent.type = WalterModemURCType::WM_URC_TYPE_COAP;
-      // newEvent.timestamp = esp_timer_get_time();
-      // newEvent.coap.event = WALTER_MODEM_COAP_EVENT_RING;
-      // newEvent.coap.profile_id = profileId;
-      // newEvent.coap.msgId = messageId;
-      // newEvent.coap.type = sendType;
-      // newEvent.coap.rsp_code = (WalterModemCoapSendMethodRsp) reqRspCodeRaw;
-      // newEvent.coap.data_len = length;
-      // xQueueSend(_eventQueue.handle, &newEvent, 0);
     }
 
+    /* convert parameters to int */
+    uint8_t profileId = atoi(profileIdStr);
+    uint16_t messageId = atoi(messageIdStr);
+    uint8_t reqOrRsp = atoi(reqOrRspStr);
+    WalterModemCoapSendType sendType = (WalterModemCoapSendType) atoi(sendTypeStr);
+    uint8_t reqRspCodeRaw = atoi(reqRspCodeRawStr);
+    uint16_t length = atoi(lengthStr);
+
+    _httpContextSet[profileId].state = WALTER_MODEM_HTTP_CONTEXT_STATE_GOT_RING;
+
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_COAP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.coap.event = WALTER_MODEM_COAP_EVENT_RING;
+    newEvent.coap.data.profile_id = profileId;
+    newEvent.coap.data.msg_id = messageId;
+    newEvent.coap.data.req_rsp = reqOrRsp == 1;
+    newEvent.coap.data.type = sendType;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -2790,12 +2794,12 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       _coapContextSet[profileId].connected = true;
     }
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_COAP;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.coap.event = WALTER_MODEM_COAP_EVENT_CONNECTED;
-    // newEvent.coap.profile_id = profileId;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_COAP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.coap.event = WALTER_MODEM_COAP_EVENT_CONNECTED;
+    newEvent.coap.data.profile_id = profileId;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -2803,22 +2807,31 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
   if(_buffStartsWith(buff, "+SQNCOAPCLOSED: ")) {
     const char* rspStr = _buffStr(buff);
     char* commaPos = strchr(rspStr, ',');
+    char* start = (char*) rspStr + _strLitLen("+SQNCOAPCLOSED: ");
+
+    uint8_t profileId = 0;
+    char* reason = NULL;
+    uint16_t reasonLen = 0;
+
     if(commaPos) {
       *commaPos = '\0';
+      profileId = atoi(start);
+      start = ++commaPos;
+      reason = start;
+      reasonLen = strlen(reason);
     }
-
-    uint8_t profileId = atoi(rspStr + _strLitLen("+SQNCOAPCLOSED: "));
 
     if(profileId < WALTER_MODEM_MAX_COAP_PROFILES) {
       _coapContextSet[profileId].connected = false;
     }
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_COAP;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.coap.event = WALTER_MODEM_COAP_EVENT_DISCONNECTED;
-    // newEvent.coap.profile_id = profileId;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_COAP;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.coap.event = WALTER_MODEM_COAP_EVENT_CLOSED;
+    newEvent.coap.data.profile_id = profileId;
+    _strncpy_s(newEvent.coap.data.reason, reason, reasonLen);
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 

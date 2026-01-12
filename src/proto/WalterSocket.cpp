@@ -249,8 +249,8 @@ bool WalterModem::socketAccept(int profile_id, bool connection_mode, walter_mode
   _returnAfterReply();
 }
 
-bool WalterModem::socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                       walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                                walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
   WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
@@ -492,9 +492,8 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
     rsp->data.profileId = _curr_sock_id;
   }
 
-  ESP_LOGW("DEPRECATION",
-           "Use socketReceiveMessage(profile_id, buf, buf_size, rsp, cb, args) instead");
-  return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
+  ESP_LOGW("DEPRECATION", "Use socketReceive(profile_id, buf, buf_size, rsp, cb, args) instead");
+  return socketReceive(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
 #pragma endregion

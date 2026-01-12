@@ -138,9 +138,8 @@ bool WalterModem::mqttSubscribe(const char* topic, uint8_t qos, walter_modem_rsp
   _returnAfterReply();
 }
 
-bool WalterModem::mqttReceiveMessage(const char* topic, int message_id, uint8_t* buf,
-                                     size_t buf_size, walter_modem_rsp_t* rsp, walter_modem_cb_t cb,
-                                     void* args)
+bool WalterModem::mqttReceive(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
+                              walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
 
   size_t readable_size = (buf_size > 4096) ? 4096 : buf_size;
@@ -171,15 +170,25 @@ bool WalterModem::mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t ta
 {
   ESP_LOGW("DEPRECATION",
            "this mqttDidRing method is deprecated and will be removed in future releases. Use "
-           "mqttReceiveMessage(...) instead.");
+           "mqttReceive(...) instead.");
 
-  return mqttReceiveMessage(topic, 0, targetBuf, targetBufSize, rsp, NULL, NULL);
+  return mqttReceive(topic, 0, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
 WMMQTTConnRC WalterModem::getMqttStatus()
 {
   ESP_LOGW("DEPRECATION", "getMqttStatus() is deprecated and will be removed in future releases.");
   return _mqttStatus;
+}
+
+void WalterModem::mqttSetEventHandler(walterModemMQTTEventHandler handler, void* args)
+{
+  ESP_LOGW("DEPRECATION",
+           "mqttSetEventHandler is deprecated and will be removed in future releases. Use "
+           "setMQTTEventHandler(...) instead.");
+
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].mqttHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].args = args;
 }
 #pragma endregion
 #endif

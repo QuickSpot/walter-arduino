@@ -1355,9 +1355,9 @@ typedef enum {
  */
 typedef enum {
   WALTER_MODEM_COAP_EVENT_CONNECTED,
-  WALTER_MODEM_COAP_EVENT_DISCONNECTED,
+  WALTER_MODEM_COAP_EVENT_CLOSED,
   WALTER_MODEM_COAP_EVENT_RING
-} WMCOAPEventType;
+} WMCoAPEventType;
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
@@ -2381,9 +2381,11 @@ struct WMHTTPEventData {
 struct WMCoAPEventData {
   uint8_t profile_id;
   uint16_t msg_id;
+  bool req_rsp;
   uint8_t type;
   uint16_t rsp_code;
   uint16_t data_len;
+  char reason[16];
 };
 
 struct WMMQTTEventData {
@@ -2432,7 +2434,7 @@ struct WalterModemEvent {
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
     struct {
-      WMCOAPEventType event;
+      WMCoAPEventType event;
       WMCoAPEventData data;
     } coap;
 
@@ -2546,7 +2548,7 @@ typedef void (*walterModemHttpEventHandler)(WMHTTPEventType event, WMHTTPEventDa
  *
  * @return None.
  */
-typedef void (*walterModemCoAPEventHandler)(WMCOAPEventType event, WMCoAPEventData data,
+typedef void (*walterModemCoAPEventHandler)(WMCoAPEventType event, WMCoAPEventData data,
                                             void* args);
 
 #endif
@@ -4456,7 +4458,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use mqttReceiveMessage(topic, message_id, buf, buf_size, rsp, cb, "
+  [[deprecated("Use mqttReceive(topic, message_id, buf, buf_size, rsp, cb, "
                "args) instead")]]
   static bool mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t targetBufSize,
                           walter_modem_rsp_t* rsp = NULL);
@@ -4476,9 +4478,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool mqttReceiveMessage(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                 void* args = NULL);
+  static bool mqttReceive(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
+                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                          void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4622,7 +4624,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use httpReceiveMessage(profileId, targetBuf, targetBufSize, rsp, "
+  [[deprecated("Use httpReceive(profileId, targetBuf, targetBufSize, rsp, "
                "cb, args) instead")]]
   static bool httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                           walter_modem_rsp_t* rsp = NULL);
@@ -4641,9 +4643,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool httpReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                 void* args = NULL);
+  static bool httpReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                          void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4894,7 +4896,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use coapReceiveMessage(profile_id, message_id, buf, buf_size, rsp, cb, args) "
+  [[deprecated("Use coapReceive(profile_id, message_id, buf, buf_size, rsp, cb, args) "
                "instead")]]
   static bool coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                           walter_modem_rsp_t* rsp = NULL);
@@ -4912,9 +4914,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool coapReceiveMessage(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                 void* args = NULL);
+  static bool coapReceive(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
+                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                          void* args = NULL);
 
 #endif
 #pragma endregion
@@ -5211,7 +5213,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketReceiveMessage(profile_id, buf, buf_size, rsp, cb, args) instead")]]
+  [[deprecated("Use socketReceive(profile_id, buf, buf_size, rsp, cb, args) instead")]]
   static bool socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
                             int profileId = -1, walter_modem_rsp_t* rsp = NULL);
 
@@ -5227,9 +5229,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                   walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                   void* args = NULL);
+  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                            walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                            void* args = NULL);
 
   /**
    * @brief This function updates all the socket states and returns the current state for the
@@ -5857,6 +5859,12 @@ public:
    */
   static void setMQTTEventHandler(walterModemMQTTEventHandler handler = nullptr, void* args = NULL);
 
+  /**
+   * @deprecated Use setMQTTEventHandler instead.
+   */
+  [[deprecated("Use setMQTTEventHandler instead")]]
+  static void mqttSetEventHandler(walterModemMQTTEventHandler handler = nullptr, void* args = NULL);
+
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 
@@ -5873,6 +5881,12 @@ public:
    *
    * @return None.
    */
+  static void setHTTPEventHandler(walterModemHttpEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setHTTPEventHandler instead.
+   */
+  [[deprecated("Use setHTTPEventHandler instead")]]
   static void httpSetEventHandler(walterModemHttpEventHandler handler = nullptr, void* args = NULL);
 
 #endif
@@ -5891,6 +5905,12 @@ public:
    *
    * @return None.
    */
+  static void setCoAPEventHandler(walterModemCoAPEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setCoAPEventHandler instead.
+   */
+  [[deprecated("Use setCoAPEventHandler instead")]]
   static void coapSetEventHandler(walterModemCoAPEventHandler handler = nullptr, void* args = NULL);
 
 #endif

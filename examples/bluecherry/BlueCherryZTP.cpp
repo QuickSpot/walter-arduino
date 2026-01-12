@@ -344,7 +344,7 @@ bool BlueCherryZTP::requestDeviceId()
   }
   printf("\n");
 
-  if(!_modem->coapReceiveMessage(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
+  if(!_modem->coapReceive(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
     printf("Failed to receive ZTP CoAP message\n");
     return false;
   }
@@ -464,7 +464,7 @@ bool BlueCherryZTP::requestSignedCertificate()
   }
   printf("\n");
 
-  if(!_modem->coapReceiveMessage(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
+  if(!_modem->coapReceive(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
     printf("Failed to receive ZTP CoAP message\n");
     return false;
   }

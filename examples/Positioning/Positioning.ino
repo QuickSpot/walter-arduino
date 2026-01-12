@@ -516,7 +516,7 @@ static void myURCHandler(const WalterModemEvent* ev, void* args)
     if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
       Serial.printf("Socket Ring Received for profile %d: Length: %u\n", ev->socket.profileId,
                     ev->socket.dataLen);
-      if(modem.socketReceiveMessage(ev->socket.profileId, in_buf, ev->socket.dataLen)) {
+      if(modem.socketReceive(ev->socket.profileId, in_buf, ev->socket.dataLen)) {
         for(int i = 0; i < ev->socket.dataLen; i++) {
           Serial.printf("%c", in_buf[i]);
         }

@@ -1,13 +1,14 @@
 /**
  * @file mqtt.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 28 Apr 2025
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 12 Jan 2026
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,9 +48,9 @@
  * publish data to an MQTT broker.
  */
 
-#include <esp_mac.h>
-#include <WalterModem.h>
 #include <HardwareSerial.h>
+#include <WalterModem.h>
+#include <esp_mac.h>
 
 #define MQTT_PORT 1883
 #define MQTT_HOST "broker.emqx.io"
@@ -200,8 +201,8 @@ bool lteConnect()
  * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
  * processing task.
  *
- * @param state The network registration state.
- * @param args User arguments.
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
  *
  * @return void
  */
@@ -247,9 +248,9 @@ static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
  * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
  * processing task.
  *
- * @param event The type of MQTT event.
- * @param data The data associated with the event.
- * @param args User arguments.
+ * @param[out] event The type of MQTT event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
  *
  * @return void
  */
@@ -258,22 +259,22 @@ static void myMQTTEventHandler(WMMQTTEventType event, WMMQTTEventData data, void
   switch(event) {
   case WALTER_MODEM_MQTT_EVENT_CONNECTED:
     if(data.rc != 0) {
-      Serial.printf("MQTT: Connection could not be established. (code %d)\r\n", data.rc);
+      Serial.printf("MQTT: Connection could not be established. (code: %d)\r\n", data.rc);
     } else {
-      Serial.printf("MQTT: Connected\r\n");
+      Serial.printf("MQTT: Connected successfully\r\n");
 
       /* Subscribe to the test topic */
       if(modem.mqttSubscribe(MQTT_TOPIC)) {
         Serial.printf("Subscribing to '%s'...\r\n", MQTT_TOPIC);
       } else {
-        Serial.println("Error: MQTT subscribe failed");
+        Serial.println("Subscribing failed");
       }
     }
     break;
 
   case WALTER_MODEM_MQTT_EVENT_DISCONNECTED:
     if(data.rc != 0) {
-      Serial.printf("MQTT: Connection was interrupted (code %d)\r\n", data.rc);
+      Serial.printf("MQTT: Connection was interrupted (code: %d)\r\n", data.rc);
     } else {
       Serial.printf("MQTT: Disconnected\r\n");
     }
@@ -282,32 +283,32 @@ static void myMQTTEventHandler(WMMQTTEventType event, WMMQTTEventData data, void
 
   case WALTER_MODEM_MQTT_EVENT_SUBSCRIBED:
     if(data.rc != 0) {
-      Serial.printf("MQTT: Could not subscribe to topic. (code %d)\r\n", data.rc);
+      Serial.printf("MQTT: Could not subscribe to topic. (code: %d)\r\n", data.rc);
     } else {
-      Serial.printf("MQTT: Subscribed on topic '%s'\r\n", data.topic);
+      Serial.printf("MQTT: Successfully subscribed to topic '%s'\r\n", data.topic);
       mqtt_connected = true;
     }
     break;
 
   case WALTER_MODEM_MQTT_EVENT_PUBLISHED:
     if(data.rc != 0) {
-      Serial.printf("MQTT: Could not publish message (id %d) to topic. (code %d)\r\n", data.mid,
+      Serial.printf("MQTT: Could not publish message (id: %d) to topic. (code: %d)\r\n", data.mid,
                     data.rc);
     } else {
-      Serial.printf("MQTT: Published message (id %d)\r\n", data.mid);
+      Serial.printf("MQTT: Successfully published message (id: %d)\r\n", data.mid);
     }
     break;
 
   case WALTER_MODEM_MQTT_EVENT_MESSAGE:
-    Serial.printf("MQTT: Message received on topic '%s' (id %d) size: %d bytes\r\n", data.topic,
-                  data.mid, data.msg_length);
+    Serial.printf("MQTT: Message (id: %d) received on topic '%s' (size: %ld bytes)\r\n", data.mid,
+                  data.topic, data.msg_length);
 
     /* Receive the MQTT message from the modem buffer */
     memset(in_buf, 0, sizeof(in_buf));
-    if(modem.mqttReceiveMessage(data.topic, data.mid, in_buf, data.msg_length)) {
+    if(modem.mqttReceive(data.topic, data.mid, in_buf, data.msg_length)) {
       Serial.printf("Received message: %s\r\n", in_buf);
     } else {
-      Serial.println("Error: Could not receive MQTT message");
+      Serial.println("Could not receive MQTT message");
     }
     break;
 
@@ -324,7 +325,7 @@ static bool mqttPublishMessage(const char* topic, const char* message)
 {
   Serial.printf("Publishing to topic '%s': %s ...\r\n", topic, message);
   if(!modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
-    Serial.println("Error: MQTT publish failed");
+    Serial.println("Publishing failed");
     return false;
   }
   return true;
@@ -336,9 +337,9 @@ static bool mqttPublishMessage(const char* topic, const char* message)
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem MQTT example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem MQTT example (v1.5.0) ===\r\n\r\n");
 
   uint8_t mac[6] = { 0 };
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
@@ -384,6 +385,7 @@ void loop()
   }
 
   while(!mqtt_connected) {
+
     /* Connect to a public MQTT broker */
     if(modem.mqttConnect(MQTT_HOST, MQTT_PORT)) {
       Serial.println("Connecting to MQTT broker...");
@@ -392,6 +394,7 @@ void loop()
       delay(1000);
       ESP.restart();
     }
+
     delay(5000);
   }
 

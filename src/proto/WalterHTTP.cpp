@@ -179,13 +179,13 @@ bool WalterModem::httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t ta
                               walter_modem_rsp_t* rsp)
 {
   ESP_LOGW("DEPRECATION", "The httpDidRing method is deprecated and will be removed in future "
-                          "releases. Use httpReceiveMessage(...) instead.");
+                          "releases. Use httpReceive(...) instead.");
 
-  return httpReceiveMessage(profileId, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
+  return httpReceive(profileId, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
 }
 
-bool WalterModem::httpReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                     walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::httpReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                              walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -203,7 +203,7 @@ bool WalterModem::httpReceiveMessage(int profile_id, uint8_t* buf, size_t buf_si
   _returnAfterReply();
 }
 
-void WalterModem::httpSetEventHandler(walterModemHttpEventHandler handler, void* args)
+void WalterModem::setHTTPEventHandler(walterModemHttpEventHandler handler, void* args)
 {
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].httpHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].args = args;
@@ -222,5 +222,16 @@ bool WalterModem::httpGetContextStatus(uint8_t profile_id)
 
   return _httpContextSet[profile_id].connected;
 }
+
+void WalterModem::httpSetEventHandler(walterModemHttpEventHandler handler, void* args)
+{
+  ESP_LOGW("DEPRECATION",
+           "httpSetEventHandler is deprecated and will be removed in future releases. Use "
+           "setHTTPEventHandler(...) instead.");
+
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].httpHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].args = args;
+}
+
 #pragma endregion
 #endif
