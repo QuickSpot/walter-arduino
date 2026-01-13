@@ -270,7 +270,7 @@ static void myHTTPEventHandler(WMHTTPEventType event, WMHTTPEventData data, void
 
   case WALTER_MODEM_HTTP_EVENT_RING:
     Serial.printf(
-        "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %ld)\r\n",
+        "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %lu)\r\n",
         data.profile_id, data.status, data.content_type, data.data_len);
 
     /* Receive the HTTP message from the modem buffer */

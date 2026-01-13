@@ -1492,8 +1492,6 @@ void WalterModem::_eventProcessingTask(void* args)
           }
         } else if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_DISCONNECTED) {
           _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, 0, nullptr);
-        } else if(qItem.socket.event == WALTER_MODEM_SOCKET_EVENT_CONNECTED) {
-          _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_CONNECTED, 0, nullptr);
         }
         continue;
       }
@@ -1659,7 +1657,6 @@ TickType_t WalterModem::_processModemCMD(walter_modem_cmd_t* cmd, bool queueErro
 void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_t* buff)
 {
   ESP_LOGD("WalterModem", "RX: %.*s", buff->size, buff->data);
-  // _dispatchATEvent((const char*) (buff->data), buff->size);
 
   WalterModemState result = WALTER_MODEM_STATE_OK;
 
@@ -2265,6 +2262,9 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
     uint16_t dataSize = buff->size - _strLitLen("+LPGNSSFIXREADY: ");
     uint8_t* data = buff->data + _strLitLen("+LPGNSSFIXREADY: ");
 
+    WMGNSSFixEvent fix = {};
+    fix.satCount = 0;
+
     char* start = (char*) data;
     char* lastCharacter = NULL;
     uint8_t partNo = 0;
@@ -2291,80 +2291,79 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
         /* sometimes we need to skip surrounding " " */
         switch(partNo) {
         case 0:
-          _GNSSfix.fixId = atoi(start);
+          fix.fixId = atoi(start);
           break;
 
         case 1:
           *lastCharacter = '\0';
-          _GNSSfix.timestamp = strTotime(start + 1);
+          fix.timestamp = strTotime(start + 1);
           break;
 
         case 2:
-          _GNSSfix.timeToFix = atoi(start);
+          fix.timeToFix = atoi(start);
           break;
 
         case 3:
           *lastCharacter = '\0';
-          _GNSSfix.estimatedConfidence = strtod(start + 1, NULL);
+          fix.estimatedConfidence = strtod(start + 1, NULL);
           break;
 
         case 4:
           *lastCharacter = '\0';
-          _GNSSfix.latitude = atof(start + 1);
+          fix.latitude = atof(start + 1);
           break;
 
         case 5:
           *lastCharacter = '\0';
-          _GNSSfix.longitude = atof(start + 1);
+          fix.longitude = atof(start + 1);
           break;
 
         case 6:
           *lastCharacter = '\0';
-          _GNSSfix.height = atof(start + 1);
+          fix.height = atof(start + 1);
           break;
 
         case 7:
           *lastCharacter = '\0';
-          _GNSSfix.northSpeed = atof(start + 1);
+          fix.northSpeed = atof(start + 1);
           break;
 
         case 8:
           *lastCharacter = '\0';
-          _GNSSfix.eastSpeed = atof(start + 1);
+          fix.eastSpeed = atof(start + 1);
           break;
 
         case 9:
           *lastCharacter = '\0';
-          _GNSSfix.downSpeed = atof(start + 1);
+          fix.downSpeed = atof(start + 1);
           break;
 
         case 10:
-          /*
-           * Raw satellite signal sample is ignored, we use this occasion to reset the
-           * satellite count.
-           */
-          _GNSSfix.satCount = 0;
+          /* Raw satellite signal sample ignored — reset satellite count */
+          fix.satCount = 0;
           break;
 
-        default:
-          if(_GNSSfix.satCount >= WALTER_MODEM_GNSS_MAX_SATS) {
-            continue;
+        default: {
+          if(fix.satCount >= WALTER_MODEM_GNSS_MAX_SATS) {
+            break;
           }
 
           const char* satNoStr = start + 1; /* skip '(' */
           const char* satSigStr = start;
-          for(int i = 0; start[i] != '\0'; ++i) {
-            if(start[i] == ',') {
-              start[i] = '\0';
-              satSigStr = start + i + 1;
+
+          for(int j = 0; start[j] != '\0'; ++j) {
+            if(start[j] == ',') {
+              start[j] = '\0';
+              satSigStr = start + j + 1;
               break;
             }
           }
 
-          _GNSSfix.sats[_GNSSfix.satCount].satNo = atoi(satNoStr);
-          _GNSSfix.sats[_GNSSfix.satCount].signalStrength = atoi(satSigStr);
-          _GNSSfix.satCount += 1;
+          fix.sats[fix.satCount].satNo = atoi(satNoStr);
+          fix.sats[fix.satCount].signalStrength = atoi(satSigStr);
+          fix.satCount += 1;
           break;
+        }
         }
 
         /* +1 for the comma */
@@ -2373,13 +2372,17 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       }
     }
 
-    // _dispatchATEvent(&_GNSSfix);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_GNSS;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.gnss.event = WALTER_MODEM_GNSS_EVENT_FIX;
+    newEvent.gnss.data.gnssfix = fix;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
-  /* GNSS assistance from cloud response */
+  /* GNSS assistance response or URC */
   if(_buffStartsWith(buff, "+LPGNSSASSISTANCE: ")) {
-    cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA;
 
     uint16_t dataSize = buff->size - _strLitLen("+LPGNSSASSISTANCE: ");
     uint8_t* data = buff->data + _strLitLen("+LPGNSSASSISTANCE: ");
@@ -2387,13 +2390,20 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
     char* start = (char*) data;
     uint8_t partNo = 0;
 
-    WalterModemGNSSAssistanceTypeDetails* details = NULL;
+    bool hasMultipleFields = false;
+
+    WMGNSSAssistance assistance = {};
+    assistance.available = false;
+    assistance.lastUpdate = 0;
+    assistance.timeToUpdate = 0;
+    assistance.timeToExpire = 0;
 
     for(uint16_t i = 0; i < dataSize; ++i) {
       bool partComplete = false;
 
       if(data[i] == ',') {
         data[i] = '\0';
+        hasMultipleFields = true;
         partComplete = true;
       } else if(i + 1 == dataSize) {
         data[i + 1] = '\0';
@@ -2403,50 +2413,49 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       if(partComplete) {
         switch(partNo) {
         case 0:
-          switch(start[0]) {
-          case '0':
-            details = &(cmd->rsp->data.gnssAssistance.almanac);
-            break;
-
-          case '1':
-            details = &(cmd->rsp->data.gnssAssistance.realtimeEphemeris);
-            break;
-
-          case '2':
-            details = &(cmd->rsp->data.gnssAssistance.predictedEphemeris);
-            break;
-          }
+          assistance.type = (WMGNSSAssistanceType) atoi(start);
           break;
 
         case 1:
-          if(details != NULL) {
-            details->available = atoi(start) == 1;
-          }
+          assistance.available = atoi(start) == 1;
           break;
 
         case 2:
-          if(details != NULL) {
-            details->lastUpdate = atoi(start);
-          }
+          assistance.lastUpdate = atoi(start);
           break;
 
         case 3:
-          if(details != NULL) {
-            details->timeToUpdate = atoi(start);
-          }
+          assistance.timeToUpdate = atoi(start);
           break;
 
         case 4:
-          if(details != NULL) {
-            details->timeToExpire = atoi(start);
-          }
+          assistance.timeToExpire = atoi(start);
+          break;
+
+        default:
           break;
         }
 
-        /* +1 for the comma */
         start = (char*) data + i + 1;
-        partNo += 1;
+        partNo++;
       }
+    }
+
+    /* ---- URC: only assistance type ---- */
+    if(!hasMultipleFields) {
+      WalterModemEvent newEvent = {};
+      newEvent.type = WALTER_MODEM_EVENT_TYPE_GNSS;
+      newEvent.timestamp = esp_timer_get_time();
+      newEvent.gnss.event = WALTER_MODEM_GNSS_EVENT_ASSISTANCE;
+      newEvent.gnss.data.assistance = assistance.type;
+      xQueueSend(_eventQueue.handle, &newEvent, 0);
+      goto after_processing_logic;
+    }
+
+    /* ---- Command response: store by enum index ---- */
+    if(assistance.type < WALTER_MODEM_GNSS_ASSISTANCE_TYPE_COUNT) {
+      cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA;
+      cmd->rsp->data.gnssAssistance[assistance.type] = assistance;
     }
 
     goto after_processing_logic;
@@ -2847,12 +2856,12 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
 
     _socketGet(sockId)->state = WALTER_MODEM_SOCKET_STATE_FREE;
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_SOCKET;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.socket.event = WALTER_MODEM_SOCKET_EVENT_DISCONNECTED;
-    // newEvent.socket.profileId = sockId;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_SOCKET;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.socket.event = WALTER_MODEM_SOCKET_EVENT_DISCONNECTED;
+    newEvent.socket.data.conn_id = sockId;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -2871,13 +2880,13 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       dataReceived = atoi(commaPos);
     }
 
-    // WalterModemEvent newEvent = {};
-    // newEvent.type = WalterModemURCType::WM_URC_TYPE_SOCKET;
-    // newEvent.timestamp = esp_timer_get_time();
-    // newEvent.socket.event = WALTER_MODEM_SOCKET_EVENT_RING;
-    // newEvent.socket.profileId = sockId;
-    // newEvent.socket.dataLen = dataReceived;
-    // xQueueSend(_eventQueue.handle, &newEvent, 0);
+    WalterModemEvent newEvent = {};
+    newEvent.type = WalterModemEventType::WALTER_MODEM_EVENT_TYPE_SOCKET;
+    newEvent.timestamp = esp_timer_get_time();
+    newEvent.socket.event = WALTER_MODEM_SOCKET_EVENT_RING;
+    newEvent.socket.data.conn_id = sockId;
+    newEvent.socket.data.data_len = dataReceived;
+    xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
 
@@ -3645,18 +3654,6 @@ void WalterModem::_checkEventDuration(
              "another task.",
              static_cast<long long>(elapsedTime), WALTER_MODEM_MAX_EVENT_DURATION_MS);
   }
-}
-
-void WalterModem::_dispatchATEvent(const char* buff, size_t len)
-{
-  WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_AT;
-  if(handler->atHandler == nullptr) {
-    return;
-  }
-
-  auto start = std::chrono::steady_clock::now();
-  handler->atHandler(buff, len, handler->args);
-  _checkEventDuration(start);
 }
 
 void WalterModem::_dispatchEvent(WalterModemEvent* ev)
@@ -4618,12 +4615,6 @@ void WalterModem::setSystemEventHandler(walterModemSystemEventHandler handler, v
 {
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_SYSTEM].sysHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_SYSTEM].args = args;
-}
-
-void WalterModem::setATEventHandler(walterModemATEventHandler handler, void* args)
-{
-  _eventHandlers[WALTER_MODEM_EVENT_TYPE_AT].atHandler = handler;
-  _eventHandlers[WALTER_MODEM_EVENT_TYPE_AT].args = args;
 }
 
 #pragma endregion

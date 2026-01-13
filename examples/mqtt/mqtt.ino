@@ -3,7 +3,7 @@
  * @author Jonas Maes <jonas@dptechnics.com>
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
  * @date 12 Jan 2026
- * @copyright DPTechnics bv
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
@@ -378,24 +378,25 @@ void loop()
   static char out_msg[64];
   seq++;
 
-  if(!lteConnected() && !lteConnect()) {
-    Serial.println("Error: Failed to register to network");
-    delay(1000);
-    ESP.restart();
+  if(!lteConnected()) {
+    if(!lteConnect()) {
+      Serial.println("Error: Failed to connect to network");
+      delay(1000);
+      ESP.restart();
+    }
+    mqtt_connected = false;
   }
 
-  while(!mqtt_connected) {
-
-    /* Connect to a public MQTT broker */
+  /* Connect to a public MQTT broker */
+  if(!mqtt_connected) {
     if(modem.mqttConnect(MQTT_HOST, MQTT_PORT)) {
       Serial.println("Connecting to MQTT broker...");
     } else {
       Serial.println("Error: Failed to connect to MQTT broker");
-      delay(1000);
-      ESP.restart();
+      return;
     }
-
     delay(5000);
+    return;
   }
 
   Serial.println();

@@ -989,16 +989,17 @@ typedef enum {
   WALTER_MODEM_GNSS_FIX_STATUS_STOPPED_BY_USER = 1,
   WALTER_MODEM_GNSS_FIX_STATUS_NO_RTC = 2,
   WALTER_MODEM_GNSS_FIX_STATUS_LTE_CONCURRENCY = 3
-} WalterModemGNSSFixStatus;
+} WMGNSSFixStatus;
 
 /**
  * @brief The possible GNSS assistance types.
  */
 typedef enum {
   WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC = 0,
-  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS = 1,
-  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS = 2,
-} WalterModemGNSSAssistanceType;
+  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
+  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS,
+  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_COUNT
+} WMGNSSAssistanceType;
 
 #endif
 #pragma endregion
@@ -1270,11 +1271,6 @@ typedef enum {
   WALTER_MODEM_EVENT_TYPE_SYSTEM,
 
   /**
-   * @brief Incoming AT string events.
-   */
-  WALTER_MODEM_EVENT_TYPE_AT,
-
-  /**
    * @brief GNSS related events.
    */
   WALTER_MODEM_EVENT_TYPE_GNSS,
@@ -1317,7 +1313,11 @@ typedef enum {
 /**
  * @brief This enumeration groups the different types of GNSS URCs.
  */
-typedef enum { WALTER_MODEM_GNSS_EVENT_FIX, WALTER_MODEM_GNSS_EVENT_STATUS } WMGNSSEventType;
+typedef enum {
+  WALTER_MODEM_GNSS_EVENT_FIX,
+  WALTER_MODEM_GNSS_EVENT_STATUS,
+  WALTER_MODEM_GNSS_EVENT_ASSISTANCE
+} WMGNSSEventType;
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
@@ -1366,7 +1366,6 @@ typedef enum {
  * @brief This enumeration groups the different types of Socket URCs.
  */
 typedef enum {
-  WALTER_MODEM_SOCKET_EVENT_CONNECTED,
   WALTER_MODEM_SOCKET_EVENT_DISCONNECTED,
   WALTER_MODEM_SOCKET_EVENT_RING
 } WMSocketEventType;
@@ -1905,7 +1904,7 @@ typedef struct {
    * strength is 30dB/Hz.
    */
   uint8_t signalStrength;
-} WalterModemGNSSSat;
+} WMGNSSSat;
 
 /**
  * @brief This structure represents a GNSS fix.
@@ -1914,7 +1913,7 @@ typedef struct {
   /**
    * @brief The status of the fix.
    */
-  WalterModemGNSSFixStatus status;
+  WMGNSSFixStatus status;
 
   /**
    * @brief The id of the fix, always in [0-9].
@@ -1974,17 +1973,17 @@ typedef struct {
   /**
    * @brief Satelite numbers and reception strength.
    */
-  WalterModemGNSSSat sats[WALTER_MODEM_GNSS_MAX_SATS];
-} WalterModemURCGNSSFix;
+  WMGNSSSat sats[WALTER_MODEM_GNSS_MAX_SATS];
+} WMGNSSFixEvent;
 
 /**
- * @brief This structure represents the details of a certain GNSS assistance type.
+ * @brief This structure contains GNSS assistance metadata.
  */
 typedef struct {
   /**
    * @brief The type of assistance the details are about.
    */
-  WalterModemGNSSAssistanceType type;
+  WMGNSSAssistanceType type;
 
   /**
    * @brief True when this type of assistance data is available.
@@ -2007,28 +2006,7 @@ typedef struct {
    * used by the GNSS system.
    */
   int32_t timeToExpire;
-} WalterModemGNSSAssistanceTypeDetails;
-
-/**
- * @brief This structure contains GNSS assistance metadata.
- */
-typedef struct {
-  /**
-   * @brief Almanac data details, this is not needed when real-time ephemeris data is available.
-   */
-  WalterModemGNSSAssistanceTypeDetails almanac;
-
-  /**
-   * @brief Real-time ephemeris data details. Use this kind of assistance data for the fastest and
-   * most power efficient GNSS fix.
-   */
-  WalterModemGNSSAssistanceTypeDetails realtimeEphemeris;
-
-  /**
-   * @brief Predicted ephemeris data details.
-   */
-  WalterModemGNSSAssistanceTypeDetails predictedEphemeris;
-} WalterModemGNSSAssistance;
+} WMGNSSAssistance;
 
 #endif
 #pragma endregion
@@ -2359,8 +2337,8 @@ typedef struct {
 #pragma region STRUCTS EVENTS
 
 struct WMGNSSEventData {
-  WalterModemURCGNSSFix fix;
-  WalterModemGNSSFixStatus status;
+  WMGNSSFixEvent gnssfix;
+  WMGNSSAssistanceType assistance;
 };
 
 struct WMSocketEventData {
@@ -2470,17 +2448,6 @@ typedef void (*walterModemRegistrationEventHandler)(WalterModemNetworkRegState s
  */
 typedef void (*walterModemSystemEventHandler)(WalterModemEventSystemType ev, void* args);
 
-/**
- * @brief Header of an AT event handler.
- *
- * @param buff A buffer which contains the unparsed AT response data, not 0-terminated.
- * @param len The number of valid bytes in the response buffer.
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemATEventHandler)(const char* buff, size_t len, void* args);
-
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
 /**
@@ -2582,11 +2549,6 @@ typedef struct {
      * @brief Pointer to the system event handler.
      */
     walterModemSystemEventHandler sysHandler;
-
-    /**
-     * @brief Pointer to the AT event handler.
-     */
-    walterModemATEventHandler atHandler;
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
@@ -2706,9 +2668,9 @@ union WalterModemRspData {
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
   /**
-   * @brief The GNSS assistance data status.
+   * @brief The GNSS assistance data statuses.
    */
-  WalterModemGNSSAssistance gnssAssistance;
+  WMGNSSAssistance gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_COUNT];
 
 #endif
 
@@ -3315,7 +3277,7 @@ private:
   /**
    * @brief The GNSS fix which is currently being processed.
    */
-  static inline WalterModemURCGNSSFix _GNSSfix = {};
+  static inline WMGNSSFixEvent _GNSSfix = {};
 
 #endif
 #pragma endregion
@@ -3376,19 +3338,6 @@ private:
    * @return None.
    */
   static void _checkEventDuration(const std::chrono::time_point<std::chrono::steady_clock>& start);
-
-  /**
-   * @brief Dispatch an AT event.
-   *
-   * This function will try to call an AT event handler. When no such handler is installed
-   * this function is a no-op.
-   *
-   * @param buff The AT data buffer.
-   * @param len The number of bytes in the AT buffer.
-   *
-   * @return None.
-   */
-  static void _dispatchATEvent(const char* buff, size_t len);
 
   /**
    * @brief Dispatch an event.
@@ -5321,7 +5270,7 @@ public:
    * @return True on "+LPGNSSASSISTANCE:" response, false otherwise.
    */
   static bool gnssUpdateAssistance(
-      WalterModemGNSSAssistanceType type = WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
+      WMGNSSAssistanceType type = WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
       walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
 
   /**
@@ -5810,20 +5759,6 @@ public:
   static void setSystemEventHandler(walterModemSystemEventHandler handler = nullptr,
                                     void* args = nullptr);
 
-  /**
-   * @brief Set the AT event handler.
-   *
-   * This function sets the handler that is called when an AT response event occurs.
-   * When this function is called multiple times, only the last handler will be set. To remove
-   * the AT event handler, this function must be called with a nullptr as the handler.
-   *
-   * @param[in] handler The handler function.
-   * @param[in] args handler arguments.
-   *
-   * @return None.
-   */
-  static void setATEventHandler(walterModemATEventHandler handler = nullptr, void* args = nullptr);
-
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
   /**
@@ -5839,6 +5774,12 @@ public:
    *
    * @return None.
    */
+  static void setGNSSEventHandler(walterModemGNSSEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setGNSSEventHandler instead.
+   */
+  [[deprecated("Use setGNSSEventHandler instead")]]
   static void gnssSetEventHandler(walterModemGNSSEventHandler handler = nullptr, void* args = NULL);
 
 #endif
@@ -5929,6 +5870,13 @@ public:
    *
    * @return None.
    */
+  static void setSocketEventHandler(walterModemSocketEventHandler handler = nullptr,
+                                    void* args = NULL);
+
+  /**
+   * @deprecated Use setSocketEventHandler instead.
+   */
+  [[deprecated("Use setSocketEventHandler instead")]]
   static void socketSetEventHandler(walterModemSocketEventHandler handler = nullptr,
                                     void* args = NULL);
 

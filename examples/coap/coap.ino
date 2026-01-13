@@ -278,12 +278,15 @@ static void myCoAPEventHandler(WMCoAPEventType event, WMCoAPEventData data, void
   }
 }
 
+/**
+ * @brief The main Arduino setup method.
+ */
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem CoAP example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem CoAP example (v1.5.0) ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
@@ -304,6 +307,9 @@ void setup()
   modem.setCoAPEventHandler(myCoAPEventHandler, NULL);
 }
 
+/**
+ * @brief The main Arduino loop method.
+ */
 void loop()
 {
   out_buf[6] = counter >> 8;

@@ -173,7 +173,6 @@ void WalterModem::_blueCherrySocketEventHandler(WMSocketEventType event, uint16_
   case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
     _blueCherry.bcProfileId = 0;
 
-  case WALTER_MODEM_SOCKET_EVENT_CONNECTED:
   default:
     break;
   }
