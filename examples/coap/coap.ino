@@ -1,13 +1,14 @@
 /**
  * @file coap.ino
  * @author Dries Vandenbussche <dries@dptechnics.com>
- * @date 28 Apr 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 12 Jan 2026
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -44,7 +45,7 @@
  * @section DESCRIPTION
  *
  * This file contains a sketch which communicates with the coap.me
- * COAP test server.
+ * CoAP test server.
  */
 
 #include <HardwareSerial.h>
@@ -52,7 +53,7 @@
 #include <esp_mac.h>
 
 /**
- * @brief COAP profile used for COAP tests
+ * @brief The CoAP profile identifier.
  */
 #define MODEM_COAP_PROFILE 1
 
@@ -84,9 +85,9 @@ uint8_t in_buf[1024] = { 0 };
 uint16_t counter = 0;
 
 /**
- * @brief This function checks if we are connected to the lte network
+ * @brief This function checks if we are connected to the LTE network
  *
- * @return True when connected, False otherwise
+ * @return true when connected, false otherwise
  */
 bool lteConnected()
 {
@@ -96,29 +97,66 @@ bool lteConnected()
 }
 
 /**
- * @brief This function waits for the modem to be connected to the Lte network.
- * @return true if the connected, else false on timeout.
+ * @brief This function waits for the modem to be connected to the LTE network.
+ *
+ * @param timeout_sec The amount of seconds to wait before returning a time-out.
+ *
+ * @return true if connected, false on time-out.
  */
-bool waitForNetwork()
+bool waitForNetwork(int timeout_sec = 300)
 {
-  /* Wait for the network to become available */
-  int timeout = 0;
+  Serial.print("Connecting to the network...");
+  int time = 0;
   while(!lteConnected()) {
+    Serial.print(".");
     delay(1000);
-    timeout++;
-    if(timeout > 300)
+    time++;
+    if(time > timeout_sec)
       return false;
   }
+  Serial.println();
   Serial.println("Connected to the network");
   return true;
 }
 
 /**
+ * @brief Disconnect from the LTE network.
+ *
+ * This function will disconnect the modem from the LTE network and block until
+ * the network is actually disconnected. After the network is disconnected the
+ * GNSS subsystem can be used.
+ *
+ * @return true on success, false on error.
+ */
+bool lteDisconnect()
+{
+  /* Set the operational state to minimum */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+    Serial.println("Successfully set operational state to MINIMUM");
+  } else {
+    Serial.println("Error: Could not set operational state to MINIMUM");
+    return false;
+  }
+
+  /* Wait for the network to become available */
+  WalterModemNetworkRegState regState = modem.getNetworkRegState();
+  while(regState != WALTER_MODEM_NETWORK_REG_NOT_SEARCHING) {
+    delay(100);
+    regState = modem.getNetworkRegState();
+  }
+
+  Serial.println("Disconnected from the network");
+  return true;
+}
+
+/**
  * @brief This function tries to connect the modem to the cellular network.
- * @return true if the connection attempt is successful, else false.
+ *
+ * @return true on success, false on error.
  */
 bool lteConnect()
 {
+  /* Set the operational state to NO RF */
   if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
   } else {
@@ -144,10 +182,9 @@ bool lteConnect()
 
   /* Set the network operator selection to automatic */
   if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println("Network selection mode to was set to automatic");
+    Serial.println("Network selection mode was set to automatic");
   } else {
     Serial.println("Error: Could not set the network selection mode to automatic");
-
     return false;
   }
 
@@ -155,45 +192,101 @@ bool lteConnect()
 }
 
 /**
- * @brief Modem URC event handler
+ * @brief The network registration event handler.
  *
- * Handles unsolicited result codes (URC) from the modem.
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
  *
- * @note This method should not block for too long. Consider moving heavy processing and blocking
- * functions to your main application thread.
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
  *
- * @param ev Pointer to the URC event data.
- * @param args User argument pointer passed to urcSetEventHandler
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
 {
-  Serial.printf("URC received at %lld\n", ev->timestamp);
-  switch(ev->type) {
-  case WM_URC_TYPE_COAP:
-    if(ev->coap.event == WALTER_MODEM_COAP_EVENT_RING) {
-      Serial.printf(
-          "CoAP Ring Received for profile: %d Length: %u Type: %u Message ID: %u Code: %u\n",
-          ev->coap.profileId, ev->coap.dataLen, ev->coap.type, ev->coap.msgId, ev->coap.rspCode);
-      if(modem.coapReceiveMessage(ev->coap.profileId, ev->coap.msgId, in_buf, ev->coap.dataLen)) {
-        for(int i = 0; i < ev->coap.dataLen; i++) {
-          Serial.printf("%c", in_buf[i]);
-        }
-        Serial.printf("\n");
-      }
-    }
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
     break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
   default:
-    /* Unhandled event */
     break;
   }
 }
 
+/**
+ * @brief The CoAP event handler.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] event The type of CoAP event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myCoAPEventHandler(WMCoAPEventType event, WMCoAPEventData data, void* args)
+{
+  switch(event) {
+  case WALTER_MODEM_COAP_EVENT_CONNECTED:
+    Serial.printf("CoAP: Connected successfully (profile %d)\r\n", data.profile_id);
+    break;
+
+  case WALTER_MODEM_COAP_EVENT_CLOSED:
+    Serial.printf("CoAP: Disconnected (profile %d) reason: %s\r\n", data.profile_id, data.reason);
+    break;
+
+  case WALTER_MODEM_COAP_EVENT_RING:
+    Serial.printf("CoAP: Message received on profile %d. (id: %d | %s | type: %d | code: %ld | "
+                  "size: %ld)\r\n",
+                  data.profile_id, data.msg_id, data.req_rsp ? "response" : "request", data.type,
+                  data.rsp_code, data.data_len);
+
+    /* Receive the CoAP message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.coapReceive(data.profile_id, data.msg_id, in_buf, data.data_len)) {
+      Serial.printf("Received message for profile %d: %s\r\n", data.profile_id, in_buf);
+    } else {
+      Serial.printf("Could not receive CoAP message for profile %d\r\n", data.profile_id);
+    }
+    break;
+  }
+}
+
+/**
+ * @brief The main Arduino setup method.
+ */
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem CoAP example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem CoAP example (v1.5.0) ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
@@ -207,45 +300,52 @@ void setup()
     return;
   }
 
-  /* Set the modem URC event handler */
-  modem.urcSetEventHandler(myURCHandler, NULL);
+  /* Set the network registration event handler (optional) */
+  modem.setRegistrationEventHandler(myNetworkEventHandler, NULL);
 
-  /* Connect the modem to the lte network */
-  if(!lteConnect()) {
-    Serial.println("Error: Could Not Connect to LTE");
-    return;
-  }
+  /* Set the CoAP event handler */
+  modem.setCoAPEventHandler(myCoAPEventHandler, NULL);
 }
 
+/**
+ * @brief The main Arduino loop method.
+ */
 void loop()
 {
   out_buf[6] = counter >> 8;
   out_buf[7] = counter & 0xFF;
   counter++;
 
-  if(!modem.coapCreateContext(MODEM_COAP_PROFILE, "coap.me", 5683)) {
-    Serial.println("Error: Could not create COAP context.");
-    return;
+  if(!lteConnected() && !lteConnect()) {
+    Serial.println("Error: Failed to register to network");
+    delay(1000);
+    ESP.restart();
+  }
+
+  if(modem.coapCreateContext(MODEM_COAP_PROFILE, "coap.me", 5683)) {
+    Serial.println("Successfully created or refreshed CoAP context");
   } else {
-    Serial.println("Successfully created or refreshed COAP context");
+    Serial.println("Error: Could not create CoAP context.");
+    return;
   }
 
   if(modem.coapSetHeader(MODEM_COAP_PROFILE, counter)) {
-    Serial.printf("Set COAP header with message id %d\r\n", counter);
+    Serial.printf("Set CoAP header with message id %d\r\n", counter);
   } else {
-    Serial.println("Error: Could not set COAP header");
+    Serial.println("Error: Could not set CoAP header");
     delay(1000);
     ESP.restart();
   }
 
   if(modem.coapSendData(MODEM_COAP_PROFILE, WALTER_MODEM_COAP_SEND_TYPE_CON,
                         WALTER_MODEM_COAP_SEND_METHOD_GET, 8, out_buf)) {
-    Serial.println("Sent COAP datagram");
+    Serial.println("Sent CoAP datagram");
   } else {
-    Serial.println("Error: Could not send COAP datagram");
+    Serial.println("Error: Could not send CoAP datagram");
     delay(1000);
     ESP.restart();
   }
 
   delay(15000);
+  Serial.println();
 }

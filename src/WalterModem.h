@@ -154,6 +154,13 @@ CONFIG_UINT8(WALTER_MODEM_TASK_QUEUE_MAX_ITEMS, 32)
 CONFIG_INT(WALTER_MODEM_TASK_STACK_SIZE, 4096)
 
 /**
+ * @brief The size of the stack of the event processing task.
+ * This needs to be larger than WALTER_MODEM_TASK_STACK_SIZE because user event
+ * handlers may use Serial.printf() which requires significant stack space.
+ */
+CONFIG_INT(WALTER_MODEM_EVENT_TASK_STACK_SIZE, 8192)
+
+/**
  * @brief The maximum number of pending commands.
  */
 CONFIG_UINT8(WALTER_MODEM_MAX_PENDING_COMMANDS, 32)
@@ -270,10 +277,9 @@ CONFIG(WALTER_MODEM_BLUECHERRY_PORT, uint16_t, 5684)
 /**
  * @brief The maximum number of URCS the URC queue will retain.
  */
-CONFIG_UINT8(WALTER_MODEM_MAX_QUEUED_URCS, 8)
+CONFIG_UINT8(WALTER_MODEM_MAX_QUEUED_EVENTS, 8)
 
-#define WALTER_MODEM_URC_EVENT_QUEUE_SIZE                                                          \
-  WALTER_MODEM_MAX_QUEUED_URCS * sizeof(walter_modem_urc_event_t)
+#define WALTER_MODEM_EVENT_QUEUE_SIZE WALTER_MODEM_MAX_QUEUED_EVENTS * sizeof(WalterModemEvent)
 
 /**
  * @brief The maximum number of characters of an operator name.
@@ -424,8 +430,6 @@ CONFIG_UINT8(SPI_SECTORS_PER_BLOCK, 16)
 #include <freertos/FreeRTOS.h>
 #include <freertos/event_groups.h>
 #include <freertos/semphr.h>
-
-typedef struct walter_modem_urc_event_t walter_modem_urc_event_t;
 
 #pragma region ENUMS
 
@@ -639,7 +643,7 @@ typedef enum {
   WALTER_MODEM_CMD_STATE_COMPLETE,
 } WalterModemCmdState;
 
-#pragma region PDP_CONTEXT
+#pragma region ENUMS PDP_CONTEXT
 
 /**
  * @brief This enumeration represents the different states a PDP context can be in.
@@ -722,6 +726,7 @@ typedef enum {
   WALTER_MODEM_PDP_AUTH_PROTO_PAP = 1,
   WALTER_MODEM_PDP_AUTH_PROTO_CHAP = 2
 } WalterModemPDPAuthProtocol;
+
 #pragma endregion
 
 /**
@@ -848,8 +853,8 @@ typedef enum {
   WALTER_MODEM_RAI_ONLY_SINGLE_RXTX_EXPECTED = 2
 } WalterModemRAI;
 
-#pragma region PROTO
-#pragma region SOCKETS
+#pragma region ENUMS PROTO
+#pragma region ENUMS PROTO SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
 /**
@@ -928,9 +933,18 @@ typedef enum {
   WALTER_MODEM_SOCKET_LISTEN_STATE_IPV6
 } WalterModemSocketListenState;
 
+typedef enum {
+  WALTER_MODEM_SOCKET_CONNECTION_RESULT_OK = 0,
+  WALTER_MODEM_SOCKET_CONNECTION_RESULT_NO_CARRIER = -1,
+  WALTER_MODEM_SOCKET_CONNECTION_RESULT_UNKNOWN = -2,
+  WALTER_MODEM_SOCKET_CONNECTION_RESULT_CONNECTION_REFUSED = -3,
+  WALTER_MODEM_SOCKET_CONNECTION_RESULT_AUTHENTICATION_REJECTED = -4,
+  WALTER_MODEM_SOCKET_CONNECTION_RESULT_TLS_ERROR = -5,
+} WMURCSocketConnRC;
+
 #endif
 #pragma endregion
-#pragma region GNSS
+#pragma region ENUMS PROTO GNSS
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
 /**
@@ -975,20 +989,21 @@ typedef enum {
   WALTER_MODEM_GNSS_FIX_STATUS_STOPPED_BY_USER = 1,
   WALTER_MODEM_GNSS_FIX_STATUS_NO_RTC = 2,
   WALTER_MODEM_GNSS_FIX_STATUS_LTE_CONCURRENCY = 3
-} WalterModemGNSSFixStatus;
+} WMGNSSFixStatus;
 
 /**
  * @brief The possible GNSS assistance types.
  */
 typedef enum {
   WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC = 0,
-  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS = 1,
-  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS = 2,
-} WalterModemGNSSAssistanceType;
+  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
+  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS,
+  WALTER_MODEM_GNSS_ASSISTANCE_TYPE_COUNT
+} WMGNSSAssistanceType;
 
 #endif
 #pragma endregion
-#pragma region COAP
+#pragma region ENUMS PROTO COAP
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
 /**
@@ -1114,7 +1129,7 @@ typedef enum {
 
 #endif
 #pragma endregion
-#pragma region MQTT
+#pragma region ENUMS PROTO MQTT
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 
 /**
@@ -1139,11 +1154,11 @@ typedef enum {
   WALTER_MODEM_MQTT_EAI = -15,
   WALTER_MODEM_MQTT_PROXY = -16,
   WALTER_MODEM_MQTT_UNAVAILABLE = -17
-} WalterModemMqttStatus;
+} WMMQTTConnRC;
 
 #endif
 #pragma endregion
-#pragma region HTTP
+#pragma region ENUMS PROTO HTTP
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 
 /**
@@ -1186,7 +1201,7 @@ typedef enum {
 
 #endif
 #pragma endregion
-#pragma region BLUECHERRY
+#pragma region ENUMS PROTO BLUECHERRY
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
 #define WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE 5
@@ -1195,13 +1210,13 @@ typedef enum {
  * @brief The possible statuses of a BlueCherry communication cycle.
  */
 typedef enum {
+  WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED,
+  WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED,
   WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED,
   WALTER_MODEM_BLUECHERRY_STATUS_IDLE,
   WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE,
   WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY,
-  WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES,
   WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT,
-  WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED
 } WalterModemBlueCherryStatus;
 
 /**
@@ -1238,152 +1253,8 @@ typedef enum {
 
 #endif
 #pragma endregion
-#pragma region GNSS
-#if CONFIG_WALTER_MODEM_ENABLE_GNSS
-
-/**
- * @brief This structure represents a GNSS satellite.
- */
-typedef struct {
-  /**
-   * @brief The number of the satellite.
-   */
-  uint8_t satNo;
-
-  /**
-   * @brief The CN0 signal strength of the satellite in dB/Hz. The minimum required signal
-   * strength is 30dB/Hz.
-   */
-  uint8_t signalStrength;
-} WalterModemGNSSSat;
-
-/**
- * @brief This structure represents a GNSS fix.
- */
-typedef struct {
-  /**
-   * @brief The status of the fix.
-   */
-  WalterModemGNSSFixStatus status = WALTER_MODEM_GNSS_FIX_STATUS_READY;
-
-  /**
-   * @brief The id of the fix, always in [0-9].
-   */
-  uint8_t fixId = 0;
-
-  /**
-   * @brief The time of the fix as a unix timestamp.
-   */
-  int64_t timestamp = 0;
-
-  /**
-   * @brief The number of milliseconds used to get the fix.
-   */
-  uint32_t timeToFix = 0;
-
-  /**
-   * @brief The estimated horizontal confidence of the fix in meters.
-   */
-  double estimatedConfidence = 20000000;
-
-  /**
-   * @brief The latitude of the fix.
-   */
-  double latitude = 0;
-
-  /**
-   * @brief The longitude of the fix.
-   */
-  double longitude = 0;
-
-  /**
-   * @brief The height above sea level.
-   */
-  double height = 0;
-
-  /**
-   * @brief The speed in northern direction in meters per second.
-   */
-  double northSpeed = 0;
-
-  /**
-   * @brief The speed in eastern direction in meters per second.
-   */
-  double eastSpeed = 0;
-
-  /**
-   * @brief The downwards speed in meters per second.
-   */
-  double downSpeed = 0;
-
-  /**
-   * @brief The number of received satellites.
-   */
-  uint8_t satCount = 0;
-
-  /**
-   * @brief Satelite numbers and reception strength.
-   */
-  WalterModemGNSSSat sats[WALTER_MODEM_GNSS_MAX_SATS] = {};
-} WalterModemGNSSFix;
-
-/**
- * @brief This structure represents the details of a certain GNSS assistance type.
- */
-typedef struct {
-  /**
-   * @brief The type of assistance the details are about.
-   */
-  WalterModemGNSSAssistanceType type;
-
-  /**
-   * @brief True when this type of assistance data is available.
-   */
-  bool available;
-
-  /**
-   * @brief The number of seconds since the last update of this type of assistance data.
-   */
-  int32_t lastUpdate;
-
-  /**
-   * @brief The number of seconds before this type of assistance data should be updated in order
-   * not to degrade the GNSS performance.
-   */
-  int32_t timeToUpdate;
-
-  /**
-   * @brief The number of seconds after which this type of assistance data expires and cannot be
-   * used by the GNSS system.
-   */
-  int32_t timeToExpire;
-} WalterModemGNSSAssistanceTypeDetails;
-
-/**
- * @brief This structure contains GNSS assistance metadata.
- */
-typedef struct {
-  /**
-   * @brief Almanac data details, this is not needed when real-time ephemeris data is available.
-   */
-  WalterModemGNSSAssistanceTypeDetails almanac;
-
-  /**
-   * @brief Real-time ephemeris data details. Use this kind of assistance data for the fastest and
-   * most power efficient GNSS fix.
-   */
-  WalterModemGNSSAssistanceTypeDetails realtimeEphemeris;
-
-  /**
-   * @brief Predicted ephemeris data details.
-   */
-  WalterModemGNSSAssistanceTypeDetails predictedEphemeris;
-} WalterModemGNSSAssistance;
-
-#endif
 #pragma endregion
-#pragma endregion
-#pragma region EVENT_TYPES
+#pragma region ENUMS EVENT_TYPES
 
 /**
  * @brief The different types of events supported by the library.
@@ -1400,14 +1271,29 @@ typedef enum {
   WALTER_MODEM_EVENT_TYPE_SYSTEM,
 
   /**
-   * @brief Incoming AT string events.
-   */
-  WALTER_MODEM_EVENT_TYPE_AT,
-
-  /**
    * @brief GNSS related events.
    */
   WALTER_MODEM_EVENT_TYPE_GNSS,
+
+  /**
+   * @brief MQTT related events.
+   */
+  WALTER_MODEM_EVENT_TYPE_MQTT,
+
+  /**
+   * @brief HTTP related events.
+   */
+  WALTER_MODEM_EVENT_TYPE_HTTP,
+
+  /**
+   * @brief CoAP related events.
+   */
+  WALTER_MODEM_EVENT_TYPE_COAP,
+
+  /**
+   * @brief Socket related events.
+   */
+  WALTER_MODEM_EVENT_TYPE_SOCKET,
 
   /**
    * @brief The number of event types supported by the library.
@@ -1416,322 +1302,79 @@ typedef enum {
 } WalterModemEventType;
 
 /**
- * @brief The different types of URC types supported by the library.
- *
- * TODO: Expand with GNSS, CEREG and other types
- */
-typedef enum {
-  /**
-   * @brief MQTT related events.
-   */
-  WM_URC_TYPE_MQTT = 0,
-
-  /**
-   * @brief HTTP related events.
-   */
-  WM_URC_TYPE_HTTP,
-
-  /**
-   * @brief CoAP related events.
-   */
-  WM_URC_TYPE_COAP,
-
-  /**
-   * @brief Socket related events.
-   */
-  WM_URC_TYPE_SOCKET,
-} WalterModemURCType;
-
-/**
  * @brief This enumeration groups the different types of system events.
  */
 typedef enum {
   WALTER_MODEM_SYSTEM_EVENT_STARTED,
-} WalterModemSystemEvent;
+} WalterModemEventSystemType;
 
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
+
+/**
+ * @brief This enumeration groups the different types of GNSS URCs.
+ */
+typedef enum {
+  WALTER_MODEM_GNSS_EVENT_FIX,
+  WALTER_MODEM_GNSS_EVENT_STATUS,
+  WALTER_MODEM_GNSS_EVENT_ASSISTANCE
+} WMGNSSEventType;
+
+#endif
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 
 /**
- * @brief This enumeration groups the different types of MQTT events.
+ * @brief This enumeration groups the different types of MQTT URCs.
  */
 typedef enum {
   WALTER_MODEM_MQTT_EVENT_CONNECTED,
   WALTER_MODEM_MQTT_EVENT_DISCONNECTED,
-  WALTER_MODEM_MQTT_EVENT_RING,
-  WALTER_MODEM_MQTT_EVENT_MEMORY_FULL
-} WalterModemMQTTEvent;
+  WALTER_MODEM_MQTT_EVENT_SUBSCRIBED,
+  WALTER_MODEM_MQTT_EVENT_PUBLISHED,
+  WALTER_MODEM_MQTT_EVENT_MESSAGE,
+  WALTER_MODEM_MQTT_EVENT_MEMORY_FULL,
+} WMMQTTEventType;
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 
 /**
- * @brief This enumeration groups the different types of HTTP events.
+ * @brief This enumeration groups the different types of HTTP URCs.
  */
 typedef enum {
   WALTER_MODEM_HTTP_EVENT_CONNECTED,
   WALTER_MODEM_HTTP_EVENT_DISCONNECTED,
   WALTER_MODEM_HTTP_EVENT_CONNECTION_CLOSED,
   WALTER_MODEM_HTTP_EVENT_RING
-} WalterModemHttpEvent;
+} WMHTTPEventType;
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
 /**
- * @brief This enumeration groups the different types of CoAP events.
+ * @brief This enumeration groups the different types of CoAP URCs.
  */
 typedef enum {
   WALTER_MODEM_COAP_EVENT_CONNECTED,
-  WALTER_MODEM_COAP_EVENT_DISCONNECTED,
+  WALTER_MODEM_COAP_EVENT_CLOSED,
   WALTER_MODEM_COAP_EVENT_RING
-} WalterModemCoapEvent;
+} WMCoAPEventType;
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
 /**
- * @brief This enumeration groups the different types of Socket events.
+ * @brief This enumeration groups the different types of Socket URCs.
  */
 typedef enum {
-  WALTER_MODEM_SOCKET_EVENT_CONNECTED,
   WALTER_MODEM_SOCKET_EVENT_DISCONNECTED,
   WALTER_MODEM_SOCKET_EVENT_RING
-} WalterModemSocketEvent;
+} WMSocketEventType;
 
 #endif
 #pragma endregion
-#pragma endregion
-#pragma region EVENT_HANDLER_CALLBACKS
-
-/**
- * @brief Header of a network registration event handler.
- *
- * @param ev The new network registration state.
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemRegistrationEventHandler)(WalterModemNetworkRegState ev, void* args);
-
-/**
- * @brief Header of a system event handler.
- *
- * @param ev The type of system event.
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemSystemEventHandler)(WalterModemSystemEvent ev, void* args);
-
-/**
- * @brief Header of an AT event handler.
- *
- * @param buff A buffer which contains the unparsed AT response data, not 0-terminated.
- * @param len The number of valid bytes in the response buffer.
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemATEventHandler)(const char* buff, size_t len, void* args);
-
-#if CONFIG_WALTER_MODEM_ENABLE_GNSS
-
-/**
- * @brief Header of a GNSS event handler.
- *
- * @param fix The GNSS fix event data.
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemGNSSEventHandler)(const WalterModemGNSSFix* fix, void* args);
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_MQTT
-
-/**
- * @brief Header of an MQTT event handler
- *
- * @deprecated This header is deprecated and will be removed in a future release.
- * @note Use WalterModemURCEventHandlerCB instead
- *
- * @param ev The type of MQTTEvent
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemMQTTEventHandler)(WalterModemMQTTEvent ev, WalterModemMqttStatus status,
-                                            void* args);
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_HTTP
-
-/**
- * @brief Header of an HTTP event handler
- *
- * @deprecated This header is deprecated and will be removed in a future release.
- * @note Use WalterModemURCEventHandlerCB instead
- *
- * @param ev The Type of HTTPEvent
- * @param profileId the id of the Http Profile
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemHttpEventHandler)(WalterModemHttpEvent ev, int profileId, void* args);
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_COAP
-
-/**
- * @brief Header of an CoAP event handler
- *
- * @deprecated This header is deprecated and will be removed in a future release.
- * @note Use WalterModemURCEventHandlerCB instead
- *
- * @param ev The Type of CoAPEvent
- * @param profileId the id of the CoAP Profile
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*walterModemCoAPEventHandler)(WalterModemCoapEvent ev, int profileId, void* args);
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-
-/**
- * @brief Header of an Socket event handler
- *
- * @deprecated This header is deprecated and will be removed in a future release.
- * @note Use WalterModemURCEventHandlerCB instead
- *
- * @param ev The Type of SocketEvent
- * @param socketId the id of the Socket
- * @param dataReceived The amount of data that has been received
- * @param dataBuffer The data buffer to hold the data in
- * @param args Optional arguments set by the application layer.
- *
- * @warning the dataReceived and dataBuffer params will be used based
- * on the WalterModemSocketRingMode.
- *
- * @return None.
- */
-typedef void (*walterModemSocketEventHandler)(WalterModemSocketEvent ev, int socketId,
-                                              uint16_t dataReceived, uint8_t* dataBuffer,
-                                              void* args);
-
-#endif
-
-/**
- * @brief Header of an URC event handler
- *
- * @param ev The URC event data.
- * @param args Optional arguments set by the application layer.
- *
- * @return None.
- */
-typedef void (*WalterModemURCEventHandlerCB)(const walter_modem_urc_event_t* ev, void* args);
-
 #pragma endregion
 #pragma region STRUCTS
-
-/**
- * @brief This structure represents a URC event.
- *
- * TODO: Add GNSS, CEREG and other URC structs
- */
-struct walter_modem_urc_event_t {
-  WalterModemURCType type;
-  int64_t timestamp;
-
-  union {
-
-#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-
-    struct {
-      WalterModemSocketEvent event;
-      int profileId;
-      uint16_t dataLen;
-    } socket;
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_HTTP
-
-    struct {
-      WalterModemHttpEvent event;
-      int profileId;
-      uint8_t resultCode;
-      uint16_t status;
-      char contentType[64];
-      uint16_t dataLen;
-    } http;
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_COAP
-
-    struct {
-      WalterModemCoapEvent event;
-      int profileId;
-      uint16_t msgId;
-      uint8_t type;
-      uint16_t rspCode;
-      uint16_t dataLen;
-    } coap;
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_MQTT
-
-    struct {
-      WalterModemMQTTEvent event;
-      int profileId;
-      char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE];
-      uint16_t dataLen;
-      uint8_t qos;
-      uint16_t msgId;
-      int status;
-    } mqtt;
-
-#endif
-  };
-};
-
-/**
- * @brief This structure represents an event handler and it's metadata.
- */
-typedef struct {
-  union {
-    /**
-     * @brief Pointer to the registration event handler.
-     */
-    walterModemRegistrationEventHandler regHandler;
-
-    /**
-     * @brief Pointer to the system event handler.
-     */
-    walterModemSystemEventHandler sysHandler;
-
-    /**
-     * @brief Pointer to the AT event handler.
-     */
-    walterModemATEventHandler atHandler;
-
-#if CONFIG_WALTER_MODEM_ENABLE_GNSS
-
-    /**
-     * @brief Pointer to the GNSS event handler.
-     */
-    walterModemGNSSEventHandler gnssHandler;
-
-#endif
-  };
-
-  /**
-   * @brief Pointer to arguments set by the application layer.
-   */
-  void* args = nullptr;
-} WalterModemEventHandler;
-
+#pragma region STRUCTS OPERATOR
 /**
  * @brief This structure represents an operator.
  */
@@ -1747,6 +1390,9 @@ typedef struct {
   char name[WALTER_MODEM_OPERATOR_BUF_SIZE];
 } WalterModemOperator;
 
+#pragma endregion
+#pragma region STRUCTS CLOCK_INFO
+
 typedef struct {
   /**
    * @brief Unix timestamp of the current time and date in the modem.
@@ -1759,7 +1405,8 @@ typedef struct {
   int32_t timeZoneOffset;
 } WalterModemClockInfo;
 
-#pragma region BAND_SELECTION
+#pragma endregion
+#pragma region STRUCTS BAND_SELECTION
 
 /**
  * @brief This structure represents a band selection for a given RAT and operator.
@@ -1800,7 +1447,7 @@ typedef struct {
 } WalterModemBandSelectionConfigSet;
 
 #pragma endregion
-#pragma region SIM_ID
+#pragma region STRUCTS SIM_ID
 
 /**
  * @brief This structure groups the SIM card identifiers.
@@ -1838,7 +1485,7 @@ typedef struct {
 } WalterModemIdentity;
 
 #pragma endregion
-#pragma region PDP_CONTEXT
+#pragma region STRUCTS PDP_CONTEXT
 
 /**
  * @brief This structure represents the two addresses that a certain PDP context can have.
@@ -1972,8 +1619,8 @@ typedef struct {
 } walter_modem_pdp_context_t;
 
 #pragma endregion
-#pragma region PROTO
-#pragma region BLUECHERRY
+#pragma region STRUCTS PROTO
+#pragma region STRUCTS PROTO BLUECHERRY
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
 /**
@@ -2088,7 +1735,7 @@ typedef struct {
   /**
    * @brief Status indicator for last BlueCherry synchronization cycle.
    */
-  WalterModemBlueCherryStatus status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+  WalterModemBlueCherryStatus status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED;
 
   /**
    * @brief Time when the last message was sent.
@@ -2134,7 +1781,7 @@ typedef struct {
 
 #endif
 #pragma endregion
-#pragma region COAP
+#pragma region STRUCTS PROTO COAP
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
 /**
@@ -2240,84 +1887,130 @@ typedef struct {
 
 #endif
 #pragma endregion
-#pragma region MQTT
-#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+#pragma region STRUCTS PROTO GNSS
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
 /**
- * @brief This strucure represents an incoming MQTT message.
+ * @brief This structure represents a GNSS satellite.
  */
 typedef struct {
   /**
-   * @brief Message ID (0xffff means unknown, in case of QoS 0).
+   * @brief The number of the satellite.
    */
-  uint16_t messageId;
+  uint8_t satNo;
 
   /**
-   * @brief The Quality-of-Service (QoS) level.
+   * @brief The CN0 signal strength of the satellite in dB/Hz. The minimum required signal
+   * strength is 30dB/Hz.
    */
-  uint8_t qos;
-
-  /**
-   * @brief The length of the message.
-   */
-  uint16_t length;
-
-  /**
-   * @brief Contains the status return code received from the modem.
-   */
-  WalterModemMqttStatus mqttStatus;
-} WalterModemMqttResponse;
+  uint8_t signalStrength;
+} WMGNSSSat;
 
 /**
- * @brief This strucure represents an incoming MQTT message.
+ * @brief This structure represents a GNSS fix.
  */
 typedef struct {
   /**
-   * @brief Message ID (0xffff means unknown, in case of QoS 0).
+   * @brief The status of the fix.
    */
-  uint16_t messageId = 0;
+  WMGNSSFixStatus status;
 
   /**
-   * @brief The Quality-of-Service (QoS) level.
+   * @brief The id of the fix, always in [0-9].
    */
-  uint8_t qos;
+  uint8_t fixId;
 
   /**
-   * @brief The MQTT topic.
+   * @brief The time of the fix as a unix timestamp.
    */
-  char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE] = { 0 };
+  int64_t timestamp;
 
   /**
-   * @brief The length of the message.
+   * @brief The number of milliseconds used to get the fix.
    */
-  uint16_t length;
+  uint32_t timeToFix;
 
   /**
-   * @brief Is this ring free for usage.
+   * @brief The estimated horizontal confidence of the fix in meters.
    */
-  bool free = true;
-} WalterModemMQTTRing;
+  double estimatedConfidence;
 
+  /**
+   * @brief The latitude of the fix.
+   */
+  double latitude;
+
+  /**
+   * @brief The longitude of the fix.
+   */
+  double longitude;
+
+  /**
+   * @brief The height above sea level.
+   */
+  double height;
+
+  /**
+   * @brief The speed in northern direction in meters per second.
+   */
+  double northSpeed;
+
+  /**
+   * @brief The speed in eastern direction in meters per second.
+   */
+  double eastSpeed;
+
+  /**
+   * @brief The downwards speed in meters per second.
+   */
+  double downSpeed;
+
+  /**
+   * @brief The number of received satellites.
+   */
+  uint8_t satCount;
+
+  /**
+   * @brief Satelite numbers and reception strength.
+   */
+  WMGNSSSat sats[WALTER_MODEM_GNSS_MAX_SATS];
+} WMGNSSFixEvent;
+
+/**
+ * @brief This structure contains GNSS assistance metadata.
+ */
 typedef struct {
   /**
-   * @brief is the topic in use/subscribed to.
+   * @brief The type of assistance the details are about.
    */
-  bool free = true;
+  WMGNSSAssistanceType type;
 
   /**
-   * @brief Qos ofr the subscription.
+   * @brief True when this type of assistance data is available.
    */
-  uint8_t qos = 0;
+  bool available;
 
   /**
-   * @brief mqtt topic
+   * @brief The number of seconds since the last update of this type of assistance data.
    */
-  char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE] = { 0 };
-} WalterModemMqttTopic;
+  int32_t lastUpdate;
+
+  /**
+   * @brief The number of seconds before this type of assistance data should be updated in order
+   * not to degrade the GNSS performance.
+   */
+  int32_t timeToUpdate;
+
+  /**
+   * @brief The number of seconds after which this type of assistance data expires and cannot be
+   * used by the GNSS system.
+   */
+  int32_t timeToExpire;
+} WMGNSSAssistance;
 
 #endif
 #pragma endregion
-#pragma region HTTP
+#pragma region STRUCTS PROTO HTTP
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 
 /**
@@ -2373,7 +2066,84 @@ typedef struct {
 
 #endif
 #pragma endregion
-#pragma region SOCKETS
+#pragma region STRUCTS PROTO MQTT
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
+/**
+ * @brief This strucure represents an incoming MQTT message.
+ */
+typedef struct {
+  /**
+   * @brief Message ID (0xffff means unknown, in case of QoS 0).
+   */
+  uint16_t messageId;
+
+  /**
+   * @brief The Quality-of-Service (QoS) level.
+   */
+  uint8_t qos;
+
+  /**
+   * @brief The length of the message.
+   */
+  uint16_t length;
+
+  /**
+   * @brief Contains the status return code received from the modem.
+   */
+  WMMQTTConnRC mqttStatus;
+} WalterModemMqttResponse;
+
+/**
+ * @brief This strucure represents an incoming MQTT message.
+ */
+typedef struct {
+  /**
+   * @brief Message ID (0xffff means unknown, in case of QoS 0).
+   */
+  uint16_t messageId = 0;
+
+  /**
+   * @brief The Quality-of-Service (QoS) level.
+   */
+  uint8_t qos;
+
+  /**
+   * @brief The MQTT topic.
+   */
+  char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE] = { 0 };
+
+  /**
+   * @brief The length of the message.
+   */
+  uint16_t length;
+
+  /**
+   * @brief Is this ring free for usage.
+   */
+  bool free = true;
+} WalterModemMQTTRing;
+
+typedef struct {
+  /**
+   * @brief is the topic in use/subscribed to.
+   */
+  bool free = true;
+
+  /**
+   * @brief Qos ofr the subscription.
+   */
+  uint8_t qos = 0;
+
+  /**
+   * @brief mqtt topic
+   */
+  char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE] = { 0 };
+} WalterModemMqttTopic;
+
+#endif
+#pragma endregion
+#pragma region STRUCTS PROTO SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
 /**
@@ -2466,8 +2236,8 @@ typedef struct {
 
 #endif
 #pragma endregion
-#pragma endregion
-
+#pragma endregion // STRUCTS PROTO
+#pragma region STRUCTS RESPONSE
 /**
  * @brief This structure groups the RSRQ and RSRP signal quality parameters.
  */
@@ -2563,6 +2333,267 @@ typedef struct {
   uint8_t ceLevel;
 } WalterModemCellInformation;
 
+#pragma endregion // STRUCTS RESPONSE
+#pragma region STRUCTS EVENTS
+
+struct WMGNSSEventData {
+  WMGNSSFixEvent gnssfix;
+  WMGNSSAssistanceType assistance;
+};
+
+struct WMSocketEventData {
+  uint8_t conn_id;
+  WMURCSocketConnRC rc;
+  uint16_t data_len;
+  uint8_t data[1500];
+};
+
+struct WMHTTPEventData {
+  uint8_t profile_id;
+  uint8_t rc;
+  uint16_t status;
+  char content_type[64];
+  uint16_t data_len;
+};
+
+struct WMCoAPEventData {
+  uint8_t profile_id;
+  uint16_t msg_id;
+  bool req_rsp;
+  uint8_t type;
+  uint16_t rsp_code;
+  uint16_t data_len;
+  char reason[16];
+};
+
+struct WMMQTTEventData {
+  WMMQTTConnRC rc;
+  char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE];
+  uint16_t msg_length;
+  uint8_t qos;
+  int mid;
+};
+
+/**
+ * @brief This structure represents an event.
+ */
+struct WalterModemEvent {
+  WalterModemEventType type;
+  int64_t timestamp;
+
+  union {
+
+    WalterModemNetworkRegState regstate;
+
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
+
+    struct {
+      WMGNSSEventType event;
+      WMGNSSEventData data;
+    } gnss;
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+
+    struct {
+      WMSocketEventType event;
+      WMSocketEventData data;
+    } socket;
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_HTTP
+
+    struct {
+      WMHTTPEventType event;
+      WMHTTPEventData data;
+    } http;
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+
+    struct {
+      WMCoAPEventType event;
+      WMCoAPEventData data;
+    } coap;
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
+    struct {
+      WMMQTTEventType event;
+      WMMQTTEventData data;
+    } mqtt;
+
+#endif
+  };
+};
+
+/**
+ * @brief Header of a network registration event handler.
+ *
+ * @param ev The new network registration state.
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemRegistrationEventHandler)(WalterModemNetworkRegState state, void* args);
+
+/**
+ * @brief Header of a system event handler.
+ *
+ * @param ev The type of system event.
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemSystemEventHandler)(WalterModemEventSystemType ev, void* args);
+
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
+
+/**
+ * @brief Header of a GNSS event handler.
+ *
+ * @param event The type of GNSS event
+ * @param data The data associated with the event
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemGNSSEventHandler)(WMGNSSEventType event, WMGNSSEventData data,
+                                            void* args);
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
+/**
+ * @brief Header of an MQTT event handler
+ *
+ * This method is called after an MQTT URC is received.
+ *
+ * @param event The type of MQTT event
+ * @param data The data associated with the event
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ *
+ * @note URCs:
+ *
+ * +SQNSMQTTDISCONNECT:0,<rc>
+ * +SQNSMQTTONCONNECT:0,<rc>
+ * +SQNSMQTTONPUBLISH:0,<pmid>,<rc>
+ * +SQNSMQTTONMESSAGE:0,<topic>,<msg_length>,<qos>,<mid>
+ * +SQNSMQTTONSUBSCRIBE:0,<topic>,<rc>
+ * +SQNSMQTTMEMORYFULL
+ */
+typedef void (*walterModemMQTTEventHandler)(WMMQTTEventType event, WMMQTTEventData data,
+                                            void* args);
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_HTTP
+
+/**
+ * @brief Header of an HTTP event handler
+ *
+ * @param event The type of HTTP event
+ * @param data The data associated with the event
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemHttpEventHandler)(WMHTTPEventType event, WMHTTPEventData data,
+                                            void* args);
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+
+/**
+ * @brief Header of an CoAP event handler
+ *
+ * @param event The type of CoAP event
+ * @param data The data associated with the event
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemCoAPEventHandler)(WMCoAPEventType event, WMCoAPEventData data,
+                                            void* args);
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+
+/**
+ * @brief Header of an Socket event handler
+ *
+ * @param event The type of Socket event
+ * @param data The data associated with the event
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemSocketEventHandler)(WMSocketEventType ev, WMSocketEventData data,
+                                              void* args);
+
+#endif
+
+/**
+ * @brief This structure represents an event handler and it's metadata.
+ */
+typedef struct {
+  union {
+    /**
+     * @brief Pointer to the registration event handler.
+     */
+    walterModemRegistrationEventHandler regHandler;
+
+    /**
+     * @brief Pointer to the system event handler.
+     */
+    walterModemSystemEventHandler sysHandler;
+
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
+
+    /**
+     * @brief Pointer to the GNSS event handler.
+     */
+    walterModemGNSSEventHandler gnssHandler;
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+    /**
+     * @brief Pointer to the MQTT event handler.
+     */
+    walterModemMQTTEventHandler mqttHandler;
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_HTTP
+    /**
+     * @brief Pointer to the http event handler.
+     */
+    walterModemHttpEventHandler httpHandler;
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
+    /**
+     * @brief Pointer to the CoAP event handler.
+     */
+    walterModemCoAPEventHandler coapHandler;
+#endif
+
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+    /**
+     * @brief Pointer to the socket event handler.
+     */
+    walterModemSocketEventHandler socketHandler;
+#endif
+  };
+
+  /**
+   * @brief Pointer to arguments set by the application layer.
+   */
+  void* args = nullptr;
+} WalterModemEventHandler;
+
+#pragma endregion // STRUCTS EVENTS
 #pragma region QUEUE_CMD_RSP_PROCESSING
 
 /**
@@ -2637,9 +2668,9 @@ union WalterModemRspData {
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
   /**
-   * @brief The GNSS assistance data status.
+   * @brief The GNSS assistance data statuses.
    */
-  WalterModemGNSSAssistance gnssAssistance;
+  WMGNSSAssistance gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_COUNT];
 
 #endif
 
@@ -2711,6 +2742,8 @@ typedef struct {
    */
   union WalterModemRspData data;
 } walter_modem_rsp_t;
+
+#pragma endregion
 
 /**
  * @brief The callback header used when this library is used asynchronously.
@@ -2957,8 +2990,8 @@ typedef struct {
   /**
    * @brief The statically allocated queue memory.
    */
-  uint8_t mem[WALTER_MODEM_URC_EVENT_QUEUE_SIZE] = { 0 };
-} walter_modem_urc_processing_task_t;
+  uint8_t mem[WALTER_MODEM_MAX_QUEUED_EVENTS * sizeof(WalterModemEvent)] = { 0 };
+} walter_modem_event_processing_task_t;
 
 /**
  * @brief This structure represents the command queue. This queue is used inside the libraries
@@ -2982,7 +3015,7 @@ typedef struct {
 } walter_modem_cmd_processing_queue_t;
 
 #pragma endregion
-#pragma region MOTA_STP
+#pragma region STRUCTS MOTA_STP
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
 /**
@@ -3023,16 +3056,17 @@ struct WalterModemStpResponseTransferBlock {
 
 #endif
 #pragma endregion
-#pragma endregion
-
+#pragma endregion // STRUCTS
+#pragma region CLASS
 /**
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem and positioning
  * functionality.
  */
 class WalterModem
 {
+#pragma region CLASS PRIVATE
 private:
-#pragma region STATIC_VARS
+#pragma region CLASS PRIVATE VARIABLES
   /**
    * @brief This flag is set to true when the modem is initialized.
    */
@@ -3098,7 +3132,7 @@ private:
   /**
    * @brief The queue used to store URC events in.
    */
-  static inline walter_modem_urc_processing_task_t _urcEventQueue = {};
+  static inline walter_modem_event_processing_task_t _eventQueue = {};
 
   /**
    * @brief The queue used to store pending tasks in.
@@ -3130,7 +3164,7 @@ private:
   /**
    * @brief The latest MQTT status code received from the modem.
    */
-  static inline WalterModemMqttStatus _mqttStatus = WALTER_MODEM_MQTT_SUCCESS;
+  static inline WMMQTTConnRC _mqttStatus = WALTER_MODEM_MQTT_SUCCESS;
 
 #endif
 
@@ -3190,28 +3224,21 @@ private:
   static inline WalterModemOperator _operator = {};
 
   /**
-   * @brief The task in which URC events are processed.
+   * @brief The task in which events are processed.
    */
-  static inline TaskHandle_t _URCEventTask;
+  static inline TaskHandle_t _EventTask;
 
   /**
-   * @brief Handle used to manage the URC event processing task stack.
+   * @brief Handle used to manage the event processing task stack.
    */
-  static inline StaticTask_t _URCEventTaskBuf;
+  static inline StaticTask_t _eventTaskBuf;
 
   /**
-   * @brief The statically allocated URC event processing task stack memory.
+   * @brief The statically allocated event processing task stack memory.
    */
-  static inline StackType_t _URCEventTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
+  static inline StackType_t _eventTaskStack[WALTER_MODEM_EVENT_TASK_STACK_SIZE];
 
-  /**
-   * @brief The task that processes URC events and passes them to the application handler.
-   *
-   * @param args A NULL pointer.
-   */
-  static void _URCEventProcessingTask(void* args);
-
-#pragma region CONTEXTS
+#pragma region CLASS PRIVATE CONTEXTS
 
   /**
    * @brief The PDP context which is currently in use by the library or NULL when no PDP
@@ -3250,7 +3277,7 @@ private:
   /**
    * @brief The GNSS fix which is currently being processed.
    */
-  static inline WalterModemGNSSFix _GNSSfix = {};
+  static inline WMGNSSFixEvent _GNSSfix = {};
 
 #endif
 #pragma endregion
@@ -3262,7 +3289,7 @@ private:
   static inline WalterModemBlueCherryState _blueCherry = {};
 
 #endif
-#pragma region MOTA
+#pragma region CLASS PRIVATE MOTA
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
   /*
@@ -3289,19 +3316,66 @@ private:
    */
   static inline WalterModemEventHandler _eventHandlers[WALTER_MODEM_EVENT_TYPE_COUNT] = {};
 
-  /**
-   * @brief The user defined URC event handler callback.
-   */
-  static inline WalterModemURCEventHandlerCB _URCEventHandler = NULL;
-
-  /**
-   * @brief The user defined URC event handler callback arguments.
-   */
-  static inline void* _URCEventHandlerArgs = NULL;
-
 #pragma endregion
-#pragma region PRIVATE_METHODS
-#pragma region MODEM_UPGRADE
+#pragma region CLASS PRIVATE METHODS
+#pragma region CLASS PRIVATE METHODS EVENTS
+
+  /**
+   * @brief The task that processes URC and other events and passes them to the application handler.
+   *
+   * @param args A NULL pointer.
+   */
+  static void _eventProcessingTask(void* args);
+
+  /**
+   * @brief Check the execution time of an application layer event handler.
+   *
+   * This function will check the execution time of an event handler given the start time of
+   * the event.
+   *
+   * @param start The event start time.
+   *
+   * @return None.
+   */
+  static void _checkEventDuration(const std::chrono::time_point<std::chrono::steady_clock>& start);
+
+  /**
+   * @brief Dispatch an event.
+   *
+   * This function will try to call a URC event handler. When no such handler is installed
+   * this function is a no-op.
+   *
+   * @param ev The URC event.
+   *
+   * @return None.
+   */
+  static void _dispatchEvent(WalterModemEvent* ev);
+
+#pragma endregion // CLASS PRIVATE METHODS EVENTS
+#pragma region CLASS PRIVATE METHODS SLEEP
+
+  /**
+   * @brief Save context data in RTC memory before ESP deep sleep.
+   *
+   * This function will save the necessary state and context sets in RTC memory to keep this
+   * information saved during ESP deep sleep.
+   *
+   * @return None.
+   */
+  static void _sleepPrepare();
+
+  /**
+   * @brief Load context data from RTC memory after ESP deep sleep.
+   *
+   * This function will load the saved state and context sets from RTC memory to restore the
+   * contexts after ESP deep sleep.
+   *
+   * @return None.
+   */
+  static void _sleepWakeup();
+
+#pragma endregion // CLASS PRIVATE METHODS SLEEP
+#pragma region CLASS PRIVATE METHODS MODEM_UPGRADE
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
   /**
@@ -3332,7 +3406,7 @@ private:
 
 #endif
 #pragma endregion
-#pragma region UART
+#pragma region CLASS PRIVATE METHODS UART
 
   /**
    * @brief Helper to abstract away UART RX difference between the IDF and Arduino.
@@ -3365,7 +3439,7 @@ private:
   static uint16_t _calculateStpCrc16(const void* input, size_t length);
 
 #pragma endregion
-#pragma region CMD_POOL_QUEUE
+#pragma region CLASS PRIVATE METHODS CMD_POOL_QUEUE
 
   /**
    * @brief Get a command from the command pool.
@@ -3398,7 +3472,7 @@ private:
   static bool _cmdQueuePut(walter_modem_cmd_t* cmd);
 
 #pragma endregion
-#pragma region PDP_CONTEXT
+#pragma region CLASS PRIVATE METHODS PDP_CONTEXT
 
   /**
    * @brief Get a reference to the PDP context with the given id.
@@ -3437,7 +3511,7 @@ private:
   static void _loadRTCPdpContextSet(walter_modem_pdp_context_t* _pdpCtxSetRTC = NULL);
 
 #pragma endregion
-#pragma region SOCKETS
+#pragma region CLASS PRIVATE METHODS PROTO SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
   /**
@@ -3471,7 +3545,7 @@ private:
 
 #endif
 #pragma endregion
-#pragma region CMD_PROCESSING
+#pragma region CLASS PRIVATE METHODS CMD_PROCESSING
 
   /**
    * @brief this function extracts the expected payloadSize.
@@ -3624,7 +3698,7 @@ private:
   static void _cmdProcessingTask(void* args);
 
 #pragma endregion
-#pragma region QUEUE_CMD_RSP_PROCESSING
+#pragma region CLASS PRIVATE METHODS QUEUE_CMD_RSP_PROCESSING
 
   /**
    * @brief Add a command to the command queue.
@@ -3705,6 +3779,7 @@ private:
   static void _processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_t* rsp);
 
 #pragma endregion
+#pragma region CLASS PRIVATE METHODS PROTO BLUECHERRY
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
   /**
@@ -3738,7 +3813,7 @@ private:
   /**
    * @brief The custom socket event handler for bluecherry communications.
    */
-  static void _blueCherrySocketEventHandler(WalterModemSocketEvent event, uint16_t dataReceived,
+  static void _blueCherrySocketEventHandler(WMSocketEventType event, uint16_t dataReceived,
                                             uint8_t* dataBuffer);
 
   /**
@@ -3762,7 +3837,8 @@ private:
   static bool _blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t* dataBuffer);
 
 #endif
-#pragma region OTA
+#pragma endregion
+#pragma region CLASS PRIVATE METHODS OTA
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
   /**
@@ -3817,7 +3893,7 @@ private:
 
 #endif
 #pragma endregion
-#pragma region MOTA
+#pragma region CLASS PRIVATE METHODS MOTA
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
   /**
@@ -3872,25 +3948,7 @@ private:
 #endif
 #endif
 #pragma endregion
-#pragma region TLS
-
-public:
-  /**
-   * @brief Upload key or certificate to modem NVRAM.
-   *
-   * This function uploads a key or certificate to the modem NVRAM. It is recommended to save
-   * credentials in index 10-19 to avoid overwriting preinstalled certificates and
-   * (if applicable) BlueCherry cloud platform credentials.
-   *
-   * @param isPrivateKey True if it's a private key, false if it's a certificate
-   * @param slotIdx slot index within the modem NVRAM keystore
-   * @param credential NULL-terminated string containing the PEM key/cert data
-   *
-   * @return True if succeeded, false if not.
-   */
-  static bool tlsWriteCredential(bool isPrivateKey, uint8_t slotIdx, const char* credential);
-
-private:
+#pragma region CLASS PRIVATE METHODS TLS
   /**
    * @brief Check if a key or certificate is present in modem's NVRAM.
    *
@@ -3915,110 +3973,6 @@ private:
    * @return The Luhn checksum as an ASCII character.
    */
   static char _getLuhnChecksum(const char* imei);
-
-#pragma endregion
-#pragma region EVENTS
-
-  /**
-   * @brief Check the execution time of an application layer event handler.
-   *
-   * This function will check the execution time of an event handler given the start time of
-   * the event.
-   *
-   * @param start The event start time.
-   *
-   * @return None.
-   */
-  static void _checkEventDuration(const std::chrono::time_point<std::chrono::steady_clock>& start);
-
-  /**
-   * @brief Dispatch a network registration event.
-   *
-   * This function will try to call a network registration event handler. When no such handler
-   * is installed this function is a no-op.
-   *
-   * @param state The new network registration state.
-   *
-   * @return None.
-   */
-  static void _dispatchEvent(WalterModemNetworkRegState state);
-
-  /**
-   * @brief Dispatch a system event.
-   *
-   * This function will try to call a system event handler. When no such handler is installed
-   * this function is a no-op.
-   *
-   * @param event The type of system event that has occurred.
-   *
-   * @return None.
-   */
-  static void _dispatchEvent(WalterModemSystemEvent event);
-
-  /**
-   * @brief Dispatch an AT event.
-   *
-   * This function will try to call an AT event handler. When no such handler is installed
-   * this function is a no-op.
-   *
-   * @param buff The AT data buffer.
-   * @param len The number of bytes in the AT buffer.
-   *
-   * @return None.
-   */
-  static void _dispatchEvent(const char* buff, size_t len);
-
-#if CONFIG_WALTER_MODEM_ENABLE_GNSS
-
-  /**
-   * @brief Dispatch a GNSS event.
-   *
-   * This function will try to call a GNSS event handler. When no such handler is installed
-   * this function is a no-op.
-   *
-   * @param fix The GNSS fix data.
-   *
-   * @return None.
-   */
-  static void _dispatchEvent(const WalterModemGNSSFix* fix);
-
-#endif
-
-  /**
-   * @brief Dispatch a URC event.
-   *
-   * This function will try to call a URC event handler. When no such handler is installed
-   * this function is a no-op.
-   *
-   * @param ev The URC event.
-   *
-   * @return None.
-   */
-  static void _dispatchURCEvent(walter_modem_urc_event_t* ev);
-
-#pragma endregion
-#pragma region MODEM_SLEEP
-
-  /**
-   * @brief Save context data in RTC memory before ESP deep sleep.
-   *
-   * This function will save the necessary state and context sets in RTC memory to keep this
-   * information saved during ESP deep sleep.
-   *
-   * @return None.
-   */
-  static void _sleepPrepare();
-
-  /**
-   * @brief Load context data from RTC memory after ESP deep sleep.
-   *
-   * This function will load the saved state and context sets from RTC memory to restore the
-   * contexts after ESP deep sleep.
-   *
-   * @return None.
-   */
-  static void _sleepWakeup();
-
 #pragma endregion
 
   /**
@@ -4040,22 +3994,26 @@ private:
   static uint8_t _convertDuration(const uint32_t* base_times, size_t base_times_len,
                                   uint32_t duration_seconds, uint32_t* actual_duration_seconds);
 
-#if CONFIG_WALTER_MODEM_ENABLE_MQTT
-
-  /**
-   * @brief This function subscribes without saving the topic in _mqttTopics and runs async.
-   * (same as mqttSubscribe)
-   */
-  static bool _mqttSubscribeRaw(const char* topicString, uint8_t qos,
-                                walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                void* args = NULL);
-
-#endif
-#pragma endregion
-#pragma region PUBLIC_METHODS
+#pragma endregion // CLASS PRIVATE METHODS
+#pragma endregion // CLASS PRIVATE
+#pragma region CLASS PUBLIC
 
 public:
-#pragma region BEGIN
+#pragma region CLASS PUBLIC METHODS
+  /**
+   * @brief Upload key or certificate to modem NVRAM.
+   *
+   * This function uploads a key or certificate to the modem NVRAM. It is recommended to save
+   * credentials in index 10-19 to avoid overwriting preinstalled certificates and
+   * (if applicable) BlueCherry cloud platform credentials.
+   *
+   * @param isPrivateKey True if it's a private key, false if it's a certificate
+   * @param slotIdx slot index within the modem NVRAM keystore
+   * @param credential NULL-terminated string containing the PEM key/cert data
+   *
+   * @return True if succeeded, false if not.
+   */
+  static bool tlsWriteCredential(bool isPrivateKey, uint8_t slotIdx, const char* credential);
 
   /**
    * =============================================================================================
@@ -4108,14 +4066,6 @@ public:
   static bool begin(uart_port_t uartNo, uint16_t watchdogTimeout = 0);
 
 #endif
-#pragma endregion
-#pragma region GENERAL
-
-  /**
-   * =============================================================================================
-   * GENERAL FUNCTIONS
-   * =============================================================================================
-   */
 
   /**
    * @brief Tickle watchdog
@@ -4333,29 +4283,35 @@ public:
       uint8_t client_ca_id = 0xff, uint8_t client_priv_key_id = 0xff,
       walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
 
-#pragma endregion
-
   /**
-   * =============================================================================================
-   * PROTOCOLS
-   * =============================================================================================
+   * @brief Get the current modem time and date.
+   *
+   * This function retrieves the current time and date from the modem.
+   *
+   * @param[out] rsp Pointer to the response structure to save the result in.
+   * @param[in] cb Callback function, if not NULL this function will not block.
+   * @param[in] args Arguments to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
    */
+  static bool getClock(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                       void* args = NULL);
 
-#pragma region PROTO
+#pragma region CLASS PUBLIC METHODS PROTO
 
 /**
  * =============================================================================================
  * MQTT FUNCTIONS
  * =============================================================================================
  */
-#pragma region MQTT
+#pragma region CLASS PUBLIC METHODS PROTO MQTT
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 
   /**
    * @brief returns the last received mqttStatus.
    */
   [[deprecated("This method will be removed in a future release.")]]
-  static WalterModemMqttStatus getMqttStatus();
+  static WMMQTTConnRC getMqttStatus();
 
   /**
    * @brief Configure an MQTT client.
@@ -4451,7 +4407,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use mqttReceiveMessage(topic, message_id, buf, buf_size, rsp, cb, "
+  [[deprecated("Use mqttReceive(topic, message_id, buf, buf_size, rsp, cb, "
                "args) instead")]]
   static bool mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t targetBufSize,
                           walter_modem_rsp_t* rsp = NULL);
@@ -4471,9 +4427,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool mqttReceiveMessage(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                 void* args = NULL);
+  static bool mqttReceive(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
+                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                          void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4484,7 +4440,7 @@ public:
    * =============================================================================================
    */
 
-#pragma region HTTP
+#pragma region CLASS PUBLIC METHODS PROTO HTTP
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 
   /**
@@ -4617,7 +4573,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use httpReceiveMessage(profileId, targetBuf, targetBufSize, rsp, "
+  [[deprecated("Use httpReceive(profileId, targetBuf, targetBufSize, rsp, "
                "cb, args) instead")]]
   static bool httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                           walter_modem_rsp_t* rsp = NULL);
@@ -4636,9 +4592,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool httpReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                 void* args = NULL);
+  static bool httpReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                          void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4649,7 +4605,7 @@ public:
    * =============================================================================================
    */
 
-#pragma region BLUECHERRY
+#pragma region CLASS PUBLIC METHODS PROTO BLUECHERRY
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
   /**
@@ -4771,7 +4727,7 @@ public:
    * =============================================================================================
    */
 
-#pragma region COAP
+#pragma region CLASS PUBLIC METHODS PROTO COAP
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
   /**
@@ -4889,7 +4845,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use coapReceiveMessage(profile_id, message_id, buf, buf_size, rsp, cb, args) "
+  [[deprecated("Use coapReceive(profile_id, message_id, buf, buf_size, rsp, cb, args) "
                "instead")]]
   static bool coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                           walter_modem_rsp_t* rsp = NULL);
@@ -4907,9 +4863,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool coapReceiveMessage(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                 void* args = NULL);
+  static bool coapReceive(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
+                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                          void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4920,7 +4876,7 @@ public:
    * =============================================================================================
    */
 
-#pragma region SOCKETS
+#pragma region CLASS PUBLIC METHODS PROTO SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
   /**
@@ -5206,7 +5162,7 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketReceiveMessage(profile_id, buf, buf_size, rsp, cb, args) instead")]]
+  [[deprecated("Use socketReceive(profile_id, buf, buf_size, rsp, cb, args) instead")]]
   static bool socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
                             int profileId = -1, walter_modem_rsp_t* rsp = NULL);
 
@@ -5222,9 +5178,9 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                   walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                                   void* args = NULL);
+  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                            walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                            void* args = NULL);
 
   /**
    * @brief This function updates all the socket states and returns the current state for the
@@ -5258,7 +5214,7 @@ public:
    * ============================================================================================
    */
 
-#pragma region GNSS
+#pragma region CLASS PUBLIC METHODS PROTO GNSS
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
   /**
@@ -5314,7 +5270,7 @@ public:
    * @return True on "+LPGNSSASSISTANCE:" response, false otherwise.
    */
   static bool gnssUpdateAssistance(
-      WalterModemGNSSAssistanceType type = WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
+      WMGNSSAssistanceType type = WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
       walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
 
   /**
@@ -5362,15 +5318,8 @@ public:
 
 #endif
 #pragma endregion
-#pragma endregion
-
-  /**
-   * =============================================================================================
-   * MODEM STATE
-   * ============================================================================================
-   */
-
-#pragma region MODEM_STATE
+#pragma endregion // CLASS PUBLIC METHODS PROTO
+#pragma region CLASS PUBLIC METHODS MODEM_STATE
 
   /**
    * @brief Get the network registration state.
@@ -5411,15 +5360,8 @@ public:
   static bool setOpState(WalterModemOpState op_state, walter_modem_rsp_t* rsp = NULL,
                          walter_modem_cb_t cb = NULL, void* args = NULL);
 
-#pragma endregion
-
-  /**
-   * =============================================================================================
-   * RADIO
-   * =============================================================================================
-   */
-
-#pragma region RADIO
+#pragma endregion // CLASS PUBLIC METHODS MODEM_STATE
+#pragma region CLASS PUBLIC METHODS RADIO
 
   /**
    * @brief Get the selected RAT (Radio Access Technology).
@@ -5480,15 +5422,8 @@ public:
   static bool setRadioBands(WalterModemRAT rat, uint32_t bands, walter_modem_rsp_t* rsp = NULL,
                             walter_modem_cb_t cb = NULL, void* args = NULL);
 
-#pragma endregion
-
-  /**
-   * =============================================================================================
-   * SIM MANAGEMENT
-   * =============================================================================================
-   */
-
-#pragma region SIM_MANAGEMENT
+#pragma endregion // CLASS PUBLIC METHODS RADIO
+#pragma region CLASS PUBLIC METHODS SIM_MANAGEMENT
 
   /**
    * @brief Get the SIM state.
@@ -5554,8 +5489,8 @@ public:
   static bool unlockSIM(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
                         void* args = NULL, const char* pin = NULL);
 
-#pragma endregion
-
+#pragma endregion // CLASS PUBLIC METHODS SIM_MANAGEMENT
+#pragma region CLASS PUBLIC METHODS NETWORK
   /**
    * @brief Set the network selection mode.
    *
@@ -5577,13 +5512,8 @@ public:
       WalterModemOperatorFormat format = WALTER_MODEM_OPERATOR_FORMAT_LONG_ALPHANUMERIC,
       walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
 
-  /**
-   * =============================================================================================
-   * POWER SAVING
-   * =============================================================================================
-   */
-
-#pragma region POWER_SAVING
+#pragma endregion // CLASS PUBLIC METHODS NETWORK
+#pragma region CLASS PUBLIC METHODS POWER_SAVING
 
   /**
    * @brief Configure Power Saving Mode Setting.
@@ -5664,15 +5594,8 @@ public:
   static uint8_t durationToActiveTime(uint32_t seconds = 0, uint32_t minutes = 0,
                                       uint32_t* actual_duration_seconds = nullptr);
 
-#pragma endregion
-
-  /**
-   * =============================================================================================
-   * PDP CONTEXT
-   * =============================================================================================
-   */
-
-#pragma region PDP_CONTEXT
+#pragma endregion // CLASS PUBLIC METHODS POWER_SAVING
+#pragma region CLASS PUBLIC METHODS PDP_CONTEXT
 
   /**
    * @brief define a new packet data protocol (PDP) context.
@@ -5783,29 +5706,8 @@ public:
   static bool getPDPAddress(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
                             void* args = NULL, int pdp_ctx_id = -1);
 
-#pragma endregion
-
-  /**
-   * @brief Get the current modem time and date.
-   *
-   * This function retrieves the current time and date from the modem.
-   *
-   * @param[out] rsp Pointer to the response structure to save the result in.
-   * @param[in] cb Callback function, if not NULL this function will not block.
-   * @param[in] args Arguments to pass to the callback.
-   *
-   * @return True on "OK" response, false otherwise.
-   */
-  static bool getClock(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                       void* args = NULL);
-
-  /**
-   * =============================================================================================
-   * MOTA (MODEM OVER THE AIR UPDATES)
-   * =============================================================================================
-   */
-
-#pragma region MOTA
+#pragma endregion // CLASS PUBLIC METHODS PDP_CONTEXT
+#pragma region CLASS PUBLIC METHODS MOTA
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
   /**
@@ -5824,14 +5726,7 @@ public:
 
 #endif
 #pragma endregion
-
-  /**
-   * =============================================================================================
-   * EVENT HANDLER MANAGEMENT
-   * =============================================================================================
-   */
-
-#pragma region EVENT_HANDLERS
+#pragma region CLASS PUBLIC METHODS EVENT_HANDLERS
 
   /**
    * @brief Set the network registration event handler.
@@ -5864,20 +5759,6 @@ public:
   static void setSystemEventHandler(walterModemSystemEventHandler handler = nullptr,
                                     void* args = nullptr);
 
-  /**
-   * @brief Set the AT event handler.
-   *
-   * This function sets the handler that is called when an AT response event occurs.
-   * When this function is called multiple times, only the last handler will be set. To remove
-   * the AT event handler, this function must be called with a nullptr as the handler.
-   *
-   * @param[in] handler The handler function.
-   * @param[in] args handler arguments.
-   *
-   * @return None.
-   */
-  static void setATEventHandler(walterModemATEventHandler handler = nullptr, void* args = nullptr);
-
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
   /**
@@ -5893,7 +5774,13 @@ public:
    *
    * @return None.
    */
-  static void gnssSetEventHandler(walterModemGNSSEventHandler handler, void* args = NULL);
+  static void setGNSSEventHandler(walterModemGNSSEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setGNSSEventHandler instead.
+   */
+  [[deprecated("Use setGNSSEventHandler instead")]]
+  static void gnssSetEventHandler(walterModemGNSSEventHandler handler = nullptr, void* args = NULL);
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
@@ -5901,12 +5788,23 @@ public:
   /**
    * @brief Set the MQTT event handler.
    *
-   * @deprecated This method is deprecated and will be removed in a future release.
-   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   * This function sets the callback handler that is called when the modem reports a MQTT-related
+   * unsolicited result code (URC). When this function is called multiple times, only the last
+   * handler will be set. To remove the MQTT event handler, this function must be called with a
+   * nullptr as the handler.
    *
+   * @param[in] handler The handler function.
+   * @param[in] args handler arguments.
+   *
+   * @return None.
    */
-  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
-  static void mqttSetEventHandler(walterModemMQTTEventHandler handler, void* args = NULL);
+  static void setMQTTEventHandler(walterModemMQTTEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setMQTTEventHandler instead.
+   */
+  [[deprecated("Use setMQTTEventHandler instead")]]
+  static void mqttSetEventHandler(walterModemMQTTEventHandler handler = nullptr, void* args = NULL);
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
@@ -5914,12 +5812,23 @@ public:
   /**
    * @brief Set the HTTP event handler.
    *
-   * @deprecated This method is deprecated and will be removed in a future release.
-   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   * This function sets the callback handler that is called when the modem reports a HTTP-related
+   * unsolicited result code (URC). When this function is called multiple times, only the last
+   * handler will be set. To remove the HTTP event handler, this function must be called with a
+   * nullptr as the handler.
    *
+   * @param[in] handler The handler function.
+   * @param[in] args handler arguments.
+   *
+   * @return None.
    */
-  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
-  static void httpSetEventHandler(walterModemHttpEventHandler handler, void* args = NULL);
+  static void setHTTPEventHandler(walterModemHttpEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setHTTPEventHandler instead.
+   */
+  [[deprecated("Use setHTTPEventHandler instead")]]
+  static void httpSetEventHandler(walterModemHttpEventHandler handler = nullptr, void* args = NULL);
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
@@ -5927,12 +5836,23 @@ public:
   /**
    * @brief Set the CoAP event handler.
    *
-   * @deprecated This method is deprecated and will be removed in a future release.
-   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   * This function sets the callback handler that is called when the modem reports a CoAP-related
+   * unsolicited result code (URC). When this function is called multiple times, only the last
+   * handler will be set. To remove the CoAP event handler, this function must be called with a
+   * nullptr as the handler.
    *
+   * @param[in] handler The handler function.
+   * @param[in] args handler arguments.
+   *
+   * @return None.
    */
-  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
-  static void coapSetEventHandler(walterModemCoAPEventHandler handler, void* args = NULL);
+  static void setCoAPEventHandler(walterModemCoAPEventHandler handler = nullptr, void* args = NULL);
+
+  /**
+   * @deprecated Use setCoAPEventHandler instead.
+   */
+  [[deprecated("Use setCoAPEventHandler instead")]]
+  static void coapSetEventHandler(walterModemCoAPEventHandler handler = nullptr, void* args = NULL);
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
@@ -5940,29 +5860,29 @@ public:
   /**
    * @brief Set the Socket event handler.
    *
-   * @deprecated This method is deprecated and will be removed in a future release.
-   * @note Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead
+   * This function sets the callback handler that is called when the modem reports a Socket-related
+   * unsolicited result code (URC). When this function is called multiple times, only the last
+   * handler will be set. To remove the Socket event handler, this function must be called with a
+   * nullptr as the handler.
    *
-   */
-  [[deprecated("urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args)")]]
-  static void socketSetEventHandler(walterModemSocketEventHandler handler, void* args);
-
-#endif
-
-  /**
-   * @brief Set the URC event handler.
-   *
-   * This function will set the URC event handler callback and its arguments.
-   *
-   * @param[in] cb The URC event handler callback.
-   * @param[in] args The URC event handler callback arguments.
+   * @param[in] handler The handler function.
+   * @param[in] args handler arguments.
    *
    * @return None.
    */
-  static void urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args = NULL);
+  static void setSocketEventHandler(walterModemSocketEventHandler handler = nullptr,
+                                    void* args = NULL);
 
+  /**
+   * @deprecated Use setSocketEventHandler instead.
+   */
+  [[deprecated("Use setSocketEventHandler instead")]]
+  static void socketSetEventHandler(walterModemSocketEventHandler handler = nullptr,
+                                    void* args = NULL);
+
+#endif
 #pragma endregion
-#pragma endregion
+#pragma endregion // CLASS PUBLIC METHODS
 
   /**
    * =============================================================================================
@@ -5971,14 +5891,17 @@ public:
    * =============================================================================================
    */
 
-#pragma region DEPRECATION
+#pragma region CLASS PUBLIC DEPRECATION
 
   typedef walter_modem_rsp_t WalterModemRsp
       __attribute__((deprecated("Use walter_modem_rsp_t instead")));
   typedef walter_modem_cb_t WalterModemCb
       __attribute__((deprecated("Use walter_modem_cb_t instead")));
 
-#pragma endregion
+#pragma endregion // CLASS PUBLIC DEPRECATION
+#pragma endregion // CLASS PUBLIC
 };
+
+#pragma endregion // CLASS
 
 #endif

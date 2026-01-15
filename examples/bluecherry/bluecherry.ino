@@ -1,13 +1,14 @@
 /**
  * @file bluecherry.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 28 Apr 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 12 Jan 2026
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -56,7 +57,7 @@
 #define CELLULAR_APN ""
 
 // Define BlueCherry cloud device ID
-#define BC_DEVICE_TYPE "dbmatic2"
+#define BC_DEVICE_TYPE "walter01"
 
 // Define modem TLS profile used for BlueCherry cloud platform
 #define BC_TLS_PROFILE 1
@@ -250,11 +251,15 @@ void syncBlueCherry()
   return;
 }
 
+/**
+ * @brief The main Arduino setup method.
+ */
 void setup()
 {
   Serial.begin(115200);
-  delay(100);
-  Serial.printf("\r\n\r\n=== WalterModem BlueCherry example ===\r\n\r\n");
+  delay(2000);
+
+  Serial.printf("\r\n\r\n=== WalterModem BlueCherry example (v1.5.0) ===\r\n\r\n");
 
   /* Start the modem */
   if(modem.begin(&Serial2)) {
@@ -345,31 +350,23 @@ void setup()
     }
     Serial.println("Successfully initialized BlueCherry cloud platform");
   }
-}
 
-void loop()
-{
-  // Check if the modem is connected to the cellular network, else try to
-  // reconnect
-  if(!lteConnected() && !lteConnect()) {
-    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
-                   "in 10 seconds");
-    delay(10000);
-    ESP.restart();
-  }
-
-  walter_modem_rsp_t rsp = {};
-
-  // Send a message containing the measured RSRP value to an MQTT topic
-  if(modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
-    char msg[18];
-    snprintf(msg, sizeof(msg), "{\"RSRP\": %7.2f}", rsp.data.cellInformation.rsrp);
-    modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
-  }
+  // Send a test message to BlueCherry
+  const char* msg = "Hello from Walter Modem via BlueCherry!";
+  modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
 
   // Poll BlueCherry platform if an incoming message or firmware update is available
   syncBlueCherry();
 
-  // Go sleep for 5 minutes
+  Serial.println("I'm tired, I'm going to deep sleep now for 300 seconds");
+  Serial.flush();
   modem.sleep(60 * 5);
+}
+
+/**
+ * @brief The main Arduino loop method.
+ */
+void loop()
+{
+  // Nothing to do here
 }

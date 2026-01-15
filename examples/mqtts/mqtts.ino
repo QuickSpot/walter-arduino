@@ -1,8 +1,8 @@
 /**
  * @file mqtts.ino
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 9 September 2025
- * @copyright DPTechnics bv
+ * @date 12 Jan 2026
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
@@ -105,6 +105,11 @@ WalterModem modem;
  * @brief Response object containing command response information.
  */
 walter_modem_rsp_t rsp;
+
+/**
+ * @brief Flag indicating whether to publish a message.
+ */
+bool mqtt_connected = false;
 
 /**
  * @brief The buffer to transmit to the MQTT server.
@@ -261,50 +266,143 @@ bool setupTLSProfile(void)
 }
 
 /**
- * @brief Common routine to publish a message to an MQTTS topic.
+ * @brief The network registration event handler.
+ *
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
  */
-static bool mqttsPublishMessage(const char* topic, const char* message)
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
 {
-  Serial.printf("Publishing to topic '%s': %s\r\n", topic, message);
-  if(modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
-    Serial.println("MQTTS publish succeeded");
-    return true;
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
+  default:
+    break;
   }
-  Serial.println("Error: MQTTS publish failed");
-  return false;
 }
 
 /**
- * @brief Modem URC event handler
+ * @brief The MQTT event handler.
  *
- * Handles unsolicited result codes (URC) from the modem.
+ * This function will be called on various MQTT events such as connection, disconnection,
+ * subscription, publication and incoming messages. You can modify this handler to implement your
+ * own logic based on the events received.
  *
- * @note This method should not block for too long. Consider moving heavy processing and blocking
- * functions to your main application thread.
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
  *
- * @param ev Pointer to the URC event data.
- * @param args User argument pointer passed to urcSetEventHandler
+ * @param[out] event The type of MQTT event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
  */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void myMQTTEventHandler(WMMQTTEventType event, WMMQTTEventData data, void* args)
 {
-  Serial.printf("URC received at %lld\n", ev->timestamp);
-  switch(ev->type) {
-  case WM_URC_TYPE_MQTT:
-    if(ev->mqtt.event == WALTER_MODEM_MQTT_EVENT_RING) {
-      Serial.printf("MQTTS Ring Received for topic: %s Length: %u QOS: %u Message ID: %u\n",
-                    ev->mqtt.topic, ev->mqtt.dataLen, ev->mqtt.qos, ev->mqtt.msgId);
-      if(modem.mqttReceiveMessage(ev->mqtt.topic, ev->mqtt.msgId, in_buf, ev->mqtt.dataLen)) {
-        for(int i = 0; i < ev->mqtt.dataLen; i++) {
-          Serial.printf("%c", in_buf[i]);
-        }
-        Serial.printf("\n");
+  switch(event) {
+  case WALTER_MODEM_MQTT_EVENT_CONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Connection could not be established. (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Connected successfully\r\n");
+
+      /* Subscribe to the test topic */
+      if(modem.mqttSubscribe(MQTTS_TOPIC)) {
+        Serial.printf("Subscribing to '%s'...\r\n", MQTTS_TOPIC);
+      } else {
+        Serial.println("Subscribing failed");
       }
     }
     break;
-  default:
-    /* Unhandled event */
+
+  case WALTER_MODEM_MQTT_EVENT_DISCONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Connection was interrupted (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Disconnected\r\n");
+    }
+    mqtt_connected = false;
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_SUBSCRIBED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Could not subscribe to topic. (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Successfully subscribed to topic '%s'\r\n", data.topic);
+      mqtt_connected = true;
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_PUBLISHED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Could not publish message (id: %d) to topic. (code: %d)\r\n", data.mid,
+                    data.rc);
+    } else {
+      Serial.printf("MQTT: Successfully published message (id: %d)\r\n", data.mid);
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_MESSAGE:
+    Serial.printf("MQTT: Message (id: %d) received on topic '%s' (size: %ld bytes)\r\n", data.mid,
+                  data.topic, data.msg_length);
+
+    /* Receive the MQTT message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.mqttReceive(data.topic, data.mid, in_buf, data.msg_length)) {
+      Serial.printf("Received message: %s\r\n", in_buf);
+    } else {
+      Serial.println("Could not receive MQTT message");
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_MEMORY_FULL:
+    Serial.println("MQTT: Memory full");
     break;
   }
+}
+
+/**
+ * @brief Common routine to publish a message to an MQTT topic.
+ */
+static bool mqttPublishMessage(const char* topic, const char* message)
+{
+  Serial.printf("Publishing to topic '%s': %s ...\r\n", topic, message);
+  if(!modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
+    Serial.println("Publishing failed");
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -313,9 +411,9 @@ static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem MQTTS example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem MQTTS example (v1.5.0) ===\r\n\r\n");
 
   uint8_t mac[6] = { 0 };
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
@@ -323,20 +421,18 @@ void setup()
           mac[4], mac[5]);
 
   /* Start the modem */
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
     return;
   }
 
-  modem.urcSetEventHandler(myURCHandler, NULL);
+  /* Set the network registration event handler (optional) */
+  modem.setRegistrationEventHandler(myNetworkEventHandler, NULL);
 
-  /* Connect the modem to the LTE network */
-  if(!lteConnect()) {
-    Serial.println("Error: Could not connect to LTE");
-    return;
-  }
+  /* Set the MQTT event handler */
+  modem.setMQTTEventHandler(myMQTTEventHandler, NULL);
 
   /* Set up the TLS profile */
   if(setupTLSProfile()) {
@@ -348,25 +444,10 @@ void setup()
 
   /* Configure the MQTTS client */
   if(modem.mqttConfig(MQTTS_CLIENT_ID, MQTTS_USERNAME, MQTTS_PASSWORD, MQTTS_TLS_PROFILE)) {
-    Serial.println("Successfully configured the MQTTS client");
+    Serial.println("Successfully configured the MQTT client");
   } else {
-    Serial.println("Error: Failed to configure MQTTS client");
+    Serial.println("Error: Failed to configure MQTT client");
     return;
-  }
-
-  /* Connect to a public MQTTS broker */
-  if(modem.mqttConnect(MQTTS_HOST, MQTTS_PORT)) {
-    Serial.println("Successfully connected to MQTTS broker");
-  } else {
-    Serial.println("Error: Failed to connect to MQTTS broker");
-    return;
-  }
-
-  /* Subscribe to the test topic */
-  if(modem.mqttSubscribe(MQTTS_TOPIC)) {
-    Serial.printf("Successfully subscribed to '%s'", MQTTS_TOPIC);
-  } else {
-    Serial.println("Error: MQTTS subscribe failed");
   }
 }
 
@@ -375,25 +456,37 @@ void setup()
  */
 void loop()
 {
-  static unsigned long lastPublish = 0;
-  const unsigned long publishInterval = 15000; // 15 seconds
-
   static int seq = 0;
   static char out_msg[64];
+  seq++;
 
-  /* Periodically publish a message */
-  if(millis() - lastPublish >= publishInterval) {
-    lastPublish = millis();
-    seq++;
-
-    sprintf(out_msg, "%s-%d", out_buf, seq);
-    if(!mqttsPublishMessage(MQTTS_TOPIC, out_msg)) {
-      Serial.println("MQTTS publish failed, restarting...");
+  if(!lteConnected()) {
+    if(!lteConnect()) {
+      Serial.println("Error: Failed to connect to network");
       delay(1000);
       ESP.restart();
     }
-    Serial.println();
+    mqtt_connected = false;
   }
 
-  delay(10);
+  /* Connect to a public MQTT broker */
+  if(!mqtt_connected) {
+    if(modem.mqttConnect(MQTTS_HOST, MQTTS_PORT)) {
+      Serial.println("Connecting to MQTT broker...");
+    } else {
+      Serial.println("Error: Failed to connect to MQTT broker");
+      return;
+    }
+    delay(5000);
+    return;
+  }
+
+  Serial.println();
+  sprintf(out_msg, "%s-%d", out_buf, seq);
+  if(!mqttPublishMessage(MQTTS_TOPIC, out_msg)) {
+    Serial.println("MQTT publish failed");
+    mqtt_connected = false;
+  }
+
+  delay(15000);
 }

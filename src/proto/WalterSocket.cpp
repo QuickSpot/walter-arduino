@@ -55,18 +55,20 @@ static uint8_t _curr_sock_id;
 #pragma region PRIVATE_METHODS
 WalterModemSocket* WalterModem::_socketReserve()
 {
-  WalterModemSocket* sock = NULL;
+  WalterModem::socketGetState();
 
-  for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
+  WalterModemSocket* sock = NULL;
+  for(int i = WALTER_MODEM_MAX_SOCKETS - 1; i >= 0; --i) {
     if(_socketSet[i].state == WALTER_MODEM_SOCKET_STATE_FREE) {
-      sock = _socketSet + i;
+      sock = &_socketSet[i];
       sock->state = WALTER_MODEM_SOCKET_STATE_RESERVED;
       sock->id = i + 1;
-      break;
+      return sock;
     }
   }
 
-  return sock;
+  ESP_LOGE("WalterModem", "No free sockets available");
+  return nullptr;
 }
 
 WalterModemSocket* WalterModem::_socketGet(int id)
@@ -249,8 +251,8 @@ bool WalterModem::socketAccept(int profile_id, bool connection_mode, walter_mode
   _returnAfterReply();
 }
 
-bool WalterModem::socketReceiveMessage(int profile_id, uint8_t* buf, size_t buf_size,
-                                       walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
+                                walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
   WalterModemSocket* sock = _socketGet(profile_id);
   if(sock == NULL) {
@@ -294,8 +296,20 @@ bool WalterModem::socketResume(int profile_id, walter_modem_rsp_t* rsp, walter_m
   _returnAfterReply();
 }
 
+void WalterModem::setSocketEventHandler(walterModemSocketEventHandler handler, void* args)
+{
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].socketHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_SOCKET].args = args;
+}
+
 #pragma endregion
 #pragma region DEPRECATION
+void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void* args)
+{
+  ESP_LOGW("DEPRECATION", "Use setSocketEventHandler(handler, args) instead");
+  setSocketEventHandler(handler, args);
+}
+
 bool WalterModem::socketConfig(walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args,
                                int pdp_ctx_id, uint16_t mtu, uint16_t exchangeTimeout,
                                uint16_t connTimeout, uint16_t sendDelayMs, int profileId)
@@ -486,16 +500,9 @@ bool WalterModem::socketReceive(uint16_t receiveCount, size_t targetBufSize, uin
     rsp->data.profileId = _curr_sock_id;
   }
 
-  ESP_LOGW("DEPRECATION",
-           "Use socketReceiveMessage(profile_id, buf, buf_size, rsp, cb, args) instead");
-  return socketReceiveMessage(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
+  ESP_LOGW("DEPRECATION", "Use socketReceive(profile_id, buf, buf_size, rsp, cb, args) instead");
+  return socketReceive(profileId, targetBuf, targetBufSize, rsp, NULL, NULL);
 }
 
-void WalterModem::socketSetEventHandler(walterModemSocketEventHandler handler, void* args = NULL)
-{
-  ESP_LOGE("DEPRECATION",
-           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
-  return;
-}
 #pragma endregion
 #endif
