@@ -1210,13 +1210,13 @@ typedef enum {
  * @brief The possible statuses of a BlueCherry communication cycle.
  */
 typedef enum {
+  WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED,
+  WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED,
   WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED,
   WALTER_MODEM_BLUECHERRY_STATUS_IDLE,
   WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE,
   WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY,
-  WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES,
   WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT,
-  WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED
 } WalterModemBlueCherryStatus;
 
 /**
@@ -1735,7 +1735,7 @@ typedef struct {
   /**
    * @brief Status indicator for last BlueCherry synchronization cycle.
    */
-  WalterModemBlueCherryStatus status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
+  WalterModemBlueCherryStatus status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED;
 
   /**
    * @brief Time when the last message was sent.

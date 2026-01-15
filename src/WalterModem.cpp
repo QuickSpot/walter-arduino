@@ -2471,7 +2471,6 @@ void WalterModem::_processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_
       result = WALTER_MODEM_STATE_NO_DATA;
     } else {
       cmd->rsp->data.clock.epochTime = strTotime(start + 1);
-      result = WALTER_MODEM_STATE_OK;
     }
 
     goto after_processing_logic;
@@ -3180,9 +3179,10 @@ after_processing_logic:
    * If the message doesn't contain an expected response, or if the received message is
    * unsolicited (URC or multi-part response), free the buffer and return.
    */
-  if(cmd == NULL || cmd->type == WALTER_MODEM_CMD_TYPE_TX ||
-     cmd->state == WALTER_MODEM_CMD_STATE_FREE || cmd->atRsp == NULL ||
-     cmd->atRspLen > buff->size || memcmp(cmd->atRsp, buff->data, cmd->atRspLen) != 0) {
+  if((cmd == NULL || cmd->type == WALTER_MODEM_CMD_TYPE_TX ||
+      cmd->state == WALTER_MODEM_CMD_STATE_FREE || cmd->atRsp == NULL ||
+      cmd->atRspLen > buff->size || memcmp(cmd->atRsp, buff->data, cmd->atRspLen) != 0) &&
+     result == WALTER_MODEM_STATE_OK) {
     buff->free = true;
     return;
   }
@@ -3770,6 +3770,7 @@ void WalterModem::_sleepWakeup()
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
   memcpy(_socketSet, _socketCtxSetRTC, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
+  WalterModem::socketGetState();
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY

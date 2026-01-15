@@ -351,12 +351,9 @@ void setup()
     Serial.println("Successfully initialized BlueCherry cloud platform");
   }
 
-  // Send a message containing the measured RSRP value to an MQTT topic
-  if(modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
-    char msg[18];
-    snprintf(msg, sizeof(msg), "{\"RSRP\": %7.2f}", rsp.data.cellInformation.rsrp);
-    modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
-  }
+  // Send a test message to BlueCherry
+  const char* msg = "Hello from Walter Modem via BlueCherry!";
+  modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
 
   // Poll BlueCherry platform if an incoming message or firmware update is available
   syncBlueCherry();
@@ -371,5 +368,5 @@ void setup()
  */
 void loop()
 {
-  // Nothing to do here, everything is handled in setup and wake-up from sleep
+  // Nothing to do here
 }

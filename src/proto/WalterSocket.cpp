@@ -55,18 +55,20 @@ static uint8_t _curr_sock_id;
 #pragma region PRIVATE_METHODS
 WalterModemSocket* WalterModem::_socketReserve()
 {
-  WalterModemSocket* sock = NULL;
+  WalterModem::socketGetState();
 
-  for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
+  WalterModemSocket* sock = NULL;
+  for(int i = WALTER_MODEM_MAX_SOCKETS - 1; i >= 0; --i) {
     if(_socketSet[i].state == WALTER_MODEM_SOCKET_STATE_FREE) {
-      sock = _socketSet + i;
+      sock = &_socketSet[i];
       sock->state = WALTER_MODEM_SOCKET_STATE_RESERVED;
       sock->id = i + 1;
-      break;
+      return sock;
     }
   }
 
-  return sock;
+  ESP_LOGE("WalterModem", "No free sockets available");
+  return nullptr;
 }
 
 WalterModemSocket* WalterModem::_socketGet(int id)

@@ -97,7 +97,7 @@ bool WalterModem::_blueCherrySocketConfigure()
 
   bool success = true;
 
-  success &= socketConfig(_blueCherry.bcProfileId);
+  success &= socketConfig(_blueCherry.bcProfileId, 1, 300, 0);
   success &= socketConfigExtended(_blueCherry.bcProfileId);
   success &= socketConfigSecure(_blueCherry.bcProfileId, true, _blueCherry.tls_profile_id);
 
@@ -106,9 +106,6 @@ bool WalterModem::_blueCherrySocketConfigure()
 
 bool WalterModem::_blueCherrySocketConnect()
 {
-
-  WalterModem::socketGetState();
-
   if(_blueCherry.bcProfileId == 0) {
     if(WalterModemSocket* sock = _socketReserve(); sock != NULL) {
       _blueCherry.bcProfileId = sock->id;
@@ -171,8 +168,7 @@ void WalterModem::_blueCherrySocketEventHandler(WMSocketEventType event, uint16_
     break;
 
   case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
-    _blueCherry.bcProfileId = 0;
-
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
   default:
     break;
   }
@@ -214,8 +210,10 @@ bool WalterModem::_blueCherryCoapSend()
     socketSend(_blueCherry.bcProfileId, _blueCherry.messageOut, _blueCherry.messageOutLen);
 
     while(true) {
-      if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
+      if(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY) {
         return true;
+      } else if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE) {
+        return false;
       }
 
       vTaskDelay(pdMS_TO_TICKS(10));
@@ -370,7 +368,7 @@ bool WalterModem::blueCherryInit(uint8_t tls_profile_id, uint8_t* ota_buffer,
 bool WalterModem::blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data)
 {
   if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
-     _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+     _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED) {
     return false;
   }
 
@@ -392,8 +390,6 @@ bool WalterModem::blueCherrySync(walter_modem_rsp_t* rsp)
   void* args = NULL;
 
   if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_IDLE &&
-     _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES &&
-     _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT &&
      _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED) {
     _returnState(WALTER_MODEM_STATE_BUSY)
   }
@@ -456,25 +452,24 @@ bool WalterModem::blueCherrySync(walter_modem_rsp_t* rsp)
   }
 
   if(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT) {
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
     rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT;
     _returnState(WALTER_MODEM_STATE_ERROR)
   }
 
   if(_blueCherry.status == WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED) {
+    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
     rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED;
     _returnState(WALTER_MODEM_STATE_ERROR)
   }
 
   if(_blueCherry.moreDataAvailable) {
-    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES;
-    rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_PENDING_MESSAGES;
     rsp->data.blueCherry.syncFinished = false;
   } else {
-    _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
-    rsp->data.blueCherry.state = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
     rsp->data.blueCherry.syncFinished = true;
   }
 
+  _blueCherry.status = WALTER_MODEM_BLUECHERRY_STATUS_IDLE;
   _returnState(WALTER_MODEM_STATE_OK);
 }
 
