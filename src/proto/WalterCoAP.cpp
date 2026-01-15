@@ -51,8 +51,8 @@
 #pragma endregion
 
 #pragma region PUBLIC_METHODS
-bool WalterModem::coapReceiveMessage(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
-                                     walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::coapReceive(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
+                              walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_COAP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -171,15 +171,15 @@ bool WalterModem::coapSendData(int profile_id, WalterModemCoapSendType type,
           "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
   _returnAfterReply();
 }
-#pragma endregion
-#pragma region DEPRICATION
-void WalterModem::coapSetEventHandler(walterModemCoAPEventHandler handler, void* args)
+
+void WalterModem::setCoAPEventHandler(walterModemCoAPEventHandler handler, void* args)
 {
-  ESP_LOGE("DEPRECATION",
-           "Use urcSetEventHandler(WalterModemURCEventHandlerCB cb, void* args) instead");
-  return;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].coapHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_COAP].args = args;
 }
 
+#pragma endregion
+#pragma region DEPRICATION
 bool WalterModem::coapGetContextStatus(int profileId)
 {
   if(profileId >= WALTER_MODEM_MAX_COAP_PROFILES) {
@@ -197,10 +197,19 @@ bool WalterModem::coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t ta
                               walter_modem_rsp_t* rsp)
 {
   ESP_LOGW("DEPRECATION",
-           "this coapDidRing method is deprecated and will be removed in future releases. Use "
-           "coapReceiveMessage(...) instead.");
+           "coapDidRing method is deprecated and will be removed in future releases. Use "
+           "coapReceive(...) instead.");
 
-  return coapReceiveMessage(profileId, -1, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
+  return coapReceive(profileId, -1, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
+}
+
+void WalterModem::coapSetEventHandler(walterModemCoAPEventHandler handler, void* args)
+{
+  ESP_LOGW("DEPRECATION",
+           "coapSetEventHandler method is deprecated and will be removed in future releases. "
+           "Use setCoAPEventHandler(...) instead.");
+
+  setCoAPEventHandler(handler, args);
 }
 #pragma endregion
 #endif

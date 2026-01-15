@@ -1,13 +1,13 @@
 /**
  * @file http.ino
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 11 September 2025
- * @copyright DPTechnics bv
+ * @date 12 Jan 2026
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -47,9 +47,9 @@
  * HTTP GET/POST request and show the result.
  */
 
-#include <esp_mac.h>
-#include <WalterModem.h>
 #include <HardwareSerial.h>
+#include <WalterModem.h>
+#include <esp_mac.h>
 
 #define HTTP_PORT 80
 #define HTTP_HOST "quickspot.io"
@@ -186,6 +186,105 @@ bool lteConnect()
 }
 
 /**
+ * @brief The network registration event handler.
+ *
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
+{
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief The HTTP event handler.
+ *
+ * This function will be called on various HTTP events such as connection, disconnection,
+ * ring, etc. You can modify this handler to implement your own logic based on the events received.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] event The type of HTTP event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myHTTPEventHandler(WMHTTPEventType event, WMHTTPEventData data, void* args)
+{
+  switch(event) {
+  case WALTER_MODEM_HTTP_EVENT_CONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("HTTP: Connection (profile %d) could not be established. (CURL: %d)\r\n",
+                    data.profile_id, data.rc);
+    } else {
+      Serial.printf("HTTP: Connected successfully (profile %d)\r\n", data.profile_id);
+    }
+    break;
+
+  case WALTER_MODEM_HTTP_EVENT_DISCONNECTED:
+    Serial.printf("HTTP: Disconnected successfully (profile %d)\r\n", data.profile_id);
+    break;
+
+  case WALTER_MODEM_HTTP_EVENT_CONNECTION_CLOSED:
+    Serial.printf("HTTP: Connection (profile %d) was interrupted (CURL: %d)\r\n", data.profile_id,
+                  data.rc);
+    break;
+
+  case WALTER_MODEM_HTTP_EVENT_RING:
+    Serial.printf(
+        "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %lu)\r\n",
+        data.profile_id, data.status, data.content_type, data.data_len);
+
+    /* Receive the HTTP message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.httpReceive(data.profile_id, in_buf, data.data_len)) {
+      Serial.printf("Received message for profile %d: %s\r\n", data.profile_id, in_buf);
+    } else {
+      Serial.printf("Could not receive HTTP message for profile %d\r\n", data.profile_id);
+    }
+    break;
+  }
+}
+
+/**
  * @brief Perform an HTTP GET request.
  */
 bool httpGet(const char* path)
@@ -210,8 +309,8 @@ bool httpPost(const char* path, const uint8_t* body, size_t bodyLen,
 {
   char ctBuf[32] = { 0 };
 
-  Serial.printf("Sending HTTP POST to %s%s (%u bytes, type %s)\r\n", HTTP_HOST, path,
-                (unsigned) bodyLen, mimeType);
+  Serial.printf("Sending HTTP POST to %s%s (content-type: %s | size: %d)\r\n", HTTP_HOST, path,
+                mimeType, (int) bodyLen);
   if(!modem.httpSend(MODEM_HTTP_PROFILE, path, (uint8_t*) body, (uint16_t) bodyLen,
                      WALTER_MODEM_HTTP_SEND_CMD_POST, WALTER_MODEM_HTTP_POST_PARAM_JSON, ctBuf,
                      sizeof(ctBuf))) {
@@ -223,48 +322,14 @@ bool httpPost(const char* path, const uint8_t* body, size_t bodyLen,
 }
 
 /**
- * @brief Modem URC event handler
- *
- * Handles unsolicited result codes (URC) from the modem.
- *
- * @note This method should not block for too long. Consider moving heavy processing and blocking
- * functions to your main application thread.
- *
- * @param ev Pointer to the URC event data.
- * @param args User argument pointer passed to urcSetEventHandler
- */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
-{
-  Serial.printf("URC received at %lld\n", ev->timestamp);
-  switch(ev->type) {
-  case WM_URC_TYPE_HTTP:
-    if(ev->http.event == WALTER_MODEM_HTTP_EVENT_RING) {
-      Serial.printf("HTTP Ring Received for profile %d: Status: %u Length: %u Content-Type: %s\n",
-                    ev->http.profileId, ev->http.status, ev->http.dataLen,
-                    ev->http.contentType ? ev->http.contentType : "(none)");
-      if(modem.httpReceiveMessage(ev->http.profileId, in_buf, ev->http.dataLen)) {
-        for(int i = 0; i < ev->http.dataLen; i++) {
-          Serial.printf("%c", in_buf[i]);
-        }
-        Serial.printf("\n");
-      }
-    }
-    break;
-  default:
-    /* Unhandled event */
-    break;
-  }
-}
-
-/**
  *@brief The main Arduino setup method
  */
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem HTTP example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem HTTP example (v1.5.0) ===\r\n\r\n");
 
   /* Start the modem */
   if(modem.begin(&Serial2)) {
@@ -274,20 +339,18 @@ void setup()
     return;
   }
 
-  /* Set the modem URC event handler */
-  modem.urcSetEventHandler(myURCHandler, NULL);
+  /* Set the network registration event handler (optional) */
+  modem.setRegistrationEventHandler(myNetworkEventHandler, NULL);
 
-  /* Connect the modem to the lte network */
-  if(!lteConnect()) {
-    Serial.println("Error: Could not Connect to LTE");
-    return;
-  }
+  /* Set the HTTP event handler */
+  modem.setHTTPEventHandler(myHTTPEventHandler, NULL);
 
   /* Configure the HTTP profile */
   if(modem.httpConfigProfile(MODEM_HTTP_PROFILE, HTTP_HOST, HTTP_PORT)) {
     Serial.println("Successfully configured the HTTP profile");
   } else {
     Serial.println("Error: Failed to configure HTTP profile");
+    return;
   }
 }
 
@@ -296,6 +359,12 @@ void setup()
  */
 void loop()
 {
+  if(!lteConnected() && !lteConnect()) {
+    Serial.println("Error: Failed to register to network");
+    delay(1000);
+    ESP.restart();
+  }
+
   // Example GET
   if(!httpGet(HTTP_GET_ENDPOINT)) {
     Serial.println("HTTP GET failed, restarting...");
@@ -303,8 +372,8 @@ void loop()
     ESP.restart();
   }
 
-  Serial.println();
   delay(5000);
+  Serial.println();
 
   // Example POST
   const char jsonBody[] = "{\"hello\":\"quickspot\"}";
@@ -315,6 +384,6 @@ void loop()
     ESP.restart();
   }
 
-  Serial.println();
   delay(15000);
+  Serial.println();
 }

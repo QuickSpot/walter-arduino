@@ -79,14 +79,12 @@
 static bool _coapRingReceived = false;
 static uint16_t _coapRingMsgId = 0;
 
-static void ztpURCHandler(const walter_modem_urc_event_t* ev, void* args)
+static void ztpCoAPEventHandler(WMCoAPEventType event, WMCoAPEventData data, void* args)
 {
-  switch(ev->type) {
-  case WM_URC_TYPE_COAP:
-    if(ev->coap.event == WALTER_MODEM_COAP_EVENT_RING) {
-      _coapRingMsgId = ev->coap.msgId;
-      _coapRingReceived = true;
-    }
+  switch(event) {
+  case WALTER_MODEM_COAP_EVENT_RING:
+    _coapRingMsgId = data.msg_id;
+    _coapRingReceived = true;
     break;
   default:
     /* Unhandled event */
@@ -310,7 +308,7 @@ bool BlueCherryZTP::requestDeviceId()
     }
   }
 
-  _modem->urcSetEventHandler(ztpURCHandler, NULL);
+  _modem->setCoAPEventHandler(ztpCoAPEventHandler, NULL);
 
   // Send first CoAP
   if(!_modem->coapCreateContext(COAP_PROFILE, ZTP_SERV_ADDR, ZTP_SERV_PORT, _tlsProfileId)) {
@@ -344,7 +342,7 @@ bool BlueCherryZTP::requestDeviceId()
   }
   printf("\n");
 
-  if(!_modem->coapReceiveMessage(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
+  if(!_modem->coapReceive(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
     printf("Failed to receive ZTP CoAP message\n");
     return false;
   }
@@ -435,7 +433,7 @@ bool BlueCherryZTP::requestSignedCertificate()
     return false;
   }
 
-  _modem->urcSetEventHandler(ztpURCHandler, NULL);
+  _modem->setCoAPEventHandler(ztpCoAPEventHandler, NULL);
 
   // Send second CoAP
   if(!_modem->coapSetOptions(COAP_PROFILE, WALTER_MODEM_COAP_OPT_SET,
@@ -464,7 +462,7 @@ bool BlueCherryZTP::requestSignedCertificate()
   }
   printf("\n");
 
-  if(!_modem->coapReceiveMessage(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
+  if(!_modem->coapReceive(COAP_PROFILE, _coapRingMsgId, coapData, sizeof(coapData), &rsp)) {
     printf("Failed to receive ZTP CoAP message\n");
     return false;
   }

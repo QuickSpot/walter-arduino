@@ -1,13 +1,14 @@
 /**
- * @file Positioning.ino
- * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 17 Sep 2025
- * @copyright DPTechnics bv
+ * @file positioning.ino
+ * @author Daan Pape <daan@dptechnics.com>
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 12 Jan 2026
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -101,12 +102,17 @@ WalterModem modem;
 /**
  * @brief Flag used to signal when a fix is received.
  */
-volatile bool gnssFixRcvd = false;
+volatile bool gnss_fix_received = false;
+
+/**
+ * @brief Flag used to signal when an assistance update event is received.
+ */
+bool assistance_update_received = false;
 
 /**
  * @brief The last received GNSS fix.
  */
-WalterModemGNSSFix latestGnssFix = {};
+WMGNSSFixEvent latestGnssFix = {};
 
 /**
  * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
@@ -229,6 +235,148 @@ bool lteConnect()
 }
 
 /**
+ * @brief The network registration event handler.
+ *
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
+{
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief The Socket event handler.
+ *
+ * This function will be called on various Socket events such as connection, disconnection,
+ * ring, etc. You can modify this handler to implement your own logic based on the events received.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] event The type of Socket event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void mySocketEventHandler(WMSocketEventType event, WMSocketEventData data, void* args)
+{
+  switch(event) {
+  case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
+    Serial.printf("SOCKET: Disconnected (id %d)\r\n", data.conn_id);
+    break;
+
+  case WALTER_MODEM_SOCKET_EVENT_RING:
+    Serial.printf("SOCKET: Message received on socket %d (size: %lu)\r\n", data.conn_id,
+                  data.data_len);
+
+    /* Receive the HTTP message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.socketReceive(data.conn_id, in_buf, data.data_len)) {
+      Serial.printf("Received message on socket %d: %s\r\n", data.conn_id, in_buf);
+    } else {
+      Serial.printf("Could not receive message for socket %d\r\n", data.conn_id);
+    }
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief GNSS event handler
+ *
+ * This function will be called on various GNSS events such as fix received or assistance update.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] type The type of GNSS event.
+ * @param[out] data The data associated with the GNSS event.
+ * @param[out] args User argument pointer passed to gnssSetEventHandler
+ *
+ * @return None.
+ */
+void myGNSSEventHandler(WMGNSSEventType type, WMGNSSEventData data, void* args)
+{
+  uint8_t goodSatCount = 0;
+
+  switch(type) {
+  case WALTER_MODEM_GNSS_EVENT_FIX:
+    memcpy(&latestGnssFix, &data.gnssfix, sizeof(WMGNSSFixEvent));
+
+    /* Count satellites with good signal strength */
+    for(int i = 0; i < latestGnssFix.satCount; ++i) {
+      if(latestGnssFix.sats[i].signalStrength >= 30) {
+        ++goodSatCount;
+      }
+    }
+    Serial.println();
+    Serial.printf("GNSS fix received:"
+                  "  Confidence: %.02f"
+                  "  Latitude: %.06f"
+                  "  Longitude: %.06f"
+                  "  Satcount: %d"
+                  "  Good sats: %d\r\n",
+                  latestGnssFix.estimatedConfidence, latestGnssFix.latitude,
+                  latestGnssFix.longitude, latestGnssFix.satCount, goodSatCount);
+
+    gnss_fix_received = true;
+    break;
+
+  case WALTER_MODEM_GNSS_EVENT_ASSISTANCE:
+    if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC) {
+      Serial.println("GNSS Assistance: Almanac updated");
+    } else if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS) {
+      Serial.println("GNSS Assistance: Real-time ephemeris updated");
+    } else if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS) {
+      Serial.println("GNSS Assistance: Predicted ephemeris updated");
+    }
+
+    assistance_update_received = true;
+    break;
+  }
+}
+
+/**
  * @brief Inspect GNSS assistance status and optionally set update flags.
  *
  * Prints the availability and recommended update timing for the
@@ -237,48 +385,51 @@ bool lteConnect()
  *   - true  : update is required (data missing or time-to-update <= 0)
  *   - false : no update required
  *
- * @param rsp Pointer to modem response object.
- * @param updateAlmanac   Optional pointer to bool receiving almanac update.
- * @param updateEphemeris Optional pointer to bool receiving ephemeris update.
+ * @param[in] rsp Pointer to modem response object.
+ * @param[out] updateAlmanac   Optional pointer to bool receiving almanac update.
+ * @param[out] updateEphemeris Optional pointer to bool receiving ephemeris update.
  *
- * @return true  If assistance status was successfully retrieved and parsed.
- * @return false If the assistance status could not be retrieved.
+ * @return True if assistance status was successfully retrieved and parsed. False on error.
  */
 bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullptr,
                            bool* updateEphemeris = nullptr)
 {
-  /* Check assistance data status */
+  /* Request assistance status */
   if(!modem.gnssGetAssistanceStatus(rsp) ||
      rsp->type != WALTER_MODEM_RSP_DATA_TYPE_GNSS_ASSISTANCE_DATA) {
     Serial.println("Could not request GNSS assistance status");
     return false;
   }
 
-  /* Default output flags to false if provided */
+  /* Default output flags */
   if(updateAlmanac)
     *updateAlmanac = false;
   if(updateEphemeris)
     *updateEphemeris = false;
 
-  /* Lambda to reduce repetition for each data type */
-  auto report = [](const char* name, const auto& data, bool* updateFlag) {
+  /* Helper lambda */
+  auto report = [](const char* name, const WMGNSSAssistance& data, bool* updateFlag) {
     Serial.printf("%s data is ", name);
+
     if(data.available) {
       Serial.printf("available and should be updated within %ds\r\n", data.timeToUpdate);
+
       if(updateFlag)
         *updateFlag = (data.timeToUpdate <= 0);
     } else {
       Serial.println("not available.");
+
       if(updateFlag)
         *updateFlag = true;
     }
   };
 
-  /* Check both data sets */
-  report("Almanac", rsp->data.gnssAssistance.almanac, updateAlmanac);
-  report("Real-time ephemeris", rsp->data.gnssAssistance.realtimeEphemeris, updateEphemeris);
+  const auto& almanac = rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC];
+  const auto& rtEph =
+      rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS];
 
-  Serial.println("GNSS assistance data is up to date");
+  report("Almanac", almanac, updateAlmanac);
+  report("Real-time ephemeris", rtEph, updateEphemeris);
   return true;
 }
 
@@ -288,10 +439,9 @@ bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullpt
  * If the clock is invalid, this function will attempt to connect to LTE
  * (if not already connected) and sync the clock up to 5 times.
  *
- * @param rsp Pointer to modem response object.
+ * @param[in] rsp Pointer to modem response object.
  *
- * @return true If the clock is valid or successfully synchronized.
- * @return false If synchronization fails or LTE connection fails.
+ * @return True if the clock is valid or successfully synchronized. False on error.
  */
 bool validateGNSSClock(walter_modem_rsp_t* rsp)
 {
@@ -334,10 +484,9 @@ bool validateGNSSClock(walter_modem_rsp_t* rsp)
  *
  * LTE is only connected when necessary.
  *
- * @param rsp Pointer to modem response object.
+ * @param[in] rsp Pointer to modem response object.
  *
- * @return true  Assistance data is valid (or successfully updated).
- * @return false Failure to sync time, connect LTE, or update assistance data.
+ * @return True if assistance data is valid (or successfully updated). False on error.
  */
 bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
 {
@@ -362,16 +511,28 @@ bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
   }
 
   /* Update almanac data if needed */
+  assistance_update_received = false;
   if(updateAlmanac && !modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC)) {
     Serial.println("Could not update almanac data");
     return false;
   }
 
+  /* Wait for assistance update event */
+  while(updateAlmanac && !assistance_update_received) {
+    delay(200);
+  }
+
   /* Update real-time ephemeris data if needed */
+  assistance_update_received = false;
   if(updateEphemeris &&
      !modem.gnssUpdateAssistance(WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS)) {
     Serial.println("Could not update real-time ephemeris data");
     return false;
+  }
+
+  /* Wait for assistance update event */
+  while(updateEphemeris && !assistance_update_received) {
+    delay(200);
   }
 
   /* Recheck assistance data to ensure its valid */
@@ -392,9 +553,8 @@ bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
  *   3. Waits for each fix attempt to complete or time out.
  *   4. Checks the final fix confidence against MAX_GNSS_CONFIDENCE.
  *
- * @return true  If a valid GNSS fix was obtained within the confidence threshold.
- * @return false If assistance update fails, a fix cannot be requested,
- *               a timeout occurs, or the final confidence is too low.
+ * @return True f a valid GNSS fix was obtained within the confidence threshold. False if assistance
+ * update fails, a fix cannot be requested, a timeout occurs, or the final confidence is too low.
  */
 bool attemptGNSSFix()
 {
@@ -418,7 +578,8 @@ bool attemptGNSSFix()
   }
 
   /* Optional: Reconfigure GNSS with last valid fix - This might speed up consecutive fixes */
-  if(latestGnssFix.estimatedConfidence <= MAX_GNSS_CONFIDENCE) {
+  if(latestGnssFix.estimatedConfidence <= MAX_GNSS_CONFIDENCE &&
+     latestGnssFix.estimatedConfidence > 0) {
     /* Reconfigure GNSS for potential quick fix */
     if(modem.gnssConfig(WALTER_MODEM_GNSS_SENS_MODE_HIGH, WALTER_MODEM_GNSS_ACQ_MODE_HOT_START)) {
       Serial.println("GNSS reconfigured for potential quick fix");
@@ -430,7 +591,7 @@ bool attemptGNSSFix()
   /* Attempt up to 5 GNSS fixes */
   const int maxAttempts = 5;
   for(int attempt = 0; attempt < maxAttempts; ++attempt) {
-    gnssFixRcvd = false;
+    gnss_fix_received = false;
 
     /* Request a GNSS fix */
     if(!modem.gnssPerformAction()) {
@@ -442,7 +603,7 @@ bool attemptGNSSFix()
 
     /* For this example, we block here until the GNSS event handler sets the flag */
     /* Feel free to build your application code asynchronously */
-    while(!gnssFixRcvd) {
+    while(!gnss_fix_received) {
       Serial.print(".");
       delay(500);
     }
@@ -461,86 +622,14 @@ bool attemptGNSSFix()
 }
 
 /**
- * @brief GNSS event handler
- *
- * Handles GNSS fix events.
- * @note This callback is invoked from the modem driver’s event context.
- *       It must never block or call modem methods directly.
- *       Use it only to set flags or copy data for later processing.
- *
- * @param fix The fix data.
- * @param args User argument pointer passed to gnssSetEventHandler
- *
- * @return None.
- */
-void gnssEventHandler(const WalterModemGNSSFix* fix, void* args)
-{
-  memcpy(&latestGnssFix, fix, sizeof(WalterModemGNSSFix));
-
-  /* Count satellites with good signal strength */
-  uint8_t goodSatCount = 0;
-  for(int i = 0; i < latestGnssFix.satCount; ++i) {
-    if(latestGnssFix.sats[i].signalStrength >= 30) {
-      ++goodSatCount;
-    }
-  }
-  Serial.println();
-  Serial.printf("GNSS fix received:"
-                "  Confidence: %.02f"
-                "  Latitude: %.06f"
-                "  Longitude: %.06f"
-                "  Satcount: %d"
-                "  Good sats: %d\r\n",
-                latestGnssFix.estimatedConfidence, latestGnssFix.latitude, latestGnssFix.longitude,
-                latestGnssFix.satCount, goodSatCount);
-
-  gnssFixRcvd = true;
-}
-
-/**
- * @brief Modem URC event handler
- *
- * Handles unsolicited result codes (URC) from the modem.
- *
- * @note This method should not block for too long. Consider moving heavy processing and blocking
- * functions to your main application thread.
- *
- * @param ev Pointer to the URC event data.
- * @param args User argument pointer passed to urcSetEventHandler
- */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
-{
-  Serial.printf("URC received at %lld\n", ev->timestamp);
-  switch(ev->type) {
-  case WM_URC_TYPE_SOCKET:
-    if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
-      Serial.printf("Socket Ring Received for profile %d: Length: %u\n", ev->socket.profileId,
-                    ev->socket.dataLen);
-      if(modem.socketReceiveMessage(ev->socket.profileId, in_buf, ev->socket.dataLen)) {
-        for(int i = 0; i < ev->socket.dataLen; i++) {
-          Serial.printf("%c", in_buf[i]);
-        }
-        Serial.printf("\n");
-      }
-    } else if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_DISCONNECTED) {
-      Serial.printf("Socket was closed for profile %d", ev->socket.profileId);
-    }
-    break;
-  default:
-    /* Unhandled event */
-    break;
-  }
-}
-
-/**
  * @brief The main Arduino setup method.
  */
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem Positioning example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem Positioning example (v1.5.0) ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
@@ -556,12 +645,14 @@ void setup()
     ESP.restart();
   }
 
-  /* Set the modem URC event handler */
-  modem.urcSetEventHandler(myURCHandler, NULL);
+  /* Set the network registration event handler (optional) */
+  modem.setRegistrationEventHandler(myNetworkEventHandler, NULL);
 
-  /* Set the GNSS fix event handler */
-  /* This method will be merged with the URC handler in a future release */
-  modem.gnssSetEventHandler(gnssEventHandler, NULL);
+  /* Set the Socket event handler */
+  modem.setSocketEventHandler(mySocketEventHandler, NULL);
+
+  /* Set the GNSS event handler */
+  modem.setGNSSEventHandler(myGNSSEventHandler, NULL);
 
   walter_modem_rsp_t rsp = {};
 

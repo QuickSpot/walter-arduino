@@ -1,13 +1,14 @@
 /**
  * @file udp.ino
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Apr 2025
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 12 Jan 2026
  * @copyright DPTechnics bv
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -200,6 +201,93 @@ bool lteConnect()
 }
 
 /**
+ * @brief The network registration event handler.
+ *
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
+{
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief The Socket event handler.
+ *
+ * This function will be called on various Socket events such as connection, disconnection,
+ * ring, etc. You can modify this handler to implement your own logic based on the events received.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] event The type of Socket event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void mySocketEventHandler(WMSocketEventType event, WMSocketEventData data, void* args)
+{
+  switch(event) {
+  case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
+    Serial.printf("SOCKET: Disconnected (id %d)\r\n", data.conn_id);
+    break;
+
+  case WALTER_MODEM_SOCKET_EVENT_RING:
+    Serial.printf("SOCKET: Message received on socket %d (size: %lu)\r\n", data.conn_id,
+                  data.data_len);
+
+    /* Receive the HTTP message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.socketReceive(data.conn_id, in_buf, data.data_len)) {
+      Serial.printf("Received message on socket %d: %s\r\n", data.conn_id, in_buf);
+    } else {
+      Serial.printf("Could not receive message for socket %d\r\n", data.conn_id);
+    }
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
  * @brief Send a basic info packet to walterdemo
  */
 bool udpSendBasicInfoPacket()
@@ -259,49 +347,14 @@ bool udpSendBasicInfoPacket()
 }
 
 /**
- * @brief Modem URC event handler
- *
- * Handles unsolicited result codes (URC) from the modem.
- *
- * @note This method should not block for too long. Consider moving heavy processing and blocking
- * functions to your main application thread.
- *
- * @param ev Pointer to the URC event data.
- * @param args User argument pointer passed to urcSetEventHandler
- */
-static void myURCHandler(const walter_modem_urc_event_t* ev, void* args)
-{
-  Serial.printf("URC received at %lld\n", ev->timestamp);
-  switch(ev->type) {
-  case WM_URC_TYPE_SOCKET:
-    if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_RING) {
-      Serial.printf("Socket Ring Received for profile %d: Length: %u\n", ev->socket.profileId,
-                    ev->socket.dataLen);
-      if(modem.socketReceiveMessage(ev->socket.profileId, in_buf, ev->socket.dataLen)) {
-        for(int i = 0; i < ev->socket.dataLen; i++) {
-          Serial.printf("%c", in_buf[i]);
-        }
-        Serial.printf("\n");
-      }
-    } else if(ev->socket.event == WALTER_MODEM_SOCKET_EVENT_DISCONNECTED) {
-      Serial.printf("Socket was closed for profile %d", ev->socket.profileId);
-    }
-    break;
-  default:
-    /* Unhandled event */
-    break;
-  }
-}
-
-/**
  * @brief The main Arduino setup method.
  */
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem UDP example ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem UDP example (v1.5.0) ===\r\n\r\n");
 
   /* Start the modem */
   if(modem.begin(&Serial2)) {
@@ -311,13 +364,11 @@ void setup()
     return;
   }
 
-  modem.urcSetEventHandler(myURCHandler, NULL);
+  /* Set the network registration event handler (optional) */
+  modem.setRegistrationEventHandler(myNetworkEventHandler, NULL);
 
-  /* Connect the modem to the LTE network */
-  if(!lteConnect()) {
-    Serial.println("Error: Could not connect to LTE");
-    return;
-  }
+  /* Set the Socket event handler */
+  modem.setSocketEventHandler(mySocketEventHandler, NULL);
 
   /* Retrieve and print the board MAC address */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
@@ -339,14 +390,6 @@ void setup()
     Serial.println("Error: Could not disable socket TLS");
     return;
   }
-
-  /* Connect (dial) to the UDP test server */
-  if(modem.socketDial(MODEM_SOCKET_PROFILE, WALTER_MODEM_SOCKET_PROTO_UDP, UDP_PORT, UDP_HOST)) {
-    Serial.printf("Successfully dialed UDP server %s:%d\r\n", UDP_HOST, UDP_PORT);
-  } else {
-    Serial.println("Error: Could not dial UDP server");
-    return;
-  }
 }
 
 /**
@@ -354,20 +397,30 @@ void setup()
  */
 void loop()
 {
-  static unsigned long lastSend = 0;
-  const unsigned long sendInterval = 30000;
-
-  if(millis() - lastSend >= sendInterval) {
-    lastSend = millis();
-
-    if(!udpSendBasicInfoPacket()) {
-      Serial.println("UDP send failed, restarting...");
+  if(!lteConnected()) {
+    if(!lteConnect()) {
+      Serial.println("Error: Failed to connect to network");
       delay(1000);
       ESP.restart();
     }
-    counter++;
-    Serial.println();
+
+    /* Connect (dial) the UDP test server */
+    if(modem.socketDial(MODEM_SOCKET_PROFILE, WALTER_MODEM_SOCKET_PROTO_UDP, UDP_PORT, UDP_HOST)) {
+      Serial.printf("Successfully connected Socket %u to UDP server %s:%d\r\n",
+                    MODEM_SOCKET_PROFILE, UDP_HOST, UDP_PORT);
+    } else {
+      Serial.println("Error: Could not dial UDP server");
+      return;
+    }
   }
 
-  delay(10);
+  if(!udpSendBasicInfoPacket()) {
+    Serial.println("UDP send failed, restarting...");
+    delay(1000);
+    ESP.restart();
+  }
+
+  counter++;
+  delay(15000);
+  Serial.println();
 }
