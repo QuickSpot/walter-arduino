@@ -2,13 +2,14 @@
  * @file BlueCherryZTP.cpp
  * @author Daan Pape <daan@dptechnics.com>
  * @author Thibo Verheyde <thibo@dptechnics.com>
- * @date 14 Jan 2025
- * @copyright DPTechnics bv
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief BlueCherry ZTP (Zero Touch Provisioning) library.
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -240,7 +241,7 @@ bool BlueCherryZTP::addDeviceIdParameter(BlueCherryZtpDeviceIdType type, unsigne
 bool BlueCherryZTP::requestDeviceId()
 {
   int ret;
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
   uint8_t cborBuf[256];
   uint8_t coapData[16];
   ZTP_CBOR cbor;
@@ -420,7 +421,7 @@ bool BlueCherryZTP::generateKeyAndCsr(bool rfEnabled)
 bool BlueCherryZTP::requestSignedCertificate()
 {
   int ret;
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
   uint8_t buf[BLUECHERRY_ZTP_CERT_BUF_SIZE];
   uint8_t coapData[BLUECHERRY_ZTP_CERT_BUF_SIZE];
   ZTP_CBOR cbor;

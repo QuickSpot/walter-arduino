@@ -2,8 +2,9 @@
  * @file udp.ino
  * @author Daan Pape <daan@dptechnics.com>
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 12 Jan 2026
- * @copyright DPTechnics bv
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
@@ -63,7 +64,7 @@
  *
  * @note At least one socket should be available/reserved for BlueCherry.
  */
-#define MODEM_SOCKET_PROFILE 1
+#define MODEM_SOCKET_ID 1
 
 /**
  * @brief The modem instance.
@@ -73,7 +74,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-walter_modem_rsp_t rsp = {};
+WalterModemRsp rsp = {};
 
 /**
  * @brief The buffer to transmit to the UDP server. The first 6 bytes will be
@@ -332,7 +333,7 @@ bool udpSendBasicInfoPacket()
 
   Serial.println("Sending packet...");
 
-  if(!modem.socketSend(MODEM_SOCKET_PROFILE, out_buf, packet_size)) {
+  if(!modem.socketSend(MODEM_SOCKET_ID, out_buf, packet_size)) {
     Serial.println("Error: UDP send packet failed");
     return false;
   }
@@ -376,7 +377,7 @@ void setup()
                 out_buf[3], out_buf[4], out_buf[5]);
 
   /* Configure a new socket */
-  if(modem.socketConfig(MODEM_SOCKET_PROFILE)) {
+  if(modem.socketConfig(MODEM_SOCKET_ID)) {
     Serial.println("Successfully configured a new socket");
   } else {
     Serial.println("Error: Could not configure a new socket");
@@ -384,7 +385,7 @@ void setup()
   }
 
   /* Disable TLS (the demo UDP server does not use it) */
-  if(modem.socketConfigSecure(MODEM_SOCKET_PROFILE, false)) {
+  if(modem.socketConfigSecure(MODEM_SOCKET_ID, false)) {
     Serial.println("Successfully set socket to insecure mode");
   } else {
     Serial.println("Error: Could not disable socket TLS");
@@ -405,9 +406,9 @@ void loop()
     }
 
     /* Connect (dial) the UDP test server */
-    if(modem.socketDial(MODEM_SOCKET_PROFILE, WALTER_MODEM_SOCKET_PROTO_UDP, UDP_PORT, UDP_HOST)) {
-      Serial.printf("Successfully connected Socket %u to UDP server %s:%d\r\n",
-                    MODEM_SOCKET_PROFILE, UDP_HOST, UDP_PORT);
+    if(modem.socketDial(MODEM_SOCKET_ID, WALTER_MODEM_SOCKET_PROTO_UDP, UDP_PORT, UDP_HOST)) {
+      Serial.printf("Successfully connected Socket %u to UDP server %s:%d\r\n", MODEM_SOCKET_ID,
+                    UDP_HOST, UDP_PORT);
     } else {
       Serial.println("Error: Could not dial UDP server");
       return;

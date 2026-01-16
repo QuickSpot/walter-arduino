@@ -1,35 +1,36 @@
 /**
  * @file passthrough.ino
  * @author Daan Pape <daan@dptechnics.com>
- * @date 21 Mar 2023
- * @copyright DPTechnics bv
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- * 
+ *
  *   1. Redistributions of source code must retain the above copyright notice,
  *      this list of conditions and the following disclaimer.
- * 
+ *
  *   2. Redistributions in binary form must reproduce the above copyright
  *      notice, this list of conditions and the following disclaimer in the
  *      documentation and/or other materials provided with the distribution.
- * 
+ *
  *   3. Neither the name of DPTechnics bv nor the names of its contributors may
  *      be used to endorse or promote products derived from this software
  *      without specific prior written permission.
- * 
+ *
  *   4. This software, with or without modification, must only be used with a
  *      Walter board from DPTechnics bv.
- * 
+ *
  *   5. Any software provided in binary form under this license must not be
  *      reverse engineered, decompiled, modified and/or disassembled.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY DPTECHNICS BV “AS IS” AND ANY EXPRESS OR IMPLIED
  * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY, NONINFRINGEMENT, AND FITNESS FOR A PARTICULAR PURPOSE ARE
@@ -42,8 +43,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  * @section DESCRIPTION
- * 
- * This file contains a sketch which enables to talk to the Sequans Monarch 2 
+ *
+ * This file contains a sketch which enables to talk to the Sequans Monarch 2
  * modem via the USB-C uart on Walter.
  */
 
@@ -79,9 +80,9 @@
 
 /**
  * @brief Reset the modem.
- * 
+ *
  * This function will perform a hardware reset of the modem.
- * 
+ *
  * @return None.
  */
 static void _modem_reset()
@@ -93,29 +94,26 @@ static void _modem_reset()
   gpio_hold_en((gpio_num_t) WALTER_MODEM_PIN_RESET);
 }
 
-void setup() {
+void setup()
+{
   Serial.begin(115200);
-  while(!Serial);
-  
+  while(!Serial)
+    ;
+
   pinMode(WALTER_MODEM_PIN_RX, INPUT);
   pinMode(WALTER_MODEM_PIN_TX, OUTPUT);
   pinMode(WALTER_MODEM_PIN_CTS, INPUT);
   pinMode(WALTER_MODEM_PIN_RTS, OUTPUT);
   pinMode(WALTER_MODEM_PIN_RESET, OUTPUT);
 
-  ModemSerial.begin(
-    115200,
-    SERIAL_8N1,
-    WALTER_MODEM_PIN_RX,
-    WALTER_MODEM_PIN_TX,
-    false,
-    WALTER_MODEM_PIN_RTS,
-    WALTER_MODEM_PIN_CTS);
+  ModemSerial.begin(115200, SERIAL_8N1, WALTER_MODEM_PIN_RX, WALTER_MODEM_PIN_TX, false,
+                    WALTER_MODEM_PIN_RTS, WALTER_MODEM_PIN_CTS);
 
   _modem_reset();
 }
 
-void loop() {
+void loop()
+{
   static bool rawMode = false;
 
   if(Serial.available()) {
@@ -126,7 +124,7 @@ void loop() {
       if(rawMode) {
         Serial.printf("OUT to modem: %02x  %c\r\n", x, x);
       }
-      
+
       ModemSerial.write(x);
     }
   }

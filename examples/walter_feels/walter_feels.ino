@@ -2,7 +2,8 @@
  * @file walter_feels.ino
  * @author Daan Pape <daan@dptechnics.com>
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 12 Jan 2026
+ * @date 16 January 2026
+ * @version 1.5.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
@@ -71,7 +72,7 @@
  *
  * @note At least one socket should be available/reserved for BlueCherry.
  */
-#define MODEM_SOCKET_PROFILE 1
+#define MODEM_SOCKET_ID 1
 
 /**
  * @brief The address of the server to upload the data to.
@@ -444,7 +445,7 @@ void myGNSSEventHandler(WMGNSSEventType type, WMGNSSEventData data, void* args)
  *
  * @return True if assistance status was successfully retrieved and parsed. False on error.
  */
-bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullptr,
+bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
                            bool* updateEphemeris = nullptr)
 {
   /* Request assistance status */
@@ -496,7 +497,7 @@ bool checkAssistanceStatus(walter_modem_rsp_t* rsp, bool* updateAlmanac = nullpt
  *
  * @return True if the clock is valid or successfully synchronized. False on error.
  */
-bool validateGNSSClock(walter_modem_rsp_t* rsp)
+bool validateGNSSClock(WalterModemRsp* rsp)
 {
   /* Validate the GNSS subsystem clock */
   modem.gnssGetUTCTime(rsp);
@@ -541,7 +542,7 @@ bool validateGNSSClock(walter_modem_rsp_t* rsp)
  *
  * @return True if assistance data is valid (or successfully updated). False on error.
  */
-bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
+bool updateGNSSAssistance(WalterModemRsp* rsp)
 {
   bool updateAlmanac = false;
   bool updateEphemeris = false;
@@ -611,7 +612,7 @@ bool updateGNSSAssistance(walter_modem_rsp_t* rsp)
  */
 bool attemptGNSSFix()
 {
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   if(!validateGNSSClock(&rsp)) {
     Serial.println("Error: Could not validate GNSS clock");
@@ -749,7 +750,7 @@ void setup()
   hdc1080.begin();
   lps22hb.begin();
 
-  walter_modem_rsp_t rsp = {};
+  WalterModemRsp rsp = {};
 
   /* Ensure we are using the preferred RAT */
   /* This is a reboot-persistent setting */
@@ -791,7 +792,7 @@ void setup()
   }
 
   /* Configure a new socket */
-  if(modem.socketConfig(MODEM_SOCKET_PROFILE)) {
+  if(modem.socketConfig(MODEM_SOCKET_ID)) {
     Serial.println("Successfully configured a new socket");
   } else {
     Serial.println("Error: Could not configure a new socket");
@@ -799,7 +800,7 @@ void setup()
   }
 
   /* Disable TLS (the demo UDP server does not use it) */
-  if(modem.socketConfigSecure(MODEM_SOCKET_PROFILE, false)) {
+  if(modem.socketConfigSecure(MODEM_SOCKET_ID, false)) {
     Serial.println("Successfully set socket to insecure mode");
   } else {
     Serial.println("Error: Could not disable socket TLS");
@@ -906,7 +907,7 @@ void setup()
   Serial.println("Transmitting Walter Feels data packet");
 
   /* Connect (dial) to the WalterDemo server */
-  if(modem.socketDial(MODEM_SOCKET_PROFILE, WALTER_MODEM_SOCKET_PROTO_UDP, SERV_PORT, SERV_ADDR)) {
+  if(modem.socketDial(MODEM_SOCKET_ID, WALTER_MODEM_SOCKET_PROTO_UDP, SERV_PORT, SERV_ADDR)) {
     Serial.printf("Successfully dialed UDP server %s:%d\r\n", SERV_ADDR, SERV_PORT);
   } else {
     Serial.println("Error: Could not dial UDP server");
@@ -914,7 +915,7 @@ void setup()
   }
 
   /* Transmit the packet */
-  if(!modem.socketSend(MODEM_SOCKET_PROFILE, out_buf, PACKET_SIZE)) {
+  if(!modem.socketSend(MODEM_SOCKET_ID, out_buf, PACKET_SIZE)) {
     Serial.println("Error: Could not transmit data");
     delay(1000);
     ESP.restart();
@@ -924,7 +925,7 @@ void setup()
   delay(2000);
 
   /* Close the socket */
-  if(!modem.socketClose(MODEM_SOCKET_PROFILE)) {
+  if(!modem.socketClose(MODEM_SOCKET_ID)) {
     Serial.println("Error: Could not close the socket");
     delay(1000);
     ESP.restart();

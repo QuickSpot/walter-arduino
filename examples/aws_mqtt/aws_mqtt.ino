@@ -1,13 +1,14 @@
 /**
  * @file aws_mqtt.ino
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 9 September 2025
- * @copyright DPTechnics bv
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -95,7 +96,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-walter_modem_rsp_t rsp;
+WalterModemRsp rsp;
 
 /**
  * @brief Buffer for incoming response
