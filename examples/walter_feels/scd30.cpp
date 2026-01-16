@@ -1,13 +1,15 @@
 /**
  * @file scd30.cpp
- * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 25 September 2025
- * @copyright DPTechnics bv
+ * @author Daan Pape <daan@dptechnics.com>
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -202,7 +204,7 @@ bool SCD30::setTemperatureOffset(float tempOffset)
   // Temp offset is only positive. See:
   // https://github.com/sparkfun/SparkFun_SCD30_Arduino_Library/issues/27#issuecomment-971986826
   //"The SCD30 offset temperature is obtained by subtracting the reference temperature from the
-  //SCD30 output temperature"
+  // SCD30 output temperature"
   // https://www.sensirion.com/fileadmin/user_upload/customers/sensirion/Dokumente/9.5_CO2/Sensirion_CO2_Sensors_SCD30_Low_Power_Mode.pdf
 
   if(tempOffset < 0.0)

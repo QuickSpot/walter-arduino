@@ -2,13 +2,14 @@
  * @file WalterModem.h
  * @author Daan Pape <daan@dptechnics.com>
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 5 Nov 2025
+ * @date 16 January 2026
+ * @version 1.5.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -73,9 +74,8 @@ for efficient configuration management."
 
 #ifndef DISABLE_USED_WARNING
 #define DISABLE_USED_WARNING __attribute__((unused))
-
 #endif
-#pragma region CONFIG_MACRO
+
 #ifdef CONFIG_WALTER_MODEM_KCONFIG
 
 #define CONFIG(name, type, default_value) static constexpr type name = CONFIG_##name;
@@ -86,45 +86,27 @@ for efficient configuration management."
 
 /* configuration defaults for arduino or when KCONFIG is disabled */
 #ifndef CONFIG_WALTER_MODEM_ENABLE_SOCKETS
-
 #define CONFIG_WALTER_MODEM_ENABLE_SOCKETS 1
-
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_MQTT
-
 #define CONFIG_WALTER_MODEM_ENABLE_MQTT 1
-
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_GNSS
-
 #define CONFIG_WALTER_MODEM_ENABLE_GNSS 1
-
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_HTTP
-
 #define CONFIG_WALTER_MODEM_ENABLE_HTTP 1
-
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_COAP
-
 #define CONFIG_WALTER_MODEM_ENABLE_COAP 1
-
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-
 #define CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY 1
-
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_MOTA
-
 #define CONFIG_WALTER_MODEM_ENABLE_MOTA 1
-
 #endif
-#ifndef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
-#define CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY 1
-
-#endif
 #endif
 
 #define CONFIG_INT(name, default_value) CONFIG(name, const int, default_value)
@@ -137,48 +119,27 @@ for efficient configuration management."
 #define CONFIG_INT32(name, default_value) CONFIG(name, const int32_t, default_value)
 #define CONFIG_INT64(name, default_value) CONFIG(name, const int64_t, default_value)
 
-/**
- * @brief The maximum number of items in the task queue.
- */
-CONFIG_UINT8(WALTER_MODEM_TASK_QUEUE_MAX_ITEMS, 32)
+#pragma region KCONFIG
 
 /**
- * @brief The size in bytes of the task queue.
+ * @brief The maximum number of items in the CMD queue.
  */
-#define WALTER_MODEM_TASK_QUEUE_SIZE                                                               \
-  WALTER_MODEM_TASK_QUEUE_MAX_ITEMS * sizeof(walter_modem_cmd_queue_t)
+CONFIG_UINT8(WALTER_MODEM_CMD_QUEUE_MAX_ITEMS, 8)
 
 /**
  * @brief The size of the stack of the command and response processing task.
  */
-CONFIG_INT(WALTER_MODEM_TASK_STACK_SIZE, 4096)
+CONFIG_INT(WALTER_MODEM_CMD_TASK_STACK_SIZE, 4096)
 
 /**
  * @brief The size of the stack of the event processing task.
- * This needs to be larger than WALTER_MODEM_TASK_STACK_SIZE because user event
- * handlers may use Serial.printf() which requires significant stack space.
  */
 CONFIG_INT(WALTER_MODEM_EVENT_TASK_STACK_SIZE, 8192)
 
 /**
- * @brief The maximum number of pending commands.
- */
-CONFIG_UINT8(WALTER_MODEM_MAX_PENDING_COMMANDS, 32)
-
-/**
  * @brief The default number of attempts to execute a command.
  */
-CONFIG_UINT8(WALTER_MODEM_DEFAULT_CMD_ATTEMTS, 3)
-
-/**
- * @brief The maximum number of elements allowed to build an AT command.
- */
-CONFIG_UINT8(WALTER_MODEM_COMMAND_MAX_ELEMS, 63)
-
-/**
- * @brief The size of an AT response buffer.
- */
-CONFIG_UINT32(WALTER_MODEM_RSP_BUF_SIZE, 1536)
+CONFIG_UINT8(WALTER_MODEM_DEFAULT_CMD_ATTEMPTS, 3)
 
 /**
  * @brief The number of buffers in the buffer pool.
@@ -191,19 +152,9 @@ CONFIG_UINT8(WALTER_MODEM_BUFFER_POOL_SIZE, 8)
 CONFIG_UINT8(WALTER_MODEM_APN_MAX_SIZE, 99)
 
 /**
- * @brief The size of an APN buffer.
- */
-#define WALTER_MODEM_APN_BUF_SIZE (WALTER_MODEM_APN_MAX_SIZE + 1)
-
-/**
  * @brief The maximum number of characters in the string representation of the PDP address.
  */
 CONFIG_UINT8(WALTER_MODEM_PDP_ADDR_MAX_SIZE, 63)
-
-/**
- * @brief The size of a PDP address buffer.
- */
-#define WALTER_MODEM_PDP_ADDR_BUF_SIZE (WALTER_MODEM_PDP_ADDR_MAX_SIZE + 1)
 
 /**
  * @brief The maximum number of characters of a PDP context username.
@@ -211,19 +162,9 @@ CONFIG_UINT8(WALTER_MODEM_PDP_ADDR_MAX_SIZE, 63)
 CONFIG_UINT8(WALTER_MODEM_PDP_AUTH_USER_MAX_SIZE, 63)
 
 /**
- * @brief The size of a PDP context username buffer.
- */
-#define WALTER_MODEM_PDP_AUTH_USER_BUF_SIZE (WALTER_MODEM_PDP_AUTH_USER_MAX_SIZE + 1)
-
-/**
  * @brief The maximum number of characters of a PDP context password.
  */
 CONFIG_UINT8(WALTER_MODEM_PDP_AUTH_PASS_MAX_SIZE, 63)
-
-/**
- * @brief The size of a PDP context password buffer.
- */
-#define WALTER_MODEM_PDP_AUTH_PASS_BUF_SIZE (WALTER_MODEM_PDP_AUTH_PASS_MAX_SIZE + 1)
 
 /**
  * @brief The maximum number of PDP contexts that the library can support.
@@ -277,9 +218,72 @@ CONFIG(WALTER_MODEM_BLUECHERRY_PORT, uint16_t, 5684)
 /**
  * @brief The maximum number of URCS the URC queue will retain.
  */
-CONFIG_UINT8(WALTER_MODEM_MAX_QUEUED_EVENTS, 8)
+CONFIG_UINT8(WALTER_MODEM_EVENT_QUEUE_MAX_ITEMS, 8)
 
-#define WALTER_MODEM_EVENT_QUEUE_SIZE WALTER_MODEM_MAX_QUEUED_EVENTS * sizeof(WalterModemEvent)
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
+
+/**
+ * @brief The maximum number of tracked GNSS satellites.
+ */
+CONFIG_UINT8(WALTER_MODEM_GNSS_MAX_SATS, 32)
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
+/**
+ * @brief The recommended minimum for the mqtt keep alive time
+ */
+CONFIG_UINT8(WALTER_MODEM_MQTT_MIN_PREF_KEEP_ALIVE, 20)
+
+/**
+ * @brief The maximum allowed mqtt topics to subscribe to.
+ */
+CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
+
+#endif
+#pragma endregion // KCONFIG
+#pragma region CONFIG
+
+/**
+ * @brief The size in bytes of the task queue.
+ */
+#define WALTER_MODEM_CMD_QUEUE_SIZE                                                                \
+  WALTER_MODEM_CMD_QUEUE_MAX_ITEMS * sizeof(walter_modem_cmd_queue_t)
+
+/**
+ * @brief The maximum number of elements allowed to build an AT command.
+ */
+#define WALTER_MODEM_COMMAND_MAX_ELEMS 63
+
+/**
+ * @brief The maximum size of an AT response buffer.
+ */
+#define WALTER_MODEM_RSP_BUF_SIZE 1536
+
+/**
+ * @brief The size of an APN buffer.
+ */
+#define WALTER_MODEM_APN_BUF_SIZE (WALTER_MODEM_APN_MAX_SIZE + 1)
+
+/**
+ * @brief The size of a PDP address buffer.
+ */
+#define WALTER_MODEM_PDP_ADDR_BUF_SIZE (WALTER_MODEM_PDP_ADDR_MAX_SIZE + 1)
+
+/**
+ * @brief The size of a PDP context username buffer.
+ */
+#define WALTER_MODEM_PDP_AUTH_USER_BUF_SIZE (WALTER_MODEM_PDP_AUTH_USER_MAX_SIZE + 1)
+
+/**
+ * @brief The size of a PDP context password buffer.
+ */
+#define WALTER_MODEM_PDP_AUTH_PASS_BUF_SIZE (WALTER_MODEM_PDP_AUTH_PASS_MAX_SIZE + 1)
+
+/**
+ * @brief The size of the event queue.
+ */
+#define WALTER_MODEM_EVENT_QUEUE_SIZE WALTER_MODEM_EVENT_QUEUE_MAX_ITEMS * sizeof(WalterModemEvent)
 
 /**
  * @brief The maximum number of characters of an operator name.
@@ -306,36 +310,17 @@ CONFIG_UINT8(WALTER_MODEM_MAX_QUEUED_EVENTS, 8)
  */
 #define WALTER_MODEM_HOSTNAME_BUF_SIZE (WALTER_MODEM_HOSTNAME_MAX_SIZE + 1)
 
-#if CONFIG_WALTER_MODEM_ENABLE_GNSS
-
-/**
- * @brief The maximum number of tracked GNSS satellites.
- */
-CONFIG_UINT8(WALTER_MODEM_GNSS_MAX_SATS, 32)
-
-#endif
-
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 
 /**
  * @brief The maximum number of characters in an MQTT topic.
  */
-CONFIG_UINT8(WALTER_MODEM_MQTT_TOPIC_MAX_SIZE, 127)
+#define WALTER_MODEM_MQTT_TOPIC_MAX_SIZE 127
 
 /**
  * @brief The size of an MQTT topic buffer
  */
 #define WALTER_MODEM_MQTT_TOPIC_BUF_SIZE (WALTER_MODEM_MQTT_TOPIC_MAX_SIZE + 1)
-
-/**
- * @brief The recommended minimum for the mqtt keep alive time
- */
-CONFIG_UINT8(WALTER_MODEM_MQTT_MIN_PREF_KEEP_ALIVE, 20)
-
-/**
- * @brief The maximum allowed mqtt topics to subscribe to.
- */
-CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
@@ -353,21 +338,21 @@ constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024;
 #endif
 
 /**
- * @brief Encrypted block size within flash.
- */
-CONFIG_UINT8(ENCRYPTED_BLOCK_SIZE, 16)
-
-/**
- * @brief SPI flash sectors per erase block, usually large erase block is 32k/64k.
- */
-CONFIG_UINT8(SPI_SECTORS_PER_BLOCK, 16)
-
-/**
  * @brief SPI flash erase block size
  */
 #define SPI_FLASH_BLOCK_SIZE (SPI_SECTORS_PER_BLOCK * SPI_FLASH_SEC_SIZE)
 
-#pragma endregion
+/**
+ * @brief Encrypted block size within flash.
+ */
+#define ENCRYPTED_BLOCK_SIZE 16
+
+/**
+ * @brief SPI flash sectors per erase block, usually large erase block is 32k/64k.
+ */
+#define SPI_SECTORS_PER_BLOCK 16
+
+#pragma endregion // CONFIG
 
 /**
  * @brief Get the character '0' or '1' at offset n in a byte.
@@ -1374,6 +1359,15 @@ typedef enum {
 #pragma endregion
 #pragma endregion
 #pragma region STRUCTS
+
+/**
+ * @brief A simple buffer structure for various purposes.
+ */
+typedef struct {
+  uint8_t* data;
+  size_t size;
+} Buffer;
+
 #pragma region STRUCTS OPERATOR
 /**
  * @brief This structure represents an operator.
@@ -1682,7 +1676,7 @@ typedef struct {
   /**
    * @brief The UDP socket ID of the bluecherry CoAP socket.
    */
-  int bcProfileId = 0;
+  int bcSocketId = 0;
 
   /**
    * @brief The TLS profile used by the BlueCherry connection.
@@ -2741,14 +2735,14 @@ typedef struct {
    * @brief The parsed response data based on the type of response.
    */
   union WalterModemRspData data;
-} walter_modem_rsp_t;
+} WalterModemRsp;
 
 #pragma endregion
 
 /**
  * @brief The callback header used when this library is used asynchronously.
  */
-typedef void (*walter_modem_cb_t)(const walter_modem_rsp_t* rsp, void* args);
+typedef void (*walterModemCb)(const WalterModemRsp* rsp, void* args);
 
 /**
  * @brief This structure groups a mutex and condition variable used to implement
@@ -2785,7 +2779,7 @@ typedef struct {
    * not in use and can be used to store the next response in.
    */
   volatile bool free = true;
-} walter_modem_buffer_t;
+} WalterModemBuffer;
 
 /**
  * @brief This structure represents an AT command to be added to the command queue.
@@ -2831,7 +2825,7 @@ typedef struct sWalterModemCmd {
   /**
    * @brief The maximum number of attempts to execute the command.
    */
-  uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMTS;
+  uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMPTS;
 
   /**
    * @brief The current attempt number.
@@ -2851,7 +2845,7 @@ typedef struct sWalterModemCmd {
   /**
    * @brief The user callback function or NULL when using blocking API.
    */
-  walter_modem_cb_t userCb = NULL;
+  walterModemCb userCb = NULL;
 
   /**
    * @brief Arguments for the user callback function.
@@ -2862,18 +2856,18 @@ typedef struct sWalterModemCmd {
    * @brief Optional temporary buffer (from the pool) used for non-static
    * string parameters
    */
-  walter_modem_buffer_t* stringsBuffer = NULL;
+  WalterModemBuffer* stringsBuffer = NULL;
 
   /**
    * @brief Memory used to save response data in. When the user doesn't pass a response object (in
    * case the blocking API is used). The rsp pointer will point to this memory.
    */
-  walter_modem_rsp_t rspMem;
+  WalterModemRsp rspMem;
 
   /**
    * @brief Pointer to the response object to store the command results in.
    */
-  walter_modem_rsp_t* rsp;
+  WalterModemRsp* rsp;
 
   /**
    * @brief Pointer to a function which is called before the command user callback is called. This
@@ -2885,7 +2879,7 @@ typedef struct sWalterModemCmd {
    * @brief Pointer to an argument used by the completeHandler.
    */
   void* completeHandlerArg = NULL;
-} walter_modem_cmd_t;
+} WalterModemCmd;
 
 /**
  * @brief This structure groups commands which makes it easy to implement simple finite state
@@ -2900,7 +2894,7 @@ typedef struct {
   /**
    * @brief The user callback function or NULL when using blocking API.
    */
-  walter_modem_cb_t userCb = NULL;
+  walterModemCb userCb = NULL;
 
   /**
    * @brief Arguments for the user callback function.
@@ -2911,12 +2905,12 @@ typedef struct {
    * @brief Memory used to save response data in. When the user doesn't pass a response object (in
    * case the blocking API is used). The rsp pointer will point to this memory.
    */
-  walter_modem_rsp_t rspMem;
+  WalterModemRsp rspMem;
 
   /**
    * @brief Pointer to the response object to store the command results in.
    */
-  walter_modem_rsp_t* rsp;
+  WalterModemRsp* rsp;
 } WalterModemCmdFsm;
 
 /**
@@ -2931,7 +2925,7 @@ typedef struct {
   /**
    * @brief The buffer currently used by the parser.
    */
-  walter_modem_buffer_t* buf = NULL;
+  WalterModemBuffer* buf = NULL;
 
   /**
    * @brief In raw data chunk parser state, we remember nr expected bytes
@@ -2946,12 +2940,12 @@ typedef struct {
   /**
    * @brief Pointer to an AT response or NULL when this is an AT command.
    */
-  walter_modem_buffer_t* rsp = NULL;
+  WalterModemBuffer* rsp = NULL;
 
   /**
    * @brief The AT command pointer in case rsp is NULL.
    */
-  walter_modem_cmd_t* cmd = NULL;
+  WalterModemCmd* cmd = NULL;
 } walter_modem_cmd_queue_t;
 
 /**
@@ -2973,7 +2967,7 @@ typedef struct {
   /**
    * @brief The statically allocated queue memory.
    */
-  uint8_t mem[WALTER_MODEM_TASK_QUEUE_SIZE] = { 0 };
+  uint8_t mem[WALTER_MODEM_CMD_QUEUE_SIZE] = { 0 };
 } walter_modem_cmd_processing_task_t;
 
 typedef struct {
@@ -2990,7 +2984,7 @@ typedef struct {
   /**
    * @brief The statically allocated queue memory.
    */
-  uint8_t mem[WALTER_MODEM_MAX_QUEUED_EVENTS * sizeof(WalterModemEvent)] = { 0 };
+  uint8_t mem[WALTER_MODEM_EVENT_QUEUE_MAX_ITEMS * sizeof(WalterModemEvent)] = { 0 };
 } walter_modem_event_processing_task_t;
 
 /**
@@ -3001,7 +2995,7 @@ typedef struct {
   /**
    * @brief The FiFo command queue.
    */
-  walter_modem_cmd_t* queue[WALTER_MODEM_MAX_PENDING_COMMANDS] = { NULL };
+  WalterModemCmd* queue[WALTER_MODEM_CMD_QUEUE_MAX_ITEMS] = { NULL };
 
   /**
    * @brief Index of the outgoing queue item.
@@ -3110,7 +3104,7 @@ private:
   /**
    * @brief The modem UART receive task stack memory.
    */
-  static inline StackType_t _rxTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
+  static inline StackType_t _rxTaskStack[WALTER_MODEM_CMD_TASK_STACK_SIZE];
 
   /**
    * @brief The modem UART receive task memory.
@@ -3122,7 +3116,7 @@ private:
   /**
    * @brief The pool of buffers used by the parser, command strings and responses
    */
-  static inline walter_modem_buffer_t _bufferPool[WALTER_MODEM_BUFFER_POOL_SIZE] = {};
+  static inline WalterModemBuffer _bufferPool[WALTER_MODEM_BUFFER_POOL_SIZE] = {};
 
   /**
    * @brief The queue used by the processing task.
@@ -3142,7 +3136,7 @@ private:
   /**
    * @brief The current command being processed.
    */
-  static inline walter_modem_cmd_t* _curCmd = NULL;
+  static inline WalterModemCmd* _curCmd = NULL;
 
   /**
    * @brief The set with PDP contexts.
@@ -3181,7 +3175,7 @@ private:
   /**
    * @brief The statically allocated queue processing task stack memory.
    */
-  static inline StackType_t _queueTaskStack[WALTER_MODEM_TASK_STACK_SIZE];
+  static inline StackType_t _queueTaskStack[WALTER_MODEM_CMD_TASK_STACK_SIZE];
 
   /**
    * @brief The data of the AT parser.
@@ -3191,7 +3185,7 @@ private:
   /**
    * @brief The memory pool to save pending commands in.
    */
-  static inline walter_modem_cmd_t _cmdPool[WALTER_MODEM_MAX_PENDING_COMMANDS] = {};
+  static inline WalterModemCmd _cmdPool[WALTER_MODEM_CMD_QUEUE_MAX_ITEMS] = {};
 
   /**
    * @brief The current operational state of the modem.
@@ -3448,7 +3442,7 @@ private:
    *
    * @return Pointer to the command or NULL when no more free spaces are available.
    */
-  static walter_modem_cmd_t* _cmdPoolGet();
+  static WalterModemCmd* _cmdPoolGet();
 
   /**
    * @brief Pop the last item off the command queue.
@@ -3458,7 +3452,7 @@ private:
    *
    * @return Pointer to the command or NULL when the queue is empty.
    */
-  static walter_modem_cmd_t* _cmdQueuePop();
+  static WalterModemCmd* _cmdQueuePop();
 
   /**
    * @brief Put a new item onto the queue.
@@ -3469,7 +3463,7 @@ private:
    *
    * @return True on success, false when the queue is full.
    */
-  static bool _cmdQueuePut(walter_modem_cmd_t* cmd);
+  static bool _cmdQueuePut(WalterModemCmd* cmd);
 
 #pragma endregion
 #pragma region CLASS PRIVATE METHODS PDP_CONTEXT
@@ -3559,7 +3553,7 @@ private:
    *
    * @return None.
    */
-  static walter_modem_buffer_t* _getFreeBuffer(void);
+  static WalterModemBuffer* _getFreeBuffer(void);
 
   /**
    * @brief Handle an AT data byte.
@@ -3724,13 +3718,13 @@ private:
    * @return Pointer to the command on success, NULL when no memory for the command was
    * available.
    */
-  static walter_modem_cmd_t* _queueModemCMD(
+  static WalterModemCmd* _queueModemCMD(
       const char* atCmd[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = { NULL }, const char* atRsp = NULL,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t userCb = NULL, void* userCbArgs = NULL,
+      WalterModemRsp* rsp = NULL, walterModemCb userCb = NULL, void* userCbArgs = NULL,
       void (*completeHandler)(struct sWalterModemCmd* cmd, WalterModemState result) = NULL,
       void* completeHandlerArg = NULL, WalterModemCmdType type = WALTER_MODEM_CMD_TYPE_TX_WAIT,
-      uint8_t* data = NULL, uint16_t dataSize = 0, walter_modem_buffer_t* stringsBuffer = NULL,
-      uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMTS);
+      uint8_t* data = NULL, uint16_t dataSize = 0, WalterModemBuffer* stringsBuffer = NULL,
+      uint8_t maxAttempts = WALTER_MODEM_DEFAULT_CMD_ATTEMPTS);
 
   /**
    * @brief Finish a queue command.
@@ -3744,8 +3738,7 @@ private:
    *
    * @return None.
    */
-  static void _finishModemCMD(walter_modem_cmd_t* cmd,
-                              WalterModemState result = WALTER_MODEM_STATE_OK);
+  static void _finishModemCMD(WalterModemCmd* cmd, WalterModemState result = WALTER_MODEM_STATE_OK);
 
   /**
    * @brief Process an AT command from the queue.
@@ -3761,7 +3754,7 @@ private:
    * @return The number of ticks after which this function wants to be called again with the
    * command to process.
    */
-  static TickType_t _processModemCMD(walter_modem_cmd_t* cmd, bool queueError = false);
+  static TickType_t _processModemCMD(WalterModemCmd* cmd, bool queueError = false);
 
   /**
    * @brief Process an AT response from the queue.
@@ -3776,7 +3769,7 @@ private:
    *
    * @return None.
    */
-  static void _processModemRSP(walter_modem_cmd_t* cmd, walter_modem_buffer_t* rsp);
+  static void _processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* rsp);
 
 #pragma endregion
 #pragma region CLASS PRIVATE METHODS PROTO BLUECHERRY
@@ -4091,9 +4084,8 @@ public:
    *
    * @return True when the expected response is received, false otherwise.
    */
-  static bool sendCmd(const char* at_cmd, const char* at_cmd_rsp = "OK",
-                      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                      void* args = NULL);
+  static bool sendCmd(const char* at_cmd, const char* at_cmd_rsp = "OK", WalterModemRsp* rsp = NULL,
+                      walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Software reset the modem and wait for it to reset, this is required when switching
@@ -4105,8 +4097,7 @@ public:
    *
    * @return True on "+SYSSTART" response, false otherwise.
    */
-  static bool softReset(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                        void* args = NULL);
+  static bool softReset(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Physically reset the modem and wait for it to start. All connections will be lost
@@ -4119,7 +4110,7 @@ public:
    *
    * @return True on a successfull reset, false otherwise.
    */
-  static bool reset(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool reset(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Check communication between the ESP32 and the modem.
@@ -4132,8 +4123,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool checkComm(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                        void* args = NULL);
+  static bool checkComm(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Put Walter to deep or light sleep.
@@ -4171,7 +4161,7 @@ public:
    */
   static bool configCMEErrorReports(
       WalterModemCMEErrorReportsType type = WALTER_MODEM_CME_ERROR_REPORTS_NUMERIC,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Configure the CEREG status reports.
@@ -4189,8 +4179,7 @@ public:
    */
   static bool
   configCEREGReports(WalterModemCEREGReportsType type = WALTER_MODEM_CEREG_REPORTS_ENABLED,
-                     walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                     void* args = NULL);
+                     WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the current signal quality.
@@ -4204,8 +4193,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getRSSI(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                      void* args = NULL);
+  static bool getRSSI(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get extended RSRQ and RSRP signal quality.
@@ -4218,7 +4206,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getSignalQuality(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool getSignalQuality(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                void* args = NULL);
 
   /**
@@ -4237,8 +4225,7 @@ public:
    */
   static bool
   getCellInformation(WalterModemSQNMONIReportsType type = WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL,
-                     walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                     void* args = NULL);
+                     WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the identity of the modem (IMEI, IMEISV, SVN).
@@ -4251,8 +4238,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getIdentity(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+  static bool getIdentity(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Configure a TLS profile.
@@ -4280,8 +4266,8 @@ public:
   static bool tlsConfigProfile(
       int profile_id, WalterModemTlsValidation tls_valid = WALTER_MODEM_TLS_VALIDATION_NONE,
       WalterModemTlsVersion tls_version = WALTER_MODEM_TLS_VERSION_12, uint8_t ca_cert_id = 0xff,
-      uint8_t client_ca_id = 0xff, uint8_t client_priv_key_id = 0xff,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+      uint8_t client_ca_id = 0xff, uint8_t client_priv_key_id = 0xff, WalterModemRsp* rsp = NULL,
+      walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the current modem time and date.
@@ -4294,8 +4280,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getClock(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                       void* args = NULL);
+  static bool getClock(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
 #pragma region CLASS PUBLIC METHODS PROTO
 
@@ -4330,8 +4315,7 @@ public:
    */
   static bool mqttConfig(const char* client_id = "walter-mqtt-client", const char* username = NULL,
                          const char* password = NULL, uint8_t tls_profile_id = 0,
-                         walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                         void* args = NULL);
+                         WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Disconnect an MQTT connection.
@@ -4344,7 +4328,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool mqttDisconnect(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool mqttDisconnect(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                              void* args = NULL);
 
   /**
@@ -4362,8 +4346,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool mqttConnect(const char* hostname, uint16_t port, uint16_t keep_alive = 60,
-                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+                          WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Publish something through MQTT.
@@ -4382,8 +4365,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool mqttPublish(const char* topic, uint8_t* buf, uint16_t buf_size, uint8_t qos = 1,
-                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+                          WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Subscribe to a MQTT topic.
@@ -4399,8 +4381,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool mqttSubscribe(const char* topic, uint8_t qos = 1, walter_modem_rsp_t* rsp = NULL,
-                            walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool mqttSubscribe(const char* topic, uint8_t qos = 1, WalterModemRsp* rsp = NULL,
+                            walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Receive data from an incoming MQTT connection.
@@ -4410,7 +4392,7 @@ public:
   [[deprecated("Use mqttReceive(topic, message_id, buf, buf_size, rsp, cb, "
                "args) instead")]]
   static bool mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t targetBufSize,
-                          walter_modem_rsp_t* rsp = NULL);
+                          WalterModemRsp* rsp = NULL);
 
   /**
    * @brief Receives MQTT data from the modem buffer.
@@ -4428,8 +4410,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool mqttReceive(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
-                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+                          WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4470,8 +4451,8 @@ public:
                                 uint8_t tls_profile_id = 0, bool use_basic_auth = false,
                                 const char* auth_user = "", const char* auth_pass = "",
                                 uint16_t max_timeout = 120, uint16_t cnx_timeout = 60,
-                                uint8_t inactivity_timeout = 15, walter_modem_rsp_t* rsp = NULL,
-                                walter_modem_cb_t cb = NULL, void* args = NULL);
+                                uint8_t inactivity_timeout = 15, WalterModemRsp* rsp = NULL,
+                                walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Establish a HTTP connection.
@@ -4489,8 +4470,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool httpConnect(int profile_id, walter_modem_rsp_t* rsp = NULL,
-                          walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool httpConnect(int profile_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                          void* args = NULL);
 
   /**
    * @brief Close a HTTP connection
@@ -4505,7 +4486,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool httpClose(int profile_id, walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool httpClose(int profile_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                         void* args = NULL);
 
   /**
@@ -4537,8 +4518,8 @@ public:
   static bool httpQuery(int profile_id, const char* uri,
                         WalterModemHttpQueryCmd http_query_cmd = WALTER_MODEM_HTTP_QUERY_CMD_GET,
                         char* content_type_buf = NULL, uint16_t content_type_buf_size = 0,
-                        const char* extra_header_line = NULL, walter_modem_rsp_t* rsp = NULL,
-                        walter_modem_cb_t cb = NULL, void* args = NULL);
+                        const char* extra_header_line = NULL, WalterModemRsp* rsp = NULL,
+                        walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Perform a HTTP POST or PUT request.
@@ -4566,7 +4547,7 @@ public:
            WalterModemHttpSendCmd http_send_cmd = WALTER_MODEM_HTTP_SEND_CMD_POST,
            WalterModemHttpPostParam http_post_param = WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED,
            char* content_type_buf = NULL, uint16_t content_type_buf_size = 0,
-           walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+           WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Receive data from an incoming HTTP connection.
@@ -4576,7 +4557,7 @@ public:
   [[deprecated("Use httpReceive(profileId, targetBuf, targetBufSize, rsp, "
                "cb, args) instead")]]
   static bool httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
-                          walter_modem_rsp_t* rsp = NULL);
+                          WalterModemRsp* rsp = NULL);
 
   /**
    * @brief Receive HTTP data from the modem buffer.
@@ -4592,9 +4573,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool httpReceive(int profile_id, uint8_t* buf, size_t buf_size,
-                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+  static bool httpReceive(int profile_id, uint8_t* buf, size_t buf_size, WalterModemRsp* rsp = NULL,
+                          walterModemCb cb = NULL, void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4625,8 +4605,8 @@ public:
    * @return True on success, false otherwise.
    */
   static bool blueCherryProvision(const char* cert_pem, const char* priv_key_pem,
-                                  const char* ca_cert, walter_modem_rsp_t* rsp = NULL,
-                                  walter_modem_cb_t cb = NULL, void* args = NULL);
+                                  const char* ca_cert, WalterModemRsp* rsp = NULL,
+                                  walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Check if Walter is provisioned for BlueCherry IoT connectivity.
@@ -4654,7 +4634,7 @@ public:
    * @return True on success, false on error.
    */
   static bool blueCherryInit(uint8_t tls_profile_id, uint8_t* ota_buffer = NULL,
-                             walter_modem_rsp_t* rsp = NULL, uint16_t ack_timeout_s = 60);
+                             WalterModemRsp* rsp = NULL, uint16_t ack_timeout_s = 60);
 
   /**
    * @brief Enqueue a MQTT publish message.
@@ -4685,7 +4665,7 @@ public:
    *
    * @return True on success, false on error.
    */
-  static bool blueCherrySync(walter_modem_rsp_t* rsp);
+  static bool blueCherrySync(WalterModemRsp* rsp);
 
   /**
    * @brief Close the BlueCherry platform CoAP connection.
@@ -4700,7 +4680,7 @@ public:
    *
    * @return True if succeeded, false on error.
    */
-  static bool blueCherryClose(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool blueCherryClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                               void* args = NULL);
 
   /**
@@ -4749,7 +4729,7 @@ public:
    */
   static bool coapCreateContext(int profile_id, const char* hostname, int port,
                                 int tls_profile_id = 0, int local_port = -1,
-                                walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                                WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                 void* args = NULL);
 
   /**
@@ -4766,7 +4746,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool coapClose(int profile_id, walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool coapClose(int profile_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                         void* args = NULL);
 
   /**
@@ -4797,8 +4777,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool coapSetHeader(int profile_id, int message_id = 1, const char* token = "NO_TOKEN",
-                            walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                            void* args = NULL);
+                            WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Set the options for the next CoAP message.
@@ -4816,7 +4795,7 @@ public:
    */
   static bool coapSetOptions(int profile_id, WalterModemCoapOptAction action,
                              WalterModemCoapOptCode code, const char* const values = NULL,
-                             walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                             WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                              void* args = NULL);
 
   /**
@@ -4837,8 +4816,7 @@ public:
    */
   static bool coapSendData(int profile_id, WalterModemCoapSendType type,
                            WalterModemCoapSendMethodRsp method_rsp, int buf_size, uint8_t* buf,
-                           walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                           void* args = NULL);
+                           WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Receive data from an incoming CoAP connection.
@@ -4848,7 +4826,7 @@ public:
   [[deprecated("Use coapReceive(profile_id, message_id, buf, buf_size, rsp, cb, args) "
                "instead")]]
   static bool coapDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
-                          walter_modem_rsp_t* rsp = NULL);
+                          WalterModemRsp* rsp = NULL);
 
   /**
    * @brief Receives CoAP data from the modem buffer.
@@ -4864,8 +4842,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool coapReceive(int profile_id, int message_id, uint8_t* buf, size_t buf_size,
-                          walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+                          WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
 #endif
 #pragma endregion
@@ -4884,12 +4861,12 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketConfig(profile_id, pdp_ctx_id, mtu, exchange_timeout, conn_timeout, "
+  [[deprecated("Use socketConfig(socket_id, pdp_ctx_id, mtu, exchange_timeout, conn_timeout, "
                "send_delay_ms, rsp, cb, args) instead")]]
-  static bool socketConfig(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                           void* args = NULL, int pdp_ctx_id = 1, uint16_t mtu = 300,
-                           uint16_t exchangeTimeout = 90, uint16_t connTimeout = 60,
-                           uint16_t sendDelayMs = 5000, int profileId = -1);
+  static bool socketConfig(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                           int pdp_ctx_id = 1, uint16_t mtu = 300, uint16_t exchangeTimeout = 90,
+                           uint16_t connTimeout = 60, uint16_t sendDelayMs = 5000,
+                           int socket_id = -1);
 
   /**
    * @brief Configure a new socket in a certain PDP context.
@@ -4897,7 +4874,7 @@ public:
    * This function will configure a new socket. After socket configuration one can set additional
    * socket settings and use the socket for communication.
    *
-   * @param[in] profile_id The id of the socket. (1-6)
+   * @param[in] socket_id The id of the socket. (1-6)
    * @param[in] pdp_ctx_id The PDP context id.
    * @param[in] mtu The maximum transmission unit used by the socket.
    * @param[in] exchange_timeout The maximum number of seconds this socket can be
@@ -4911,21 +4888,20 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketConfig(int profile_id, int pdp_ctx_id = 1, uint16_t mtu = 300,
-                           uint16_t exchange_timeout = 90, uint16_t conn_timeout = 60,
-                           uint16_t send_delay_ms = 5000, walter_modem_rsp_t* rsp = NULL,
-                           walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool socketConfig(int socket_id, int pdp_ctx_id = 1, uint16_t mtu = 300,
+                           uint16_t exchange_timeout = 0, uint16_t conn_timeout = 60,
+                           uint16_t send_delay_ms = 5000, WalterModemRsp* rsp = NULL,
+                           walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Configure the socket extended parameters.
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketConfigExtended(profile_id, ring_mode, recv_mode, keep_alive, "
+  [[deprecated("Use socketConfigExtended(socket_id, ring_mode, recv_mode, keep_alive, "
                "listen_mode, send_mode, rsp, cb, args) instead")]]
   static bool socketConfigExtended(
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL,
-      int profileId = -1,
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL, int socket_id = -1,
       WalterModemSocketRingMode ringMode = WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT,
       WalterModemSocketRecvMode recvMode = WALTER_MODEM_SOCKET_RECV_MODE_TEXT, int keepAlive = 0,
       WalterModemSocketListenMode listenMode = WALTER_MODEM_SOCKET_LISTEN_MODE_DISABLED,
@@ -4936,7 +4912,7 @@ public:
    *
    * This function configures the socket extended parameters.
    *
-   * @param[in] profile_id The id of the socket. (1-6)
+   * @param[in] socket_id The id of the socket. (1-6)
    * @param[in] ring_mode The format of the ring notification.
    * @param[in] recv_mode The data recv mode of the socket
    * @param[in] keep_alive The keepAlive time (currently unused)
@@ -4949,12 +4925,12 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool socketConfigExtended(
-      int profile_id,
+      int socket_id,
       WalterModemSocketRingMode ring_mode = WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT,
       WalterModemSocketRecvMode recv_mode = WALTER_MODEM_SOCKET_RECV_MODE_TEXT, int keep_alive = 0,
       WalterModemSocketListenMode listen_mode = WALTER_MODEM_SOCKET_LISTEN_MODE_DISABLED,
       WalterModemsocketSendMode send_mode = WALTER_MODEM_SOCKET_SEND_MODE_TEXT,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Enable or disable (D)TLS on a socket.
@@ -4962,9 +4938,9 @@ public:
    * @deprecated This method is deprecated and will be removed in a future release.
    */
   [[deprecated(
-      "Use socketConfigSecure(profile_id, enable_tls, tls_profile_id, rsp, cb, args) instead")]]
+      "Use socketConfigSecure(socket_id, enable_tls, tls_profile_id, rsp, cb, args) instead")]]
   static bool socketConfigSecure(bool enableTLS, int tls_profile_id = 1, int profileId = -1,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                                 WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                  void* args = NULL);
 
   /**
@@ -4973,7 +4949,7 @@ public:
    * This function will enable or disable (D)TLS on a socket. This can only be done when
    * the socket is not connected.
    *
-   * @param[in] profile_id The id of the socket profile. (1-6)
+   * @param[in] socket_id The id of the socket profile. (1-6)
    * @param[in] enable_tls True to enable TLS, false to disable it.
    * @param[in] tls_profile_id If not 0, TLS is used with the given profile (1-6).
    * @param[out] rsp Pointer to the response structure to save the result in.
@@ -4982,8 +4958,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketConfigSecure(int profile_id, bool enable_tls, int tls_profile_id = 1,
-                                 walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool socketConfigSecure(int socket_id, bool enable_tls, int tls_profile_id = 1,
+                                 WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                  void* args = NULL);
 
   /**
@@ -4991,11 +4967,11 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketDial(profile_id, protocol, remote_port, remote_host, local_port, "
+  [[deprecated("Use socketDial(socket_id, protocol, remote_port, remote_host, local_port, "
                "accept_any_remote, rsp, cb, args) instead")]]
   static bool socketDial(
       const char* remoteHost, uint16_t remotePort, uint16_t localPort = 0,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL,
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
       WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_UDP,
       WalterModemSocketAcceptAnyRemote acceptAnyRemote = WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
       int profileId = -1);
@@ -5006,7 +4982,7 @@ public:
    * This function will dial a socket to a remote host. When the dial is successful data can
    * be exchanged.
    *
-   * @param[in] profile_id The id of the socket. (1-6)
+   * @param[in] socket_id The id of the socket. (1-6)
    * @param[in] protocol The protocol to use.
    * @param[in] remote_port The remote port to dial on.
    * @param[in] remote_host The remote IPv4/IPv6 or hostname to dial to.
@@ -5020,19 +4996,19 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool socketDial(
-      int profile_id, WalterModemSocketProto protocol, uint16_t remote_port,
-      const char* remote_host, uint16_t local_port = 0,
+      int socket_id, WalterModemSocketProto protocol, uint16_t remote_port, const char* remote_host,
+      uint16_t local_port = 0,
       WalterModemSocketAcceptAnyRemote accept_any_remote = WALTER_MODEM_ACCEPT_ANY_REMOTE_DISABLED,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Close a socket.
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketClose(profile_id, rsp, cb, args) instead")]]
-  static bool socketClose(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL, int profileId = -1);
+  [[deprecated("Use socketClose(socket_id, rsp, cb, args) instead")]]
+  static bool socketClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                          int socket_id = -1);
 
   /**
    * @brief Close a socket.
@@ -5040,42 +5016,42 @@ public:
    * This function closes a socket. Sockets can only be closed when they are suspended, active
    * socket connections cannot be closed.
    *
-   * @param[in] profile_id The id of the socket to close. (1-6)
+   * @param[in] socket_id The id of the socket to close. (1-6)
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
    * @param[in] args Arguments to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketClose(int profile_id, walter_modem_rsp_t* rsp = NULL,
-                          walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool socketClose(int socket_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                          void* args = NULL);
 
   /**
    * @brief Send data over a socket.
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketSend(profile_id, buf, buf_size, rai, rsp, cb, args) instead")]]
-  static bool socketSend(uint8_t* data, uint32_t dataSize, walter_modem_rsp_t* rsp = NULL,
-                         walter_modem_cb_t cb = NULL, void* args = NULL,
-                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, int profileId = -1);
+  [[deprecated("Use socketSend(socket_id, buf, buf_size, rai, rsp, cb, args) instead")]]
+  static bool socketSend(uint8_t* data, uint32_t dataSize, WalterModemRsp* rsp = NULL,
+                         walterModemCb cb = NULL, void* args = NULL,
+                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, int socket_id = -1);
 
   /**
    * @brief Send a string over a socket.
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketSend(profile_id, buf, buf_size, rai, rsp, cb, args) instead")]]
-  static bool socketSend(char* str, walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  [[deprecated("Use socketSend(socket_id, buf, buf_size, rai, rsp, cb, args) instead")]]
+  static bool socketSend(char* str, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                          void* args = NULL, WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO,
-                         int profileId = -1);
+                         int socket_id = -1);
 
   /**
    * @brief Send data over a socket.
    *
    * This function will send data over a socket.
    *
-   * @param[in] profile_id The id of the socket. (1-6)
+   * @param[in] socket_id The id of the socket. (1-6)
    * @param[in] buf The data to send.
    * @param[in] buf_size The number of bytes to transmit. (1-1500)
    * @param[in] rai The release assistance information.
@@ -5085,20 +5061,19 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketSend(int profile_id, uint8_t* buf, uint16_t buf_size,
-                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO,
-                         walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                         void* args = NULL);
+  static bool socketSend(int socket_id, uint8_t* buf, uint16_t buf_size,
+                         WalterModemRAI rai = WALTER_MODEM_RAI_NO_INFO, WalterModemRsp* rsp = NULL,
+                         walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief This function listens for incoming socket connections.
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketListen(profile_id, protocol, listen_state, listen_port, "
+  [[deprecated("Use socketListen(socket_id, protocol, listen_state, listen_port, "
                "rsp, cb, args) instead")]]
   static bool
-  socketListen(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL,
+  socketListen(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
                int profileId = -1, WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_TCP,
                WalterModemSocketListenState listenState = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
                int socketListenPort = 0);
@@ -5106,7 +5081,7 @@ public:
   /**
    * @brief This function listens for incoming socket connections.
    *
-   * @param[in] profile_id The id of the socket to listen to. (1-6)
+   * @param[in] socket_id The id of the socket to listen to. (1-6)
    * @param[in] protocol The protocol of the listening socket.
    * @param[in] listen_state The state to listen on.
    * @param[in] listen_port The port to listen on.
@@ -5117,9 +5092,9 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool
-  socketListen(int profile_id, WalterModemSocketProto protocol,
+  socketListen(int socket_id, WalterModemSocketProto protocol,
                WalterModemSocketListenState listen_state = WALTER_MODEM_SOCKET_LISTEN_STATE_IPV4,
-               int listen_port = 0, walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+               int listen_port = 0, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                void* args = NULL);
 
   /**
@@ -5127,16 +5102,16 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketAccept(profile_id, connection_mode, rsp, cb, args) instead")]]
-  static bool socketAccept(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                           void* args = NULL, int profileId = -1, bool commandMode = false);
+  [[deprecated("Use socketAccept(socket_id, connection_mode, rsp, cb, args) instead")]]
+  static bool socketAccept(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                           int profileId = -1, bool commandMode = false);
 
   /**
    * @brief Accepts an incoming socket connetion.
    *
    * This function will accept an incoming connection after a connection event has been received.
    *
-   * @param[in] profile_id The id of the socket to accept. (1-6)
+   * @param[in] socket_id The id of the socket to accept. (1-6)
    * @param[in] connection_mode The connection mode.
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
@@ -5147,9 +5122,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketAccept(int profile_id, bool connection_mode = false,
-                           walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                           void* args = NULL);
+  static bool socketAccept(int socket_id, bool connection_mode = false, WalterModemRsp* rsp = NULL,
+                           walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @deprecated This method is deprecated and will be removed in a future release.
@@ -5162,14 +5136,14 @@ public:
    *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
-  [[deprecated("Use socketReceive(profile_id, buf, buf_size, rsp, cb, args) instead")]]
+  [[deprecated("Use socketReceive(socket_id, buf, buf_size, rsp, cb, args) instead")]]
   static bool socketReceive(uint16_t receiveCount, size_t targetBufSize, uint8_t* targetBuf,
-                            int profileId = -1, walter_modem_rsp_t* rsp = NULL);
+                            int profileId = -1, WalterModemRsp* rsp = NULL);
 
   /**
    * @brief Receives socket data from the modem buffer.
    *
-   * @param[in] profile_id The id of the socket to receive from. (1-6)
+   * @param[in] socket_id The id of the socket to receive from. (1-6)
    * @param[out] buf User buffer to store the received data. No termination.
    * @param[in] buf_size Size of the buffer (maximum bytes to receive). (1-1500)
    * @param[out] rsp Pointer to the response structure to save the result in.
@@ -5178,32 +5152,31 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketReceive(int profile_id, uint8_t* buf, size_t buf_size,
-                            walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                            void* args = NULL);
+  static bool socketReceive(int socket_id, uint8_t* buf, size_t buf_size,
+                            WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief This function updates all the socket states and returns the current state for the
    * requested socket.
    *
-   * @param[in] profile_id The socket id to retrieve the current state. (1-6)
+   * @param[in] socket_id The socket id to retrieve the current state. (1-6)
    *
    * @return True on "OK" response, false otherwise.
    */
-  static WalterModemSocketState socketGetState(int profile_id = 0);
+  static WalterModemSocketState socketGetState(int socket_id = 0);
 
   /**
    * @brief Resumes a suspended socket connection.
    *
-   * @param[in] profile_id The id of the socket to resume. (1-6)
+   * @param[in] socket_id The id of the socket to resume. (1-6)
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
    * @param[in] args Arguments to pass to the callback.
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool socketResume(int profile_id, walter_modem_rsp_t* rsp = NULL,
-                           walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool socketResume(int socket_id, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                           void* args = NULL);
 
 #endif
 #pragma endregion
@@ -5238,7 +5211,7 @@ public:
   gnssConfig(WalterModemGNSSSensMode sens_mode = WALTER_MODEM_GNSS_SENS_MODE_HIGH,
              WalterModemGNSSAcqMode acq_mode = WALTER_MODEM_GNSS_ACQ_MODE_COLD_WARM_START,
              WalterModemGNSSLocMode loc_mode = WALTER_MODEM_GNSS_LOC_MODE_ON_DEVICE_LOCATION,
-             walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+             WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the current GNSS assistance data status.
@@ -5252,7 +5225,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool gnssGetAssistanceStatus(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool gnssGetAssistanceStatus(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                       void* args = NULL);
 
   /**
@@ -5271,7 +5244,7 @@ public:
    */
   static bool gnssUpdateAssistance(
       WMGNSSAssistanceType type = WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Perform a GNSS action.
@@ -5287,7 +5260,7 @@ public:
    */
   static bool
   gnssPerformAction(WalterModemGNSSAction action = WALTER_MODEM_GNSS_ACTION_GET_SINGLE_FIX,
-                    walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+                    WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
   /**
    * @brief sets the UTC time for gnss usage
    *
@@ -5298,8 +5271,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool gnssSetUTCTime(uint64_t epoch_time, walter_modem_rsp_t* rsp = NULL,
-                             walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool gnssSetUTCTime(uint64_t epoch_time, WalterModemRsp* rsp = NULL,
+                             walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief gets the UTC time for gnss usage
@@ -5313,7 +5286,7 @@ public:
    * @note
    * the utc time can be found in the clock portion of the rspData.
    */
-  static bool gnssGetUTCTime(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool gnssGetUTCTime(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                              void* args = NULL);
 
 #endif
@@ -5342,8 +5315,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getOpState(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                         void* args = NULL);
+  static bool getOpState(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Set the operational state of the modem.
@@ -5357,8 +5329,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool setOpState(WalterModemOpState op_state, walter_modem_rsp_t* rsp = NULL,
-                         walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool setOpState(WalterModemOpState op_state, WalterModemRsp* rsp = NULL,
+                         walterModemCb cb = NULL, void* args = NULL);
 
 #pragma endregion // CLASS PUBLIC METHODS MODEM_STATE
 #pragma region CLASS PUBLIC METHODS RADIO
@@ -5374,8 +5346,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getRAT(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                     void* args = NULL);
+  static bool getRAT(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Set the RAT (Radio Access Technology).
@@ -5389,8 +5360,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool setRAT(WalterModemRAT rat, walter_modem_rsp_t* rsp = NULL,
-                     walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool setRAT(WalterModemRAT rat, WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                     void* args = NULL);
 
   /**
    * @brief Get the radio bands that the modem is configured to use.
@@ -5403,8 +5374,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getRadioBands(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                            void* args = NULL);
+  static bool getRadioBands(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Set the radio bands the modem will use.
@@ -5419,8 +5389,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool setRadioBands(WalterModemRAT rat, uint32_t bands, walter_modem_rsp_t* rsp = NULL,
-                            walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool setRadioBands(WalterModemRAT rat, uint32_t bands, WalterModemRsp* rsp = NULL,
+                            walterModemCb cb = NULL, void* args = NULL);
 
 #pragma endregion // CLASS PUBLIC METHODS RADIO
 #pragma region CLASS PUBLIC METHODS SIM_MANAGEMENT
@@ -5436,8 +5406,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getSIMState(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                          void* args = NULL);
+  static bool getSIMState(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the SIM ICCID and/or eUICCID.
@@ -5453,8 +5422,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getSIMCardID(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                           void* args = NULL);
+  static bool getSIMCardID(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the IMSI on the SIM card.
@@ -5470,7 +5438,7 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getSIMCardIMSI(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+  static bool getSIMCardIMSI(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                              void* args = NULL);
 
   /**
@@ -5486,8 +5454,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool unlockSIM(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                        void* args = NULL, const char* pin = NULL);
+  static bool unlockSIM(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                        const char* pin = NULL);
 
 #pragma endregion // CLASS PUBLIC METHODS SIM_MANAGEMENT
 #pragma region CLASS PUBLIC METHODS NETWORK
@@ -5510,7 +5478,7 @@ public:
       WalterModemNetworkSelMode mode = WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC,
       const char* operator_name = NULL,
       WalterModemOperatorFormat format = WALTER_MODEM_OPERATOR_FORMAT_LONG_ALPHANUMERIC,
-      walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
 #pragma endregion // CLASS PUBLIC METHODS NETWORK
 #pragma region CLASS PUBLIC METHODS POWER_SAVING
@@ -5534,8 +5502,7 @@ public:
    */
   static bool configPSM(WalterModemPSMMode mode = WALTER_MODEM_PSM_DISABLE,
                         const char* req_tau = NULL, const char* req_active = NULL,
-                        walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                        void* args = NULL);
+                        WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Configure extended DRX Setting.
@@ -5554,8 +5521,7 @@ public:
    */
   static bool configEDRX(WalterModemEDRXMode mode = WALTER_MODEM_EDRX_DISABLE,
                          const char* req_edrx_val = NULL, const char* req_ptw = NULL,
-                         walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                         void* args = NULL);
+                         WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Encode a TAU duration for use in PSM configuration.
@@ -5624,8 +5590,8 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool definePDPContext(
-      int pdp_ctx_id = 1, const char* apn = NULL, walter_modem_rsp_t* rsp = NULL,
-      walter_modem_cb_t cb = NULL, void* args = NULL,
+      int pdp_ctx_id = 1, const char* apn = NULL, WalterModemRsp* rsp = NULL,
+      walterModemCb cb = NULL, void* args = NULL,
       WalterModemPDPType type = WALTER_MODEM_PDP_TYPE_IP, const char* pdpAddress = NULL,
       WalterModemPDPHeaderCompression headerComp = WALTER_MODEM_PDP_HCOMP_OFF,
       WalterModemPDPDataCompression dataComp = WALTER_MODEM_PDP_DCOMP_OFF,
@@ -5656,7 +5622,7 @@ public:
   static bool
   setPDPAuthParams(WalterModemPDPAuthProtocol auth_proto = WALTER_MODEM_PDP_AUTH_PROTO_NONE,
                    const char* auth_user = NULL, const char* auth_pass = NULL, int pdp_ctx_id = -1,
-                   walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL, void* args = NULL);
+                   WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Activate or deactivate a PDP context.
@@ -5673,7 +5639,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool setPDPContextActive(bool active = true, int pdp_ctx_id = -1,
-                                  walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
+                                  WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
                                   void* args = NULL);
 
   /**
@@ -5688,8 +5654,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool setNetworkAttachmentState(bool attach = true, walter_modem_rsp_t* rsp = NULL,
-                                        walter_modem_cb_t cb = NULL, void* args = NULL);
+  static bool setNetworkAttachmentState(bool attach = true, WalterModemRsp* rsp = NULL,
+                                        walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get a list of PDP addresses of a PDP context.
@@ -5703,8 +5669,8 @@ public:
    *
    * @return True on "OK" response, false otherwise.
    */
-  static bool getPDPAddress(walter_modem_rsp_t* rsp = NULL, walter_modem_cb_t cb = NULL,
-                            void* args = NULL, int pdp_ctx_id = -1);
+  static bool getPDPAddress(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL,
+                            int pdp_ctx_id = -1);
 
 #pragma endregion // CLASS PUBLIC METHODS PDP_CONTEXT
 #pragma region CLASS PUBLIC METHODS MOTA
@@ -5892,12 +5858,6 @@ public:
    */
 
 #pragma region CLASS PUBLIC DEPRECATION
-
-  typedef walter_modem_rsp_t WalterModemRsp
-      __attribute__((deprecated("Use walter_modem_rsp_t instead")));
-  typedef walter_modem_cb_t WalterModemCb
-      __attribute__((deprecated("Use walter_modem_cb_t instead")));
-
 #pragma endregion // CLASS PUBLIC DEPRECATION
 #pragma endregion // CLASS PUBLIC
 };

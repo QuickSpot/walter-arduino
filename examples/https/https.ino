@@ -1,7 +1,8 @@
 /**
  * @file https.ino
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 12 Jan 2026
+ * @date 16 January 2026
+ * @version 1.5.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
@@ -115,7 +116,7 @@ WalterModem modem;
 /**
  * @brief Response object containing command response information.
  */
-walter_modem_rsp_t rsp = {};
+WalterModemRsp rsp = {};
 
 /**
  * @brief The buffer to receive from the HTTP server.

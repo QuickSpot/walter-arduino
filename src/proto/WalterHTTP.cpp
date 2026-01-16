@@ -2,13 +2,14 @@
  * @file WalterHTTP.cpp
  * @author Daan Pape <daan@dptechnics.com>
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 5 Nov 2025
+ * @date 16 January 2026
+ * @version 1.5.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -54,8 +55,8 @@ bool WalterModem::httpConfigProfile(int profile_id, const char* hostname, uint16
                                     uint8_t tls_profile_id, bool use_basic_auth,
                                     const char* auth_user, const char* auth_pass,
                                     uint16_t max_timeout, uint16_t cnx_timeout,
-                                    uint8_t inactivity_timeout, walter_modem_rsp_t* rsp,
-                                    walter_modem_cb_t cb, void* args)
+                                    uint8_t inactivity_timeout, WalterModemRsp* rsp,
+                                    walterModemCb cb, void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -65,7 +66,7 @@ bool WalterModem::httpConfigProfile(int profile_id, const char* hostname, uint16
     port = 443;
   }
 
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size +=
       sprintf((char*) stringsBuffer->data, "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"",
               profile_id, hostname, port, use_basic_auth, auth_user, auth_pass);
@@ -101,8 +102,7 @@ bool WalterModem::httpConfigProfile(int profile_id, const char* hostname, uint16
   _returnAfterReply();
 }
 
-bool WalterModem::httpConnect(int profile_id, walter_modem_rsp_t* rsp, walter_modem_cb_t cb,
-                              void* args)
+bool WalterModem::httpConnect(int profile_id, WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -116,8 +116,7 @@ bool WalterModem::httpConnect(int profile_id, walter_modem_rsp_t* rsp, walter_mo
   _returnAfterReply();
 }
 
-bool WalterModem::httpClose(int profile_id, walter_modem_rsp_t* rsp, walter_modem_cb_t cb,
-                            void* args)
+bool WalterModem::httpClose(int profile_id, WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -129,14 +128,14 @@ bool WalterModem::httpClose(int profile_id, walter_modem_rsp_t* rsp, walter_mode
 
 bool WalterModem::httpQuery(int profile_id, const char* uri, WalterModemHttpQueryCmd http_query_cmd,
                             char* content_type_buf, uint16_t content_type_buf_size,
-                            const char* extra_header_line, walter_modem_rsp_t* rsp,
-                            walter_modem_cb_t cb, void* args)
+                            const char* extra_header_line, WalterModemRsp* rsp, walterModemCb cb,
+                            void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPQRY=%d,%d,\"%s\"",
                                  profile_id, http_query_cmd, uri);
 
@@ -153,14 +152,14 @@ bool WalterModem::httpQuery(int profile_id, const char* uri, WalterModemHttpQuer
 bool WalterModem::httpSend(int profile_id, const char* uri, uint8_t* buf, uint16_t buf_size,
                            WalterModemHttpSendCmd http_send_cmd,
                            WalterModemHttpPostParam http_post_param, char* content_type_buf,
-                           uint16_t content_type_buf_size, walter_modem_rsp_t* rsp,
-                           walter_modem_cb_t cb, void* args)
+                           uint16_t content_type_buf_size, WalterModemRsp* rsp, walterModemCb cb,
+                           void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   if(http_post_param == WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED) {
     stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d",
                                    profile_id, http_send_cmd, uri, buf_size);
@@ -176,7 +175,7 @@ bool WalterModem::httpSend(int profile_id, const char* uri, uint8_t* buf, uint16
 }
 
 bool WalterModem::httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
-                              walter_modem_rsp_t* rsp)
+                              WalterModemRsp* rsp)
 {
   ESP_LOGW("DEPRECATION", "The httpDidRing method is deprecated and will be removed in future "
                           "releases. Use httpReceive(...) instead.");
@@ -184,8 +183,8 @@ bool WalterModem::httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t ta
   return httpReceive(profileId, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
 }
 
-bool WalterModem::httpReceive(int profile_id, uint8_t* buf, size_t buf_size,
-                              walter_modem_rsp_t* rsp, walter_modem_cb_t cb, void* args)
+bool WalterModem::httpReceive(int profile_id, uint8_t* buf, size_t buf_size, WalterModemRsp* rsp,
+                              walterModemCb cb, void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
@@ -195,7 +194,7 @@ bool WalterModem::httpReceive(int profile_id, uint8_t* buf, size_t buf_size,
 
   // Known bug: CME ERROR 4 when attempting to receive a HTTP payload with a fixed size.
   // Omit size for now and let rsp processor handle payload size
-  walter_modem_buffer_t* stringsBuffer = _getFreeBuffer();
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d", profile_id);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
