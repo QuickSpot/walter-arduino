@@ -374,6 +374,9 @@ void myGNSSEventHandler(WMGNSSEventType type, WMGNSSEventData data, void* args)
 
     assistance_update_received = true;
     break;
+
+  default:
+    break;
   }
 }
 
@@ -413,7 +416,7 @@ bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
     Serial.printf("%s data is ", name);
 
     if(data.available) {
-      Serial.printf("available and should be updated within %ds\r\n", data.timeToUpdate);
+      Serial.printf("available and should be updated within %lds\r\n", data.timeToUpdate);
 
       if(updateFlag)
         *updateFlag = (data.timeToUpdate <= 0);

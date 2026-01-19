@@ -352,7 +352,7 @@ static void myHTTPEventHandler(WMHTTPEventType event, WMHTTPEventData data, void
 
   case WALTER_MODEM_HTTP_EVENT_RING:
     Serial.printf(
-        "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %ld)\r\n",
+        "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %u)\r\n",
         data.profile_id, data.status, data.content_type, data.data_len);
 
     /* Receive the HTTP message from the modem buffer */
@@ -411,7 +411,7 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem HTTPS example (v1.5.0) ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem HTTPS example (Arduino v1.5.0) ===\r\n\r\n");
 
   /* Start the modem */
   if(modem.begin(&Serial2)) {

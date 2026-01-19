@@ -177,6 +177,15 @@ RTC_DATA_ATTR WalterModemSocket _socketCtxSetRTC[WALTER_MODEM_MAX_SOCKETS] = {};
 
 #endif
 #pragma endregion
+#if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
+
+/**
+ * @brief Static buffer for escaping data for logging purposes.
+ * Size is twice WALTER_MODEM_RSP_BUF_SIZE to handle worst-case escaping.
+ */
+static uint8_t _logEscapeBuffer[WALTER_MODEM_RSP_BUF_SIZE * 2];
+
+#endif
 #pragma region HELPER_FUNCTIONS
 
 /**
@@ -499,21 +508,34 @@ bool strToFloat(const char* str, int len, float* result)
  * @param input_len The length of the input buffer.
  * @param max_len The maximum length of the output buffer. (Output buffer can be up to twice this
  * size)
+ * @param static_out Optional pre-allocated output buffer to use instead of malloc.
+ * @param static_out_size Size of the static output buffer if provided.
  *
  * @return A pointer to a Buffer struct containing the escaped data and its size, or NULL on error.
  */
-Buffer* escapeBuffer(const uint8_t* input, size_t input_len, size_t max_len)
+Buffer* escapeBuffer(const uint8_t* input, size_t input_len, size_t max_len,
+                     uint8_t* static_out = nullptr, size_t static_out_size = 0)
 {
   if(!input || input_len == 0)
     return NULL;
 
-  // Worst-case: every byte becomes two chars
-  uint8_t* out = static_cast<uint8_t*>(malloc(max_len * 2));
-  if(!out)
-    return nullptr;
+  // Use static buffer if provided, otherwise allocate
+  uint8_t* out = nullptr;
+  bool use_static = (static_out != nullptr && static_out_size > 0);
+
+  if(use_static) {
+    out = static_out;
+  } else {
+    // Worst-case: every byte becomes two chars
+    out = static_cast<uint8_t*>(malloc(max_len * 2));
+    if(!out)
+      return nullptr;
+  }
 
   size_t j = 0;
-  for(size_t i = 0; i < input_len; i++) {
+  size_t max_out = use_static ? static_out_size : (max_len * 2);
+
+  for(size_t i = 0; i < input_len && j < max_out - 5; i++) {
     uint8_t c = input[i];
     switch(c) {
     case '\n':
@@ -544,14 +566,23 @@ Buffer* escapeBuffer(const uint8_t* input, size_t input_len, size_t max_len)
     }
   }
 
-  Buffer* buff = static_cast<Buffer*>(malloc(sizeof(Buffer)));
-  if(!buff) {
-    free(out);
-    return NULL;
+  if(use_static) {
+    // For static buffer, use a static Buffer struct
+    static Buffer buff;
+    buff.data = out;
+    buff.size = j;
+    return &buff;
+  } else {
+    // For dynamic allocation, allocate Buffer struct too
+    Buffer* buff = static_cast<Buffer*>(malloc(sizeof(Buffer)));
+    if(!buff) {
+      free(out);
+      return NULL;
+    }
+    buff->data = out;
+    buff->size = j;
+    return buff;
   }
-  buff->data = out;
-  buff->size = j;
-  return buff;
 }
 
 #pragma endregion
@@ -1164,22 +1195,64 @@ bool WalterModem::_expectingPayload()
 {
   _receivedPayloadSize = SIZE_MAX;
 
+  const char* data = (const char*) _parserData.buf->data;
+  size_t dataSize = _parserData.buf->size;
+
+  if(dataSize <= 2) {
+    return false;
+  }
+
+  // Skip leading \r\n if present
+  if(data[0] == '\r' && data[1] == '\n') {
+    data += 2;
+    dataSize -= 2;
+  }
+
   /**
-   * Payload headers with payload length.
+   * Payload headers with defined payload length.
    * This is very reliable as the length is explicitly stated.
    */
 
-  if(strncmp((const char*) _parserData.buf, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
-    sscanf((const char*) _parserData.buf, "+SQNSRECV: %*d,%d", &_receivedPayloadSize);
-    return true;
+  if(strncmp(data, "+SQNSRECV: ", strlen("+SQNSRECV: ")) == 0) {
+    // Find the end of the header line (\r\n)
+    const char* headerEnd = strstr(data, "\r\n");
+    if(headerEnd != nullptr) {
+      size_t headerLength = (headerEnd - data) + 2;
+      // If buffer contains more than just the header, payload is already present in buffer.
+      if(dataSize > headerLength) {
+        _receivedPayloadSize = 0;
+        return false;
+      }
+    }
+    sscanf(data, "+SQNSRECV: %*d,%d", &_receivedPayloadSize);
+    if(_receivedPayloadSize > 0) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
-  if(strncmp((const char*) _parserData.buf, "+SQNCOAPRCV: ", strlen("+SQNCOAPRCV: ")) == 0) {
-    sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,,%*d,%*d,%*d,%d",
-           &_receivedPayloadSize);
-    sscanf((const char*) _parserData.buf, "+SQNCOAPRCV: %*d,%*d,%*[^,],%*d,%*d,%*d,%d",
-           &_receivedPayloadSize);
-    return true;
+  if(strncmp(data, "+SQNCOAPRCV: ", strlen("+SQNCOAPRCV: ")) == 0) {
+    // Find the end of the header line (\r\n)
+    const char* headerEnd = strstr(data, "\r\n");
+    if(headerEnd != nullptr) {
+      size_t headerLength = (headerEnd - data) + 2;
+      // If buffer contains more than just the header, payload is already present in buffer.
+      if(dataSize > headerLength) {
+        _receivedPayloadSize = 0;
+        return false;
+      }
+    }
+    // There are two possible formats for this response, so we try to parse both.
+    int matched = sscanf(data, "+SQNCOAPRCV: %*d,%*d,,%*d,%*d,%*d,%d", &_receivedPayloadSize);
+    if(matched != 1) {
+      sscanf(data, "+SQNCOAPRCV: %*d,%*d,%*[^,],%*d,%*d,%*d,%d", &_receivedPayloadSize);
+    }
+    if(_receivedPayloadSize > 0) {
+      return true;
+    } else {
+      return false;
+    }
   }
 
   /**
@@ -1193,7 +1266,7 @@ bool WalterModem::_expectingPayload()
    */
 
   // Check for "+SQNSNVR: "
-  if(strncmp((const char*) _parserData.buf, "+SQNSNVR: ", strlen("+SQNSNVR: ")) == 0) {
+  if(strncmp(data, "+SQNSNVR: ", strlen("+SQNSNVR: ")) == 0) {
     return true;
   }
 
@@ -1211,9 +1284,8 @@ bool WalterModem::_expectingPayload()
    * - "+CME ERROR: "
    */
 
-  if(strncmp((const char*) _parserData.buf, "OK\r\n", 4) == 0 ||
-     strncmp((const char*) _parserData.buf, "ERROR\r\n", 7) == 0 ||
-     strncmp((const char*) _parserData.buf, "+CME ERROR: ", 12) == 0) {
+  if(strncmp(data, "OK\r\n", 4) == 0 || strncmp(data, "ERROR\r\n", 7) == 0 ||
+     strncmp(data, "+CME ERROR: ", 12) == 0) {
     return false;
   }
 
@@ -1290,21 +1362,6 @@ void WalterModem::_parseRxData(char* rx_data, size_t rx_len)
     size_t rx_remaining = rx_len - offset;
     const char* message = rx_data + offset;
     size_t message_len = 0;
-
-    // TODO: dont strip any CRLF and always pass the full string to the rspProcessor
-    // TODO: queue RX buffer when only \r\n\0 was received and buffered. (Null-byte on startup)
-    /* A new message always starts with a leading CRLF. We don't use it so we strip it once. */
-    if(!_parserData.buf && rx_remaining > 0) {
-      if(rx_remaining >= 2 && message[0] == '\r' && message[1] == '\n') {
-        message += 2;
-        rx_remaining -= 2;
-        offset += 2;
-      }
-
-      if(rx_remaining == 0)
-        continue;
-    }
-
     bool payloadSizeKnown = (_receivedPayloadSize != SIZE_MAX);
 
     /* Receiving binary payload with a known total size */
@@ -1317,7 +1374,6 @@ void WalterModem::_parseRxData(char* rx_data, size_t rx_len)
       offset += message_len;
       if(_receivedPayloadSize == 0) {
         _receivingPayload = false;
-        _queueRxBuffer();
       }
       continue;
     }
@@ -1351,35 +1407,38 @@ void WalterModem::_parseRxData(char* rx_data, size_t rx_len)
       _receivingPayload = false;
     }
 
-    /* Check if the full message or payload is received by looking for the \r\n CRLF in the
+    /* Check if the full message or payload is received by looking for a trailing \r\n CRLF in the
      * buffer. If not present, we assume the message was split by the UART buffer, so we continue
-     * buffering.
+     * buffering, unless we are receiving a special prompt.
      */
-    if(!_getCRLFPosition((const char*) _parserData.buf->data, _parserData.buf->size, true)) {
+    if(_parserData.buf && _parserData.buf->size > 2 &&
+       _getCRLFPosition((const char*) _parserData.buf->data + 2, _parserData.buf->size - 2, true)) {
 
-      /* Check for special prompts (e.g. "> " or ">>>") which don't use CRLF's */
-      bool prompt2 = (_parserData.buf && _parserData.buf->size >= 2 &&
-                      _parserData.buf->data[0] == '>' && _parserData.buf->data[1] == ' ');
-      bool prompt3 =
-          (_parserData.buf && _parserData.buf->size >= 3 && _parserData.buf->data[0] == '>' &&
-           _parserData.buf->data[1] == '>' && _parserData.buf->data[2] == '>');
-      if(prompt2 || prompt3) {
+      /* Set a flag and continue buffering if the current message expects a binary payload, or the
+       * current message is payload and we expect more data */
+      if(_expectingPayload()) {
+        _receivingPayload = true;
+        continue;
+      } else {
+        _receivingPayload = false;
+        /* Finally, queue the buffer if we are sure the message is complete */
         _queueRxBuffer();
       }
 
       continue;
     }
 
-    /* Set a flag and continue buffering if the current message expects a binary payload, or the
-     * current message is payload and we expect more data */
-    if(_expectingPayload()) {
-      _receivingPayload = true;
-      continue;
-    } else {
-      _receivingPayload = false;
+    /* Check for special prompts (e.g. "\r\n> " or ">>>" or "\0") which don't use trailing CRLF's
+     * but still mark the end of a message */
+    bool prompt1 = (_parserData.buf && _parserData.buf->size >= 4 &&
+                    _parserData.buf->data[2] == '>' && _parserData.buf->data[3] == ' ');
+    bool prompt2 =
+        (_parserData.buf && _parserData.buf->size >= 3 && _parserData.buf->data[0] == '>' &&
+         _parserData.buf->data[1] == '>' && _parserData.buf->data[2] == '>');
+    bool nullbyte =
+        (_parserData.buf && _parserData.buf->size == 1 && _parserData.buf->data[0] == '\0');
 
-      /* Finally, queue the buffer if we are sure the message is complete */
-      _parserData.buf->size;
+    if(prompt1 || prompt2 || nullbyte) {
       _queueRxBuffer();
     }
   }
@@ -1721,13 +1780,23 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
 {
 
 #if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
-  Buffer* escaped =
-      escapeBuffer((const uint8_t*) buff->data, buff->size, WALTER_MODEM_RSP_BUF_SIZE);
+  Buffer* escaped = escapeBuffer((const uint8_t*) buff->data, buff->size, WALTER_MODEM_RSP_BUF_SIZE,
+                                 _logEscapeBuffer, sizeof(_logEscapeBuffer));
   if(escaped) {
     ESP_LOGD("WalterModem", "RX: %.*s", escaped->size, escaped->data);
-    delete escaped;
   }
 #endif
+
+  // Skip leading \r\n if present
+  if(buff->size >= 2 && buff->data[0] == '\r' && buff->data[1] == '\n') {
+    memmove(buff->data, buff->data + 2, buff->size - 2);
+    buff->size -= 2;
+  }
+
+  // Skip trailing \r\n if present
+  if(buff->size >= 2 && buff->data[buff->size - 2] == '\r' && buff->data[buff->size - 1] == '\n') {
+    buff->size -= 2;
+  }
 
   WalterModemState result = WALTER_MODEM_STATE_OK;
 
@@ -1772,6 +1841,15 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
   /* Data prompt for data transmission */
   if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>")) {
     if(cmd != NULL && cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT && cmd->payload != NULL) {
+
+#if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
+      /* Log the payload data being transmitted with escaped characters */
+      Buffer* escaped = escapeBuffer(cmd->payload, cmd->payloadSize, WALTER_MODEM_RSP_BUF_SIZE,
+                                     _logEscapeBuffer, sizeof(_logEscapeBuffer));
+      if(escaped) {
+        ESP_LOGD("WalterModem", "TX: %.*s", escaped->size, escaped->data);
+      }
+#endif
 
 #ifdef ARDUINO
 
@@ -3225,19 +3303,21 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
 after_processing_logic:
 
   /**
-   * If the message doesn't contain an expected response, or if the received message is
-   * unsolicited (URC or multi-part response), free the buffer and return.
+   * If the message contains an expected response, or if an error occurred, finish the command
+   * processing.
    */
-  if((cmd == NULL || cmd->type == WALTER_MODEM_CMD_TYPE_TX ||
-      cmd->state == WALTER_MODEM_CMD_STATE_FREE || cmd->atRsp == NULL ||
-      cmd->atRspLen > buff->size || memcmp(cmd->atRsp, buff->data, cmd->atRspLen) != 0) &&
-     result == WALTER_MODEM_STATE_OK) {
+  if((cmd != NULL && cmd->atRsp != NULL && memcmp(cmd->atRsp, buff->data, cmd->atRspLen) == 0) ||
+     result != WALTER_MODEM_STATE_OK) {
+    _finishModemCMD(cmd, result);
     buff->free = true;
     return;
   }
 
-  /* Finish processing the command */
-  _finishModemCMD(cmd, result);
+  /**
+   * If the message doesn't contain an expected response, or if the received message is
+   * unsolicited (URC or multi-part response), free the buffer and return.
+   */
+
   buff->free = true;
 
 #pragma endregion // RSP_PROC_FINISH
