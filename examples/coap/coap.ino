@@ -263,15 +263,19 @@ static void myCoAPEventHandler(WMCoAPEventType event, WMCoAPEventData data, void
     break;
 
   case WALTER_MODEM_COAP_EVENT_RING:
-    Serial.printf("CoAP: Message received on profile %d. (id: %d | %s | type: %d | code: %ld | "
-                  "size: %ld)\r\n",
+    Serial.printf("CoAP: Message received on profile %d. (id: %d | %s | type: %d | code: %u | "
+                  "size: %u)\r\n",
                   data.profile_id, data.msg_id, data.req_rsp ? "response" : "request", data.type,
                   data.rsp_code, data.data_len);
 
     /* Receive the CoAP message from the modem buffer */
     memset(in_buf, 0, sizeof(in_buf));
     if(modem.coapReceive(data.profile_id, data.msg_id, in_buf, data.data_len)) {
-      Serial.printf("Received message for profile %d: %s\r\n", data.profile_id, in_buf);
+      if(data.data_len > 0) {
+        Serial.printf("Received message for profile %d: %s\r\n", data.profile_id, in_buf);
+      } else {
+        Serial.printf("Received empty message for profile %d\r\n", data.profile_id);
+      }
     } else {
       Serial.printf("Could not receive CoAP message for profile %d\r\n", data.profile_id);
     }
@@ -287,7 +291,7 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem CoAP example (v1.5.0) ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem CoAP example (Arduino v1.5.0) ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);

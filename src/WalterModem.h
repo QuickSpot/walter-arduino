@@ -258,7 +258,7 @@ CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
 /**
  * @brief The maximum size of an AT response buffer.
  */
-#define WALTER_MODEM_RSP_BUF_SIZE 1536
+#define WALTER_MODEM_RSP_BUF_SIZE 1540
 
 /**
  * @brief The size of an APN buffer.
@@ -3633,7 +3633,8 @@ private:
   /**
    * @brief Check the parser buffer for a message containing payload data.
    *
-   * @return true if addintional payload data is expected, false otherwise.
+   * @return true if addintional payload data is expected based on the current buffer contents,
+   * false otherwise.
    */
   static bool _expectingPayload();
 

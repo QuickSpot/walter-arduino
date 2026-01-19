@@ -414,11 +414,11 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem MQTTS example (v1.5.0) ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem MQTTS example (Arduino v1.5.0) ===\r\n\r\n");
 
   uint8_t mac[6] = { 0 };
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
-  sprintf((char*) out_buf, "walter%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+  sprintf((char*) out_buf, "walter-%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
           mac[4], mac[5]);
 
   /* Start the modem */
@@ -444,7 +444,7 @@ void setup()
   }
 
   /* Configure the MQTTS client */
-  if(modem.mqttConfig(MQTTS_CLIENT_ID, MQTTS_USERNAME, MQTTS_PASSWORD, MQTTS_TLS_PROFILE)) {
+  if(modem.mqttConfig((char*) out_buf, MQTTS_USERNAME, MQTTS_PASSWORD, MQTTS_TLS_PROFILE)) {
     Serial.println("Successfully configured the MQTT client");
   } else {
     Serial.println("Error: Failed to configure MQTT client");

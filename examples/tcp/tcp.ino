@@ -271,7 +271,7 @@ static void mySocketEventHandler(WMSocketEventType event, WMSocketEventData data
     break;
 
   case WALTER_MODEM_SOCKET_EVENT_RING:
-    Serial.printf("SOCKET: Message received on socket %d (size: %lu)\r\n", data.conn_id,
+    Serial.printf("SOCKET: Message received on socket %d (size: %u)\r\n", data.conn_id,
                   data.data_len);
 
     /* Receive the HTTP message from the modem buffer */
@@ -355,7 +355,7 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem TCP example (v1.5.0) ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem TCP example (Arduino v1.5.0) ===\r\n\r\n");
 
   /* Start the modem */
   if(modem.begin(&Serial2)) {
