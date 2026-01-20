@@ -1304,9 +1304,9 @@ bool WalterModem::_expectingPayload()
     }
     if(sizeStr[0] != '\0') {
       _receivedPayloadSize = atoi(sizeStr);
-      if(_receivedPayloadSize >= _parserData.buf->size) {
+      if(_receivedPayloadSize >= dataSize) {
         // Incomplete payload received so far
-        _receivedPayloadSize -= _parserData.buf->size;
+        _receivedPayloadSize -= dataSize;
       } else {
         // Complete payload already received - no more bytes expected
         _receivedPayloadSize = 0;
@@ -1336,9 +1336,9 @@ bool WalterModem::_expectingPayload()
       }
       if(sizeStr[0] != '\0') {
         _receivedPayloadSize = atoi(sizeStr);
-        if(_receivedPayloadSize >= _parserData.buf->size) {
+        if(_receivedPayloadSize >= dataSize) {
           // Incomplete payload received so far
-          _receivedPayloadSize -= _parserData.buf->size;
+          _receivedPayloadSize -= dataSize;
         } else {
           // Complete payload already received - no more bytes expected
           _receivedPayloadSize = 0;
