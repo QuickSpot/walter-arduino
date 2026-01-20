@@ -297,23 +297,23 @@ static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
  *
  * @return void
  */
-static void mySocketEventHandler(WMSocketEventType event, WMSocketEventData data, void* args)
+static void mySocketEventHandler(WMSocketEventType event, const WMSocketEventData* data, void* args)
 {
   switch(event) {
   case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
-    Serial.printf("SOCKET: Disconnected (id %d)\r\n", data.conn_id);
+    Serial.printf("SOCKET: Disconnected (id %d)\r\n", data->conn_id);
     break;
 
   case WALTER_MODEM_SOCKET_EVENT_RING:
-    Serial.printf("SOCKET: Message received on socket %d (size: %lu)\r\n", data.conn_id,
-                  data.data_len);
+    Serial.printf("SOCKET: Message received on socket %d (size: %lu)\r\n", data->conn_id,
+                  data->data_len);
 
     /* Receive the HTTP message from the modem buffer */
     memset(in_buf, 0, sizeof(in_buf));
-    if(modem.socketReceive(data.conn_id, in_buf, data.data_len)) {
-      Serial.printf("Received message on socket %d: %s\r\n", data.conn_id, in_buf);
+    if(modem.socketReceive(data->conn_id, in_buf, data->data_len)) {
+      Serial.printf("Received message on socket %d: %s\r\n", data->conn_id, in_buf);
     } else {
-      Serial.printf("Could not receive message for socket %d\r\n", data.conn_id);
+      Serial.printf("Could not receive message for socket %d\r\n", data->conn_id);
     }
     break;
 
@@ -336,13 +336,13 @@ static void mySocketEventHandler(WMSocketEventType event, WMSocketEventData data
  *
  * @return None.
  */
-void myGNSSEventHandler(WMGNSSEventType type, WMGNSSEventData data, void* args)
+void myGNSSEventHandler(WMGNSSEventType type, const WMGNSSEventData* data, void* args)
 {
   uint8_t goodSatCount = 0;
 
   switch(type) {
   case WALTER_MODEM_GNSS_EVENT_FIX:
-    memcpy(&latestGnssFix, &data.gnssfix, sizeof(WMGNSSFixEvent));
+    memcpy(&latestGnssFix, &data->gnssfix, sizeof(WMGNSSFixEvent));
 
     /* Count satellites with good signal strength */
     for(int i = 0; i < latestGnssFix.satCount; ++i) {
@@ -364,11 +364,11 @@ void myGNSSEventHandler(WMGNSSEventType type, WMGNSSEventData data, void* args)
     break;
 
   case WALTER_MODEM_GNSS_EVENT_ASSISTANCE:
-    if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC) {
+    if(data->assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC) {
       Serial.println("GNSS Assistance: Almanac updated");
-    } else if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS) {
+    } else if(data->assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS) {
       Serial.println("GNSS Assistance: Real-time ephemeris updated");
-    } else if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS) {
+    } else if(data->assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS) {
       Serial.println("GNSS Assistance: Predicted ephemeris updated");
     }
 

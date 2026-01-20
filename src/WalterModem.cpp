@@ -3801,35 +3801,35 @@ void WalterModem::_dispatchEvent(WalterModemEvent* ev)
   case WALTER_MODEM_EVENT_TYPE_GNSS:
     handler += WALTER_MODEM_EVENT_TYPE_GNSS;
     if(handler->gnssHandler != nullptr) {
-      handler->gnssHandler(ev->gnss.event, ev->gnss.data, handler->args);
+      handler->gnssHandler(ev->gnss.event, &ev->gnss.data, handler->args);
     }
     break;
 
   case WALTER_MODEM_EVENT_TYPE_MQTT:
     handler += WALTER_MODEM_EVENT_TYPE_MQTT;
     if(handler->mqttHandler != nullptr) {
-      handler->mqttHandler(ev->mqtt.event, ev->mqtt.data, handler->args);
+      handler->mqttHandler(ev->mqtt.event, &ev->mqtt.data, handler->args);
     }
     break;
 
   case WALTER_MODEM_EVENT_TYPE_HTTP:
     handler += WALTER_MODEM_EVENT_TYPE_HTTP;
     if(handler->httpHandler != nullptr) {
-      handler->httpHandler(ev->http.event, ev->http.data, handler->args);
+      handler->httpHandler(ev->http.event, &ev->http.data, handler->args);
     }
     break;
 
   case WALTER_MODEM_EVENT_TYPE_COAP:
     handler += WALTER_MODEM_EVENT_TYPE_COAP;
     if(handler->coapHandler != nullptr) {
-      handler->coapHandler(ev->coap.event, ev->coap.data, handler->args);
+      handler->coapHandler(ev->coap.event, &ev->coap.data, handler->args);
     }
     break;
 
   case WALTER_MODEM_EVENT_TYPE_SOCKET:
     handler += WALTER_MODEM_EVENT_TYPE_SOCKET;
     if(handler->socketHandler != nullptr) {
-      handler->socketHandler(ev->socket.event, ev->socket.data, handler->args);
+      handler->socketHandler(ev->socket.event, &ev->socket.data, handler->args);
     }
     break;
 

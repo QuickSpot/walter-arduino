@@ -248,38 +248,38 @@ static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
  *
  * @return void
  */
-static void myHTTPEventHandler(WMHTTPEventType event, WMHTTPEventData data, void* args)
+static void myHTTPEventHandler(WMHTTPEventType event, const WMHTTPEventData* data, void* args)
 {
   switch(event) {
   case WALTER_MODEM_HTTP_EVENT_CONNECTED:
-    if(data.rc != 0) {
+    if(data->rc != 0) {
       Serial.printf("HTTP: Connection (profile %d) could not be established. (CURL: %d)\r\n",
-                    data.profile_id, data.rc);
+                    data->profile_id, data->rc);
     } else {
-      Serial.printf("HTTP: Connected successfully (profile %d)\r\n", data.profile_id);
+      Serial.printf("HTTP: Connected successfully (profile %d)\r\n", data->profile_id);
     }
     break;
 
   case WALTER_MODEM_HTTP_EVENT_DISCONNECTED:
-    Serial.printf("HTTP: Disconnected successfully (profile %d)\r\n", data.profile_id);
+    Serial.printf("HTTP: Disconnected successfully (profile %d)\r\n", data->profile_id);
     break;
 
   case WALTER_MODEM_HTTP_EVENT_CONNECTION_CLOSED:
-    Serial.printf("HTTP: Connection (profile %d) was interrupted (CURL: %d)\r\n", data.profile_id,
-                  data.rc);
+    Serial.printf("HTTP: Connection (profile %d) was interrupted (CURL: %d)\r\n", data->profile_id,
+                  data->rc);
     break;
 
   case WALTER_MODEM_HTTP_EVENT_RING:
     Serial.printf(
         "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %u)\r\n",
-        data.profile_id, data.status, data.content_type, data.data_len);
+        data->profile_id, data->status, data->content_type, data->data_len);
 
     /* Receive the HTTP message from the modem buffer */
     memset(in_buf, 0, sizeof(in_buf));
-    if(modem.httpReceive(data.profile_id, in_buf, data.data_len)) {
-      Serial.printf("Received message for profile %d: %s\r\n", data.profile_id, in_buf);
+    if(modem.httpReceive(data->profile_id, in_buf, data->data_len)) {
+      Serial.printf("Received message for profile %d: %s\r\n", data->profile_id, in_buf);
     } else {
-      Serial.printf("Could not receive HTTP message for profile %d\r\n", data.profile_id);
+      Serial.printf("Could not receive HTTP message for profile %d\r\n", data->profile_id);
     }
     break;
   }

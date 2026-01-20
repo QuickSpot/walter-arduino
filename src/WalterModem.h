@@ -2453,7 +2453,7 @@ typedef void (*walterModemSystemEventHandler)(WalterModemEventSystemType ev, voi
  *
  * @return None.
  */
-typedef void (*walterModemGNSSEventHandler)(WMGNSSEventType event, WMGNSSEventData data,
+typedef void (*walterModemGNSSEventHandler)(WMGNSSEventType event, const WMGNSSEventData* data,
                                             void* args);
 
 #endif
@@ -2479,7 +2479,7 @@ typedef void (*walterModemGNSSEventHandler)(WMGNSSEventType event, WMGNSSEventDa
  * +SQNSMQTTONSUBSCRIBE:0,<topic>,<rc>
  * +SQNSMQTTMEMORYFULL
  */
-typedef void (*walterModemMQTTEventHandler)(WMMQTTEventType event, WMMQTTEventData data,
+typedef void (*walterModemMQTTEventHandler)(WMMQTTEventType event, const WMMQTTEventData* data,
                                             void* args);
 
 #endif
@@ -2494,7 +2494,7 @@ typedef void (*walterModemMQTTEventHandler)(WMMQTTEventType event, WMMQTTEventDa
  *
  * @return None.
  */
-typedef void (*walterModemHttpEventHandler)(WMHTTPEventType event, WMHTTPEventData data,
+typedef void (*walterModemHttpEventHandler)(WMHTTPEventType event, const WMHTTPEventData* data,
                                             void* args);
 
 #endif
@@ -2509,7 +2509,7 @@ typedef void (*walterModemHttpEventHandler)(WMHTTPEventType event, WMHTTPEventDa
  *
  * @return None.
  */
-typedef void (*walterModemCoAPEventHandler)(WMCoAPEventType event, WMCoAPEventData data,
+typedef void (*walterModemCoAPEventHandler)(WMCoAPEventType event, const WMCoAPEventData* data,
                                             void* args);
 
 #endif
@@ -2524,7 +2524,7 @@ typedef void (*walterModemCoAPEventHandler)(WMCoAPEventType event, WMCoAPEventDa
  *
  * @return None.
  */
-typedef void (*walterModemSocketEventHandler)(WMSocketEventType ev, WMSocketEventData data,
+typedef void (*walterModemSocketEventHandler)(WMSocketEventType ev, const WMSocketEventData* data,
                                               void* args);
 
 #endif
