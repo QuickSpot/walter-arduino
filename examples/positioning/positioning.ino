@@ -633,7 +633,7 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem Positioning example (v1.5.0) ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem Positioning example (Arduino v1.5.0) ===\r\n\r\n");
 
   /* Get the MAC address for board validation */
   esp_read_mac(out_buf, ESP_MAC_WIFI_STA);
