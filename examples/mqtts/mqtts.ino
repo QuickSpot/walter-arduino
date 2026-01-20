@@ -476,7 +476,6 @@ void loop()
       Serial.println("Connecting to MQTT broker...");
     } else {
       Serial.println("Error: Failed to connect to MQTT broker");
-      return;
     }
     delay(5000);
     return;

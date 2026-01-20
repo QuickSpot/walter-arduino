@@ -88,6 +88,18 @@ WalterModem modem;
 WalterModemRsp rsp;
 
 /**
+ * @brief Flag indicating whether to publish a message.
+ */
+bool mqtt_connected = false;
+
+/**
+ * @brief The buffer to receive from the MQTT server.
+ * @note Make sure this is sufficiently large enough for incoming data. (Up to 4096 bytes supported
+ * by Sequans)
+ */
+uint8_t in_buf[4096] = { 0 };
+
+/**
  * @brief This function checks if we are connected to the lte network
  *
  * @return True when connected, False otherwise
@@ -159,23 +171,150 @@ bool lteConnect()
   return waitForNetwork();
 }
 
+/**
+ * @brief The network registration event handler.
+ *
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
+{
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief The MQTT event handler.
+ *
+ * This function will be called on various MQTT events such as connection, disconnection,
+ * subscription, publication and incoming messages. You can modify this handler to implement your
+ * own logic based on the events received.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] event The type of MQTT event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myMQTTEventHandler(WMMQTTEventType event, WMMQTTEventData data, void* args)
+{
+  switch(event) {
+  case WALTER_MODEM_MQTT_EVENT_CONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Connection could not be established. (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Connected successfully\r\n");
+      mqtt_connected = true;
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_DISCONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Connection was interrupted (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Disconnected\r\n");
+    }
+    mqtt_connected = false;
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_SUBSCRIBED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Could not subscribe to topic. (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Successfully subscribed to topic '%s'\r\n", data.topic);
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_PUBLISHED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Could not publish message (id: %d) to topic. (code: %d)\r\n", data.mid,
+                    data.rc);
+    } else {
+      Serial.printf("MQTT: Successfully published message (id: %d)\r\n", data.mid);
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_MESSAGE:
+    Serial.printf("MQTT: Message (id: %d) received on topic '%s' (size: %ld bytes)\r\n", data.mid,
+                  data.topic, data.msg_length);
+
+    /* Receive the MQTT message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.mqttReceive(data.topic, data.mid, in_buf, data.msg_length)) {
+      Serial.printf("Received message: %s\r\n", in_buf);
+    } else {
+      Serial.println("Could not receive MQTT message");
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_MEMORY_FULL:
+    Serial.println("MQTT: Memory full");
+    break;
+  }
+}
+
+/**
+ * @brief Common routine to publish a message to an MQTT topic.
+ */
+static bool mqttPublishMessage(const char* topic, const char* message)
+{
+  Serial.printf("Publishing to topic '%s': %s ...\r\n", topic, message);
+  if(!modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
+    Serial.println("Publishing failed");
+    return false;
+  }
+  return true;
+}
+
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.println("Walter ThingSpeak example");
+  Serial.println("\r\n\r\n=== Walter ThingSpeak example (Arduino v1.5.0) ===\r\n\r\n");
 
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Modem initialization OK");
   } else {
     Serial.println("Error: Modem initialization ERROR");
-    return;
-  }
-
-  /* Connect the modem to the lte network */
-  if(!lteConnect()) {
-    Serial.println("Error: Could Not Connect to LTE");
     return;
   }
 
@@ -189,17 +328,30 @@ void setup()
     Serial.println("Error: MQTT configuration failed");
     return;
   }
-
-  /* Connect to the ThingSpeak MQTT broker */
-  if(modem.mqttConnect("mqtt3.thingspeak.com", 1883)) {
-    Serial.println("MQTT connection succeeded");
-  } else {
-    Serial.println("Error: MQTT connection failed");
-  }
 }
 
 void loop()
 {
+  if(!lteConnected()) {
+    if(!lteConnect()) {
+      Serial.println("Error: Failed to connect to network");
+      delay(1000);
+      ESP.restart();
+    }
+    mqtt_connected = false;
+  }
+
+  /* Connect to the ThingSpeak MQTT broker */
+  if(!mqtt_connected) {
+    if(modem.mqttConnect("mqtt3.thingspeak.com", 1883)) {
+      Serial.println("MQTT connection succeeded");
+    } else {
+      Serial.println("Error: MQTT connection failed");
+    }
+    delay(5000);
+    return;
+  }
+
   /* Read the temperature of Walter */
   float temp = temperatureRead();
   Serial.printf("Walter's SoC temp: %.02f °C\n", temp);

@@ -99,18 +99,24 @@ WalterModem modem;
 WalterModemRsp rsp;
 
 /**
+ * @brief Flag indicating whether to publish a message.
+ */
+bool mqtt_connected = false;
+
+/**
+ * @brief The buffer to transmit to the MQTT server.
+ */
+uint8_t out_buf[32] = { 0 };
+
+/**
  * @brief Buffer for incoming response
  */
-uint8_t in_buf[256] = { 0 };
+uint8_t in_buf[4096] = { 0 };
 
 /**
- * @brief MQTT client and message prefix based on mac address
- */
-char macString[32];
-
-/**
- * @brief This function checks if we are connected to the lte network
- * @return True when connected, False otherwise
+ * @brief This function checks if we are connected to the LTE network
+ *
+ * @return true when connected, false otherwise
  */
 bool lteConnected()
 {
@@ -120,29 +126,66 @@ bool lteConnected()
 }
 
 /**
- * @brief This function waits for the modem to be connected to the Lte network.
- * @return true if the connected, else false on timeout.
+ * @brief This function waits for the modem to be connected to the LTE network.
+ *
+ * @param timeout_sec The amount of seconds to wait before returning a time-out.
+ *
+ * @return true if connected, false on time-out.
  */
-bool waitForNetwork()
+bool waitForNetwork(int timeout_sec = 300)
 {
-  /* Wait for the network to become available */
-  int timeout = 0;
+  Serial.print("Connecting to the network...");
+  int time = 0;
   while(!lteConnected()) {
+    Serial.print(".");
     delay(1000);
-    timeout++;
-    if(timeout > 300)
+    time++;
+    if(time > timeout_sec)
       return false;
   }
+  Serial.println();
   Serial.println("Connected to the network");
   return true;
 }
 
 /**
+ * @brief Disconnect from the LTE network.
+ *
+ * This function will disconnect the modem from the LTE network and block until
+ * the network is actually disconnected. After the network is disconnected the
+ * GNSS subsystem can be used.
+ *
+ * @return true on success, false on error.
+ */
+bool lteDisconnect()
+{
+  /* Set the operational state to minimum */
+  if(modem.setOpState(WALTER_MODEM_OPSTATE_MINIMUM)) {
+    Serial.println("Successfully set operational state to MINIMUM");
+  } else {
+    Serial.println("Error: Could not set operational state to MINIMUM");
+    return false;
+  }
+
+  /* Wait for the network to become available */
+  WalterModemNetworkRegState regState = modem.getNetworkRegState();
+  while(regState != WALTER_MODEM_NETWORK_REG_NOT_SEARCHING) {
+    delay(100);
+    regState = modem.getNetworkRegState();
+  }
+
+  Serial.println("Disconnected from the network");
+  return true;
+}
+
+/**
  * @brief This function tries to connect the modem to the cellular network.
- * @return true if the connection attempt is successful, else false.
+ *
+ * @return true on success, false on error.
  */
 bool lteConnect()
 {
+  /* Set the operational state to NO RF */
   if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
   } else {
@@ -168,7 +211,7 @@ bool lteConnect()
 
   /* Set the network operator selection to automatic */
   if(modem.setNetworkSelectionMode(WALTER_MODEM_NETWORK_SEL_MODE_AUTOMATIC)) {
-    Serial.println("Network selection mode to was set to automatic");
+    Serial.println("Network selection mode was set to automatic");
   } else {
     Serial.println("Error: Could not set the network selection mode to automatic");
     return false;
@@ -220,28 +263,170 @@ bool setupTLSProfile(void)
   return true;
 }
 
+/**
+ * @brief The network registration event handler.
+ *
+ * You can use this handler to get notified of network registration state changes. For this example,
+ * we use polling to get the network registration state. You can use this to implement your own
+ * reconnection logic.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] state The network registration state.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
+{
+  switch(state) {
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+    Serial.println("Network registration: Registered (home)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+    Serial.println("Network registration: Registered (roaming)");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+    Serial.println("Network registration: Not searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_SEARCHING:
+    Serial.println("Network registration: Searching");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_DENIED:
+    Serial.println("Network registration: Denied");
+    break;
+
+  case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+    Serial.println("Network registration: Unknown");
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief The MQTT event handler.
+ *
+ * This function will be called on various MQTT events such as connection, disconnection,
+ * subscription, publication and incoming messages. You can modify this handler to implement your
+ * own logic based on the events received.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking the event
+ * processing task.
+ *
+ * @param[out] event The type of MQTT event.
+ * @param[out] data The data associated with the event.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myMQTTEventHandler(WMMQTTEventType event, WMMQTTEventData data, void* args)
+{
+  switch(event) {
+  case WALTER_MODEM_MQTT_EVENT_CONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Connection could not be established. (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Connected successfully\r\n");
+
+      /* Subscribe to the test topic */
+      if(modem.mqttSubscribe(AWS_MQTTS_TOPIC)) {
+        Serial.printf("Subscribing to '%s'...\r\n", AWS_MQTTS_TOPIC);
+      } else {
+        Serial.println("Subscribing failed");
+      }
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_DISCONNECTED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Connection was interrupted (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Disconnected\r\n");
+    }
+    mqtt_connected = false;
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_SUBSCRIBED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Could not subscribe to topic. (code: %d)\r\n", data.rc);
+    } else {
+      Serial.printf("MQTT: Successfully subscribed to topic '%s'\r\n", data.topic);
+      mqtt_connected = true;
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_PUBLISHED:
+    if(data.rc != 0) {
+      Serial.printf("MQTT: Could not publish message (id: %d) to topic. (code: %d)\r\n", data.mid,
+                    data.rc);
+    } else {
+      Serial.printf("MQTT: Successfully published message (id: %d)\r\n", data.mid);
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_MESSAGE:
+    Serial.printf("MQTT: Message (id: %d) received on topic '%s' (size: %ld bytes)\r\n", data.mid,
+                  data.topic, data.msg_length);
+
+    /* Receive the MQTT message from the modem buffer */
+    memset(in_buf, 0, sizeof(in_buf));
+    if(modem.mqttReceive(data.topic, data.mid, in_buf, data.msg_length)) {
+      Serial.printf("Received message: %s\r\n", in_buf);
+    } else {
+      Serial.println("Could not receive MQTT message");
+    }
+    break;
+
+  case WALTER_MODEM_MQTT_EVENT_MEMORY_FULL:
+    Serial.println("MQTT: Memory full");
+    break;
+  }
+}
+
+/**
+ * @brief Common routine to publish a message to an MQTT topic.
+ */
+static bool mqttPublishMessage(const char* topic, const char* message)
+{
+  Serial.printf("Publishing to topic '%s': %s ...\r\n", topic, message);
+  if(!modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
+    Serial.println("Publishing failed");
+    return false;
+  }
+  return true;
+}
+
 void setup()
 {
   Serial.begin(115200);
-  delay(5000);
+  delay(2000);
 
-  Serial.println("Walter modem AWS IoT example v1.0.0\r\n");
+  Serial.println("\r\n\r\n=== WalterModem AWS MQTT IoT example (Arduino v1.5.0) ===\r\n\r\n");
 
-  esp_read_mac(in_buf, ESP_MAC_WIFI_STA);
-  sprintf(macString, "walter%02X:%02X:%02X:%02X:%02X:%02X", in_buf[0], in_buf[1], in_buf[2],
-          in_buf[3], in_buf[4], in_buf[5]);
+  uint8_t mac[6] = { 0 };
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  sprintf((char*) out_buf, "walter-%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+          mac[4], mac[5]);
 
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Modem initialization OK");
   } else {
     Serial.println("Error: Modem initialization ERROR");
     return;
   }
-  /* Connect the modem to the lte network */
-  if(!lteConnect()) {
-    Serial.println("Error: Could Not Connect to LTE");
-    return;
-  }
+
+  /* Set the network registration event handler (optional) */
+  modem.setRegistrationEventHandler(myNetworkEventHandler, NULL);
+
+  /* Set the MQTT event handler */
+  modem.setMQTTEventHandler(myMQTTEventHandler, NULL);
 
   if(setupTLSProfile()) {
     Serial.println("TLS Profile setup succeeded");
@@ -257,41 +442,40 @@ void setup()
     Serial.println("Error: MQTTS configuration failed");
     return;
   }
-
-  if(modem.mqttConnect(AWS_MQTTS_ENDPOINT, AWS_MQTTS_PORT)) {
-    Serial.println("MQTTS connection succeeded");
-  } else {
-    Serial.println("Error: MQTTS connection failed");
-  }
-
-  if(modem.mqttSubscribe(AWS_MQTTS_TOPIC)) {
-    Serial.println("MQTTS subscribed to topic");
-  } else {
-    Serial.println("Error: MQTTS subscribe failed");
-  }
 }
 
 void loop()
 {
-  delay(15000);
-
   static int seq = 0;
-  static char outgoingMsg[64];
+  static char out_msg[64];
   seq++;
-  if(seq % 3 == 0) {
-    sprintf(outgoingMsg, "%s-%d", macString, seq);
-    if(modem.mqttPublish(AWS_MQTTS_TOPIC, (uint8_t*) outgoingMsg, strlen(outgoingMsg))) {
-      Serial.printf("published '%s' on topic", outgoingMsg);
-    } else {
-      Serial.print("MQTTS publish failed\r\n");
+
+  if(!lteConnected()) {
+    if(!lteConnect()) {
+      Serial.println("Error: Failed to connect to network");
+      delay(1000);
+      ESP.restart();
     }
+    mqtt_connected = false;
   }
 
-  while(modem.mqttDidRing(AWS_MQTTS_TOPIC, in_buf, sizeof(in_buf), &rsp)) {
-    Serial.printf("incoming: qos=%d msgid=%d len=%d:\r\n", rsp.data.mqttResponse.qos,
-                  rsp.data.mqttResponse.messageId, rsp.data.mqttResponse.length);
-    for(int i = 0; i < rsp.data.mqttResponse.length; i++) {
-      Serial.printf("'%c' 0x%02x\r\n", in_buf[i], in_buf[i]);
+  /* Connect to a public MQTT broker */
+  if(!mqtt_connected) {
+    if(modem.mqttConnect(AWS_MQTTS_ENDPOINT, AWS_MQTTS_PORT)) {
+      Serial.println("Connecting to MQTT broker...");
+    } else {
+      Serial.println("Error: Failed to connect to MQTT broker");
     }
+    delay(5000);
+    return;
   }
+
+  Serial.println();
+  sprintf(out_msg, "%s-%d", out_buf, seq);
+  if(!mqttPublishMessage(AWS_MQTTS_TOPIC, out_msg)) {
+    Serial.println("MQTT publish failed");
+    mqtt_connected = false;
+  }
+
+  delay(15000);
 }

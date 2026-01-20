@@ -83,6 +83,11 @@ bool WalterModem::mqttDisconnect(WalterModemRsp* rsp, walterModemCb cb, void* ar
 bool WalterModem::mqttConnect(const char* hostname, uint16_t port, uint16_t keep_alive,
                               WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
+  // Free all topics on connect
+  for(size_t i = 0; i < WALTER_MODEM_MQTT_MAX_TOPICS; i++) {
+    _mqttTopics[i].free = true;
+  }
+
   _runCmd(
       arr("AT+SQNSMQTTCONNECT=0,", _atStr(hostname), ",", _atNum(port), ",", _atNum(keep_alive)),
       "OK", rsp, cb, args);
