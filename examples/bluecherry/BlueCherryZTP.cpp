@@ -80,11 +80,11 @@
 static bool _coapRingReceived = false;
 static uint16_t _coapRingMsgId = 0;
 
-static void ztpCoAPEventHandler(WMCoAPEventType event, WMCoAPEventData data, void* args)
+static void ztpCoAPEventHandler(WMCoAPEventType event, const WMCoAPEventData* data, void* args)
 {
   switch(event) {
   case WALTER_MODEM_COAP_EVENT_RING:
-    _coapRingMsgId = data.msg_id;
+    _coapRingMsgId = data->msg_id;
     _coapRingReceived = true;
     break;
   default:

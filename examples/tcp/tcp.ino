@@ -263,23 +263,23 @@ static void myNetworkEventHandler(WalterModemNetworkRegState state, void* args)
  *
  * @return void
  */
-static void mySocketEventHandler(WMSocketEventType event, WMSocketEventData data, void* args)
+static void mySocketEventHandler(WMSocketEventType event, const WMSocketEventData* data, void* args)
 {
   switch(event) {
   case WALTER_MODEM_SOCKET_EVENT_DISCONNECTED:
-    Serial.printf("SOCKET: Disconnected (id %d)\r\n", data.conn_id);
+    Serial.printf("SOCKET: Disconnected (id %d)\r\n", data->conn_id);
     break;
 
   case WALTER_MODEM_SOCKET_EVENT_RING:
-    Serial.printf("SOCKET: Message received on socket %d (size: %u)\r\n", data.conn_id,
-                  data.data_len);
+    Serial.printf("SOCKET: Message received on socket %d (size: %u)\r\n", data->conn_id,
+                  data->data_len);
 
     /* Receive the HTTP message from the modem buffer */
     memset(in_buf, 0, sizeof(in_buf));
-    if(modem.socketReceive(data.conn_id, in_buf, data.data_len)) {
-      Serial.printf("Received message on socket %d: %s\r\n", data.conn_id, in_buf);
+    if(modem.socketReceive(data->conn_id, in_buf, data->data_len)) {
+      Serial.printf("Received message on socket %d: %s\r\n", data->conn_id, in_buf);
     } else {
-      Serial.printf("Could not receive message for socket %d\r\n", data.conn_id);
+      Serial.printf("Could not receive message for socket %d\r\n", data->conn_id);
     }
     break;
 
