@@ -1,7 +1,8 @@
 name: Sync src folder to walter-esp-idf
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
       - main
     paths:
@@ -9,6 +10,7 @@ on:
 
 jobs:
   sync-src:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout this repo
@@ -35,11 +37,11 @@ jobs:
 
       - name: Prepare commit info
         run: |
-          LAST_SRC_COMMIT_MSG=$(git log -1 --pretty=format:"%s" -- src)
-          LAST_SRC_COMMIT_SHA=${{ github.sha }}
-          COMMIT_LINK="https://github.com/QuickSpot/walter-arduino/commit/${LAST_SRC_COMMIT_SHA}"
-          COMMIT_MESSAGE="Sync src from walter-arduino: (${COMMIT_LINK}) [skip ci]"
-          COMMIT_DESCRIPTION="Commit message: \"${LAST_SRC_COMMIT_MSG}\", SHA: ${LAST_SRC_COMMIT_SHA}"
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_LINK="https://github.com/QuickSpot/arduino/pull/${PR_NUMBER}"
+          COMMIT_MESSAGE="Sync: src from walter-arduino (${PR_LINK})"
+          COMMIT_DESCRIPTION="PR title: \"${PR_TITLE}\", nr: ${PR_NUMBER}"
           echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
           echo "COMMIT_DESCRIPTION=$COMMIT_DESCRIPTION" >> $GITHUB_ENV
 
