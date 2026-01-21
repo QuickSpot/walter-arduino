@@ -428,8 +428,8 @@ bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
     }
   };
 
-  const auto& almanac = rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC];
-  const auto& rtEph =
+  const WMGNSSAssistance& almanac = rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC];
+  const WMGNSSAssistance& rtEph =
       rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS];
 
   report("Almanac", almanac, updateAlmanac);

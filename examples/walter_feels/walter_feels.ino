@@ -419,9 +419,9 @@ void myGNSSEventHandler(WMGNSSEventType type, const WMGNSSEventData* data, void*
   case WALTER_MODEM_GNSS_EVENT_ASSISTANCE:
     if(data->assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC) {
       Serial.println("GNSS Assistance: Almanac updated");
-    } else if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS) {
+    } else if(data->assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS) {
       Serial.println("GNSS Assistance: Real-time ephemeris updated");
-    } else if(data.assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS) {
+    } else if(data->assistance == WALTER_MODEM_GNSS_ASSISTANCE_TYPE_PREDICTED_EPHEMERIS) {
       Serial.println("GNSS Assistance: Predicted ephemeris updated");
     }
 
@@ -478,8 +478,8 @@ bool checkAssistanceStatus(WalterModemRsp* rsp, bool* updateAlmanac = nullptr,
     }
   };
 
-  const auto& almanac = rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC];
-  const auto& rtEph =
+  const WMGNSSAssistance& almanac = rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_ALMANAC];
+  const WMGNSSAssistance& rtEph =
       rsp->data.gnssAssistance[WALTER_MODEM_GNSS_ASSISTANCE_TYPE_REALTIME_EPHEMERIS];
 
   report("Almanac", almanac, updateAlmanac);
