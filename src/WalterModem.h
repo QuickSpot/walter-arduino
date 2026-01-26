@@ -646,6 +646,23 @@ typedef enum {
 } WalterModemTempStatus;
 
 #pragma endregion // ENUMS TEMPERATURE_MONITORING
+#pragma region ENUMS VOLTAGE_MONITORING
+
+typedef enum {
+  WALTER_MODEM_VOLTAGE_MONITOR_MODE_DISABLED = 0,
+  WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE = 1,
+  WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE_SHUTDOWN = 2,
+  WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE_SLEEP = 3,
+  WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE_SLEEP_SHUTDOWN = 4
+} WalterModemVoltageMonitorMode;
+
+typedef enum {
+  WALTER_MODEM_VOLTAGE_STATUS_ABOVE_THRESHOLD = 0,
+  WALTER_MODEM_VOLTAGE_STATUS_BELOW_THRESHOLD = 1,
+  WALTER_MODEM_VOLTAGE_STATUS_SHUTDOWN = 10
+} WalterModemVoltageStatus;
+
+#pragma endregion // ENUMS VOLTAGE_MONITORING
 #pragma region ENUMS PDP_CONTEXT
 
 /**
@@ -758,7 +775,8 @@ typedef enum {
   WALTER_MODEM_RSP_DATA_TYPE_HTTP,
   WALTER_MODEM_RSP_DATA_TYPE_COAP,
   WALTER_MODEM_RSP_DATA_TYPE_MQTT,
-  WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE
+  WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE,
+  WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE
 } WalterModemRspDataType;
 
 /**
@@ -1303,6 +1321,11 @@ typedef enum {
    * @brief Temperature related events.
    */
   WALTER_MODEM_EVENT_TYPE_TEMPERATURE,
+
+  /**
+   * @brief Voltage related events.
+   */
+  WALTER_MODEM_EVENT_TYPE_VOLTAGE,
 
   /**
    * @brief The number of event types supported by the library.
@@ -2426,6 +2449,14 @@ struct WalterModemTempData {
   int8_t temperature;
 };
 
+struct WalterModemVoltageData {
+  WalterModemVoltageMonitorMode mode;
+  WalterModemVoltageStatus status;
+  uint16_t voltage;
+  uint16_t threshold;
+  uint16_t period;
+};
+
 /**
  * @brief This structure represents an event.
  */
@@ -2434,6 +2465,9 @@ struct WalterModemEvent {
   int64_t timestamp;
 
   union {
+
+    WalterModemTempData temperature;
+    WalterModemVoltageData voltage;
 
     struct {
       WMNetworkEventType event;
@@ -2480,8 +2514,6 @@ struct WalterModemEvent {
     } mqtt;
 
 #endif
-
-    WalterModemTempData temperature;
   };
 };
 
@@ -2516,6 +2548,16 @@ typedef void (*walterModemSystemEventHandler)(WalterModemEventSystemType ev, voi
  * @return None.
  */
 typedef void (*walterModemTemperatureEventHandler)(const WalterModemTempData* data, void* args);
+
+/**
+ * @brief Header of a voltage event handler.
+ *
+ * @param data The voltage data including mode, status, voltage, threshold, and period.
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemVoltageEventHandler)(const WalterModemVoltageData* data, void* args);
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
@@ -2659,6 +2701,11 @@ typedef struct {
      * @brief Pointer to the temperature event handler.
      */
     walterModemTemperatureEventHandler tempHandler;
+
+    /**
+     * @brief Pointer to the voltage event handler.
+     */
+    walterModemVoltageEventHandler voltageHandler;
   };
 
   /**
@@ -2800,6 +2847,11 @@ union WalterModemRspData {
    * @brief Temperature data
    */
   WalterModemTempData temperature;
+
+  /**
+   * @brief Voltage data
+   */
+  WalterModemVoltageData voltage;
 };
 
 /**
@@ -4975,7 +5027,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool socketConfig(int socket_id, int pdp_ctx_id = 1, uint16_t mtu = 300,
-                           uint16_t exchange_timeout = 0, uint16_t conn_timeout = 60,
+                           uint16_t exchange_timeout = 0, uint16_t conn_timeout = 30,
                            uint16_t send_delay_ms = 5000, WalterModemRsp* rsp = NULL,
                            walterModemCb cb = NULL, void* args = NULL);
 
@@ -5792,26 +5844,67 @@ public:
    * @param[in] warning_low The warning low temperature threshold.
    * @param[in] warning_high The warning high temperature threshold.
    * @param[in] extreme_high The extreme high temperature threshold.
-   * @param[out] rsp Optional modem response structure to save the result in.
-   * @param[in] cb Optional callback function, if set this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[out] rsp Pointer to the response structure to save the result in.
+   * @param[in] cb Callback function, if not NULL this function will not block.
+   * @param[in] args Arguments to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
    */
-  static bool configTemperatureMonitor(WalterModemTempMonitorMode mode, int8_t extreme_low,
-                                       int8_t warning_low, int8_t warning_high, int8_t extreme_high,
-                                       WalterModemRsp* rsp, walterModemCb cb, void* args);
+  static bool configTemperatureMonitor(WalterModemTempMonitorMode mode, int8_t extreme_low = -40,
+                                       int8_t warning_low = -30, int8_t warning_high = 80,
+                                       int8_t extreme_high = 90, WalterModemRsp* rsp = NULL,
+                                       walterModemCb cb = NULL, void* args = NULL);
 
   /**
    * @brief Get the current temperature from the modem.
    *
    * This function retrieves the current temperature from the modem.
    *
-   * @param[out] rsp Optional modem response structure to save the result in.
-   * @param[in] cb Optional callback function, if set this function will not block.
-   * @param[in] args Optional argument to pass to the callback.
+   * @param[out] rsp Pointer to the response structure to save the result in.
+   * @param[in] cb Callback function, if not NULL this function will not block.
+   * @param[in] args Arguments to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
    */
-  static bool getTemperature(WalterModemRsp* rsp, walterModemCb cb, void* args);
+  static bool getTemperature(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
+                             void* args = NULL);
 
 #pragma endregion // CLASS PUBLIC METHODS TEMPERATURE_MONITOR
+#pragma region CLASS PUBLIC METHODS VOLTAGE_MONITOR
+
+  /**
+   * @brief Configure the voltage monitor.
+   *
+   * This function configures the voltage monitor of the modem. It allows setting
+   * a threshold for low voltage detection and a period for measurements.
+   *
+   * @param[in] mode The voltage monitor mode.
+   * @param[in] threshold The voltage threshold (in tenths of a volt).
+   * @param[in] period Time between measurements in seconds (default 30).
+   * @param[out] rsp Pointer to the response structure to save the result in.
+   * @param[in] cb Callback function, if not NULL this function will not block.
+   * @param[in] args Arguments to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool configVoltageMonitor(WalterModemVoltageMonitorMode mode, uint16_t threshold = 25,
+                                   uint16_t period = 30, WalterModemRsp* rsp = NULL,
+                                   walterModemCb cb = NULL, void* args = NULL);
+
+  /**
+   * @brief Get the current voltage configuration and reading from the modem.
+   *
+   * This function retrieves the current voltage monitor configuration and voltage reading.
+   *
+   * @param[out] rsp Pointer to the response structure to save the result in.
+   * @param[in] cb Callback function, if not NULL this function will not block.
+   * @param[in] args Arguments to pass to the callback.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool getVoltage(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
+
+#pragma endregion // CLASS PUBLIC METHODS VOLTAGE_MONITOR
 #pragma region CLASS PUBLIC METHODS EVENT_HANDLERS
 
   /**
@@ -5859,6 +5952,21 @@ public:
    */
   static void setTemperatureEventHandler(walterModemTemperatureEventHandler handler = nullptr,
                                          void* args = nullptr);
+
+  /**
+   * @brief Set the voltage event handler.
+   *
+   * This function sets the handler that is called when a voltage event occurs (URC).
+   * When this function is called multiple times, only the last handler will be set.
+   * To remove the voltage event handler, this function must be called with a nullptr.
+   *
+   * @param[in] handler The handler function.
+   * @param[in] args handler arguments.
+   *
+   * @return None.
+   */
+  static void setVoltageEventHandler(walterModemVoltageEventHandler handler = nullptr,
+                                     void* args = nullptr);
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
