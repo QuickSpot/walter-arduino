@@ -628,6 +628,24 @@ typedef enum {
   WALTER_MODEM_CMD_STATE_COMPLETE,
 } WalterModemCmdState;
 
+#pragma region ENUMS TEMPERATURE_MONITORING
+
+typedef enum {
+  WALTER_MODEM_TEMP_MONITOR_MODE_OFF = 0,
+  WALTER_MODEM_TEMP_MONITOR_MODE_ON = 1,
+  WALTER_MODEM_TEMP_MONITOR_MODE_ON_EMERGENCY_SHUTDOWN = 2
+} WalterModemTempMonitorMode;
+
+typedef enum {
+  WALTER_MODEM_TEMP_STATUS_EXTREME_LOW = -2,
+  WALTER_MODEM_TEMP_STATUS_WARNING_LOW = -1,
+  WALTER_MODEM_TEMP_STATUS_NORMAL = 0,
+  WALTER_MODEM_TEMP_STATUS_WARNING_HIGH = 1,
+  WALTER_MODEM_TEMP_STATUS_EXTREME_HIGH = 2,
+  WALTER_MODEM_TEMP_STATUS_SHUTDOWN = 10
+} WalterModemTempStatus;
+
+#pragma endregion // ENUMS TEMPERATURE_MONITORING
 #pragma region ENUMS PDP_CONTEXT
 
 /**
@@ -739,7 +757,8 @@ typedef enum {
   WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
   WALTER_MODEM_RSP_DATA_TYPE_HTTP,
   WALTER_MODEM_RSP_DATA_TYPE_COAP,
-  WALTER_MODEM_RSP_DATA_TYPE_MQTT
+  WALTER_MODEM_RSP_DATA_TYPE_MQTT,
+  WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE
 } WalterModemRspDataType;
 
 /**
@@ -1279,6 +1298,11 @@ typedef enum {
    * @brief Socket related events.
    */
   WALTER_MODEM_EVENT_TYPE_SOCKET,
+
+  /**
+   * @brief Temperature related events.
+   */
+  WALTER_MODEM_EVENT_TYPE_TEMPERATURE,
 
   /**
    * @brief The number of event types supported by the library.
@@ -2396,6 +2420,12 @@ struct WMMQTTEventData {
   int mid;
 };
 
+struct WalterModemTempData {
+  WalterModemTempMonitorMode mode;
+  WalterModemTempStatus status;
+  int8_t temperature;
+};
+
 /**
  * @brief This structure represents an event.
  */
@@ -2450,6 +2480,8 @@ struct WalterModemEvent {
     } mqtt;
 
 #endif
+
+    WalterModemTempData temperature;
   };
 };
 
@@ -2474,6 +2506,16 @@ typedef void (*walterModemNetworkEventHandler)(WMNetworkEventType event,
  * @return None.
  */
 typedef void (*walterModemSystemEventHandler)(WalterModemEventSystemType ev, void* args);
+
+/**
+ * @brief Header of a temperature event handler.
+ *
+ * @param data The temperature data including mode, status, and temperature.
+ * @param args Optional arguments set by the application layer.
+ *
+ * @return None.
+ */
+typedef void (*walterModemTemperatureEventHandler)(const WalterModemTempData* data, void* args);
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
@@ -2612,6 +2654,11 @@ typedef struct {
      */
     walterModemSocketEventHandler socketHandler;
 #endif
+
+    /**
+     * @brief Pointer to the temperature event handler.
+     */
+    walterModemTemperatureEventHandler tempHandler;
   };
 
   /**
@@ -2748,6 +2795,11 @@ union WalterModemRspData {
   WalterModemSocketResponse socketResponse;
 
 #endif
+
+  /**
+   * @brief Temperature data
+   */
+  WalterModemTempData temperature;
 };
 
 /**
@@ -5726,6 +5778,40 @@ public:
 
 #endif
 #pragma endregion
+#pragma region CLASS PUBLIC METHODS TEMPERATURE_MONITOR
+
+  /**
+   * @brief Configure the temperature monitor.
+   *
+   * This function configures the temperature monitor of the modem. It allows setting
+   * thresholds for extreme low, warning low, warning high, and extreme high temperatures.
+   * The mode parameter determines how the temperature monitor operates.
+   *
+   * @param[in] mode The temperature monitor mode.
+   * @param[in] extreme_low The extreme low temperature threshold.
+   * @param[in] warning_low The warning low temperature threshold.
+   * @param[in] warning_high The warning high temperature threshold.
+   * @param[in] extreme_high The extreme high temperature threshold.
+   * @param[out] rsp Optional modem response structure to save the result in.
+   * @param[in] cb Optional callback function, if set this function will not block.
+   * @param[in] args Optional argument to pass to the callback.
+   */
+  static bool configTemperatureMonitor(WalterModemTempMonitorMode mode, int8_t extreme_low,
+                                       int8_t warning_low, int8_t warning_high, int8_t extreme_high,
+                                       WalterModemRsp* rsp, walterModemCb cb, void* args);
+
+  /**
+   * @brief Get the current temperature from the modem.
+   *
+   * This function retrieves the current temperature from the modem.
+   *
+   * @param[out] rsp Optional modem response structure to save the result in.
+   * @param[in] cb Optional callback function, if set this function will not block.
+   * @param[in] args Optional argument to pass to the callback.
+   */
+  static bool getTemperature(WalterModemRsp* rsp, walterModemCb cb, void* args);
+
+#pragma endregion // CLASS PUBLIC METHODS TEMPERATURE_MONITOR
 #pragma region CLASS PUBLIC METHODS EVENT_HANDLERS
 
   /**
@@ -5758,6 +5844,21 @@ public:
    */
   static void setSystemEventHandler(walterModemSystemEventHandler handler = nullptr,
                                     void* args = nullptr);
+
+  /**
+   * @brief Set the temperature event handler.
+   *
+   * This function sets the handler that is called when a temperature event occurs (URC).
+   * When this function is called multiple times, only the last handler will be set.
+   * To remove the temperature event handler, this function must be called with a nullptr.
+   *
+   * @param[in] handler The handler function.
+   * @param[in] args handler arguments.
+   *
+   * @return None.
+   */
+  static void setTemperatureEventHandler(walterModemTemperatureEventHandler handler = nullptr,
+                                         void* args = nullptr);
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 

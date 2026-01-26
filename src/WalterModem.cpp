@@ -1933,6 +1933,44 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
     goto after_processing_logic;
   }
 
+  /* SQNTMON Response */
+  if(_buffStartsWith(buff, "+SQNTMON: ")) {
+    const char* rspStr = _buffStr(buff);
+    int mode = 0;
+    int status = 0;
+    int temperature = 0;
+
+    int parsed = sscanf(rspStr, "+SQNTMON: %d,%d,%d", &mode, &status, &temperature);
+    if(parsed == 3 && cmd != NULL && cmd->rsp != NULL) {
+      cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE;
+      cmd->rsp->data.temperature.mode = (WalterModemTempMonitorMode) mode;
+      cmd->rsp->data.temperature.status = (WalterModemTempStatus) status;
+      cmd->rsp->data.temperature.temperature = (int8_t) temperature;
+    }
+
+    goto after_processing_logic;
+  }
+
+  /* SQNTMONS URC (unsolicited result code) */
+  if(_buffStartsWith(buff, "+SQNTMONS: ")) {
+    const char* rspStr = _buffStr(buff);
+    int mode = 0;
+    int status = 0;
+    int temperature = 0;
+
+    int parsed = sscanf(rspStr, "+SQNTMONS: %d,%d,%d", &mode, &status, &temperature);
+    if(parsed == 3) {
+      WalterModemEvent newEvent = {};
+      newEvent.type = WALTER_MODEM_EVENT_TYPE_TEMPERATURE;
+      newEvent.temperature.mode = (WalterModemTempMonitorMode) mode;
+      newEvent.temperature.status = (WalterModemTempStatus) status;
+      newEvent.temperature.temperature = (int8_t) temperature;
+      xQueueSend(_eventQueue.handle, &newEvent, 0);
+    }
+
+    goto after_processing_logic;
+  }
+
   /* Data prompt for data transmission */
   if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>")) {
     if(cmd != NULL && cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT && cmd->payload != NULL) {
@@ -2083,6 +2121,7 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
           cmd->rsp->data.simCardID.iccid[offset] = '\0';
           inICCID = false;
           offset = 0;
+          i += 2;
           i += 2;
           continue;
         }
@@ -3928,6 +3967,13 @@ void WalterModem::_dispatchEvent(WalterModemEvent* ev)
     }
     break;
 
+  case WALTER_MODEM_EVENT_TYPE_TEMPERATURE:
+    handler += WALTER_MODEM_EVENT_TYPE_TEMPERATURE;
+    if(handler->tempHandler != nullptr) {
+      handler->tempHandler(&ev->temperature, handler->args);
+    }
+    break;
+
   default:
     break;
   }
@@ -4824,6 +4870,26 @@ bool WalterModem::getClock(WalterModemRsp* rsp, walterModemCb cb, void* args)
   _returnAfterReply();
 }
 
+#pragma region TEMPERATURE_MONITORING
+
+bool WalterModem::configTemperatureMonitor(WalterModemTempMonitorMode mode, int8_t extreme_low,
+                                           int8_t warning_low, int8_t warning_high,
+                                           int8_t extreme_high, WalterModemRsp* rsp,
+                                           walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+SQNTMON=", _digitStr(mode), ",", _digitStr(extreme_low), ",",
+              _digitStr(warning_low), ",", _digitStr(warning_high), ",", _digitStr(extreme_high)),
+          "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+
+bool WalterModem::getTemperature(WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+SQNTMON?"), "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+
+#pragma endregion // TEMPERATURE_MONITORING
 #pragma region EVENT_HANDLERS
 
 void WalterModem::setNetworkEventHandler(walterModemNetworkEventHandler handler, void* args)
@@ -4836,6 +4902,12 @@ void WalterModem::setSystemEventHandler(walterModemSystemEventHandler handler, v
 {
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_SYSTEM].sysHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_SYSTEM].args = args;
+}
+
+void WalterModem::setTemperatureEventHandler(walterModemTemperatureEventHandler handler, void* args)
+{
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_TEMPERATURE].tempHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_TEMPERATURE].args = args;
 }
 
 #pragma endregion
