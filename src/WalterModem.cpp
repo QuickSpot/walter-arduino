@@ -1937,15 +1937,32 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
   if(_buffStartsWith(buff, "+SQNTMON: ")) {
     const char* rspStr = _buffStr(buff);
     int mode = 0;
-    int status = 0;
+    int extreme_low = 0;
+    int warning_low = 0;
+    int warning_high = 0;
+    int extreme_high = 0;
     int temperature = 0;
 
-    int parsed = sscanf(rspStr, "+SQNTMON: %d,%d,%d", &mode, &status, &temperature);
-    if(parsed == 3 && cmd != NULL && cmd->rsp != NULL) {
+    // Query response: +SQNTMON:
+    // <mode>,<extreme_low>,<warning_low>,<warning_high>,<extreme_high>,<temperature>
+    int parsed = sscanf(rspStr, "+SQNTMON: %d,%d,%d,%d,%d,%d", &mode, &extreme_low, &warning_low,
+                        &warning_high, &extreme_high, &temperature);
+    if(parsed == 6 && cmd != NULL && cmd->rsp != NULL) {
       cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE;
       cmd->rsp->data.temperature.mode = (WalterModemTempMonitorMode) mode;
-      cmd->rsp->data.temperature.status = (WalterModemTempStatus) status;
       cmd->rsp->data.temperature.temperature = (int8_t) temperature;
+      // Determine status based on temperature vs thresholds
+      if(temperature <= extreme_low) {
+        cmd->rsp->data.temperature.status = WALTER_MODEM_TEMP_STATUS_EXTREME_LOW;
+      } else if(temperature <= warning_low) {
+        cmd->rsp->data.temperature.status = WALTER_MODEM_TEMP_STATUS_WARNING_LOW;
+      } else if(temperature >= extreme_high) {
+        cmd->rsp->data.temperature.status = WALTER_MODEM_TEMP_STATUS_EXTREME_HIGH;
+      } else if(temperature >= warning_high) {
+        cmd->rsp->data.temperature.status = WALTER_MODEM_TEMP_STATUS_WARNING_HIGH;
+      } else {
+        cmd->rsp->data.temperature.status = WALTER_MODEM_TEMP_STATUS_NORMAL;
+      }
     }
 
     goto after_processing_logic;
@@ -1965,6 +1982,63 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
       newEvent.temperature.mode = (WalterModemTempMonitorMode) mode;
       newEvent.temperature.status = (WalterModemTempStatus) status;
       newEvent.temperature.temperature = (int8_t) temperature;
+      xQueueSend(_eventQueue.handle, &newEvent, 0);
+    }
+
+    goto after_processing_logic;
+  }
+
+  /* SQNVMON Response (set command response) */
+  if(_buffStartsWith(buff, "+SQNVMON: ") && cmd != NULL && cmd->rsp != NULL) {
+    const char* rspStr = _buffStr(buff);
+    int mode = 0;
+    int statusOrThreshold = 0;
+    int voltageOrPeriod = 0;
+    int voltage = 0;
+
+    // Try to parse as query response first: +SQNVMON:<mode>,<threshold>,<period>,<voltage>
+    int parsed = sscanf(rspStr, "+SQNVMON: %d,%d,%d,%d", &mode, &statusOrThreshold,
+                        &voltageOrPeriod, &voltage);
+    if(parsed == 4) {
+      cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE;
+      cmd->rsp->data.voltage.mode = (WalterModemVoltageMonitorMode) mode;
+      cmd->rsp->data.voltage.threshold = (uint16_t) statusOrThreshold;
+      cmd->rsp->data.voltage.period = (uint16_t) voltageOrPeriod;
+      cmd->rsp->data.voltage.voltage = (uint16_t) voltage;
+      cmd->rsp->data.voltage.status =
+          WALTER_MODEM_VOLTAGE_STATUS_ABOVE_THRESHOLD; // Default for query
+    } else {
+      // Parse as set response: +SQNVMON:<mode>,<status>,<voltage>
+      parsed = sscanf(rspStr, "+SQNVMON: %d,%d,%d", &mode, &statusOrThreshold, &voltageOrPeriod);
+      if(parsed == 3) {
+        cmd->rsp->type = WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE;
+        cmd->rsp->data.voltage.mode = (WalterModemVoltageMonitorMode) mode;
+        cmd->rsp->data.voltage.status = (WalterModemVoltageStatus) statusOrThreshold;
+        cmd->rsp->data.voltage.voltage = (uint16_t) voltageOrPeriod;
+        cmd->rsp->data.voltage.threshold = 0; // Not provided in set response
+        cmd->rsp->data.voltage.period = 0;    // Not provided in set response
+      }
+    }
+
+    goto after_processing_logic;
+  }
+
+  /* SQNSVMONS URC (unsolicited result code) */
+  if(_buffStartsWith(buff, "+SQNSVMONS: ")) {
+    const char* rspStr = _buffStr(buff);
+    int mode = 0;
+    int status = 0;
+    int voltage = 0;
+
+    int parsed = sscanf(rspStr, "+SQNSVMONS: %d,%d,%d", &mode, &status, &voltage);
+    if(parsed == 3) {
+      WalterModemEvent newEvent = {};
+      newEvent.type = WALTER_MODEM_EVENT_TYPE_VOLTAGE;
+      newEvent.voltage.mode = (WalterModemVoltageMonitorMode) mode;
+      newEvent.voltage.status = (WalterModemVoltageStatus) status;
+      newEvent.voltage.voltage = (uint16_t) voltage;
+      newEvent.voltage.threshold = 0; // Not provided in URC
+      newEvent.voltage.period = 0;    // Not provided in URC
       xQueueSend(_eventQueue.handle, &newEvent, 0);
     }
 
@@ -3974,6 +4048,13 @@ void WalterModem::_dispatchEvent(WalterModemEvent* ev)
     }
     break;
 
+  case WALTER_MODEM_EVENT_TYPE_VOLTAGE:
+    handler += WALTER_MODEM_EVENT_TYPE_VOLTAGE;
+    if(handler->voltageHandler != nullptr) {
+      handler->voltageHandler(&ev->voltage, handler->args);
+    }
+    break;
+
   default:
     break;
   }
@@ -4015,6 +4096,9 @@ void WalterModem::_sleepPrepare()
 
 void WalterModem::_sleepWakeup()
 {
+
+  WalterModem::checkComm();
+
   memcpy(_pdpCtxSet, _pdpCtxSetRTC,
          WALTER_MODEM_MAX_PDP_CTXTS * sizeof(walter_modem_pdp_context_t));
 
@@ -4877,9 +4961,13 @@ bool WalterModem::configTemperatureMonitor(WalterModemTempMonitorMode mode, int8
                                            int8_t extreme_high, WalterModemRsp* rsp,
                                            walterModemCb cb, void* args)
 {
-  _runCmd(arr("AT+SQNTMON=", _digitStr(mode), ",", _digitStr(extreme_low), ",",
-              _digitStr(warning_low), ",", _digitStr(warning_high), ",", _digitStr(extreme_high)),
-          "OK", rsp, cb, args);
+  WalterModemBuffer* stringsbuffer = _getFreeBuffer();
+  stringsbuffer->size +=
+      sprintf((char*) stringsbuffer->data, "AT+SQNTMON=%d,%d,%d,%d,%d", mode, (int) extreme_low,
+              (int) warning_low, (int) warning_high, (int) extreme_high);
+
+  _runCmd(arr((const char*) stringsbuffer->data), "OK", rsp, cb, args, NULL, NULL,
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsbuffer);
   _returnAfterReply();
 }
 
@@ -4890,6 +4978,28 @@ bool WalterModem::getTemperature(WalterModemRsp* rsp, walterModemCb cb, void* ar
 }
 
 #pragma endregion // TEMPERATURE_MONITORING
+#pragma region VOLTAGE_MONITORING
+
+bool WalterModem::configVoltageMonitor(WalterModemVoltageMonitorMode mode, uint16_t threshold,
+                                       uint16_t period, WalterModemRsp* rsp, walterModemCb cb,
+                                       void* args)
+{
+  WalterModemBuffer* stringsbuffer = _getFreeBuffer();
+  stringsbuffer->size +=
+      sprintf((char*) stringsbuffer->data, "AT+SQNVMON=%d,%d,%d", mode, threshold, period);
+
+  _runCmd(arr((const char*) stringsbuffer->data), "OK", rsp, cb, args, NULL, NULL,
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsbuffer);
+  _returnAfterReply();
+}
+
+bool WalterModem::getVoltage(WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+SQNVMON?"), "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+
+#pragma endregion // VOLTAGE_MONITORING
 #pragma region EVENT_HANDLERS
 
 void WalterModem::setNetworkEventHandler(walterModemNetworkEventHandler handler, void* args)
@@ -4908,6 +5018,12 @@ void WalterModem::setTemperatureEventHandler(walterModemTemperatureEventHandler 
 {
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_TEMPERATURE].tempHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_TEMPERATURE].args = args;
+}
+
+void WalterModem::setVoltageEventHandler(walterModemVoltageEventHandler handler, void* args)
+{
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_VOLTAGE].voltageHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_VOLTAGE].args = args;
 }
 
 #pragma endregion
