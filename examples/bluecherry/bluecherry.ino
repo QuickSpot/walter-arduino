@@ -80,6 +80,12 @@ WalterModem modem;
 const char* psmActive = "00000001";
 const char* psmTAU = "00000110";
 
+/**
+ * @brief The binary configuration settings for eDRX.
+ */
+const char* edrxValue = "1101";
+const char* edrxPagingTimeWindow = "0000";
+
 // The BlueCherry CA root + intermediate certificate used for CoAP DTLS
 // communication
 const char* bc_ca_cert = "-----BEGIN CERTIFICATE-----\r\n\
@@ -177,6 +183,20 @@ bool lteDisconnect()
  */
 bool lteConnect()
 {
+  /* Configure power saving mode */
+  if(modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive)) {
+    Serial.println("Successfully configured PSM");
+  } else {
+    Serial.println("Error: Could not configure PSM");
+  }
+
+  /* Configure eDRX */
+  if(modem.configEDRX(WALTER_MODEM_EDRX_ENABLE_WITH_RESULT, edrxValue, edrxPagingTimeWindow)) {
+    Serial.println("Successfully configured eDRX");
+  } else {
+    Serial.println("Error: Could not configure eDRX");
+  }
+
   /* Set the operational state to NO RF */
   if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
@@ -210,6 +230,68 @@ bool lteConnect()
   }
 
   return waitForNetwork();
+}
+
+/** * @brief The network registration event handler.
+ *
+ * This function will be called when network registration state changes or when
+ * eDRX parameters are received from the network.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking
+ * the event processing task.
+ *
+ * @param[out] event The network registration state event.
+ * @param[out] data The registration event data including state and PSM info.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WMNetworkEventType event, const WMNetworkEventData* data,
+                                  void* args)
+{
+  if(event == WALTER_MODEM_NETWORK_EVENT_REG_STATE_CHANGE) {
+    switch(data->cereg.state) {
+    case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+      Serial.println("Network registration: Registered (home)");
+      if(data->cereg.hasPsmInfo) {
+        Serial.printf("PSM Active Time: %s, TAU: %s\r\n", data->cereg.activeTime,
+                      data->cereg.periodicTau);
+      }
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+      Serial.println("Network registration: Registered (roaming)");
+      if(data->cereg.hasPsmInfo) {
+        Serial.printf("PSM Active Time: %s, TAU: %s\r\n", data->cereg.activeTime,
+                      data->cereg.periodicTau);
+      }
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+      Serial.println("Network registration: Not searching");
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_SEARCHING:
+      Serial.println("Network registration: Searching");
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_DENIED:
+      Serial.println("Network registration: Denied");
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+      Serial.println("Network registration: Unknown");
+      break;
+
+    default:
+      break;
+    }
+  } else if(event == WALTER_MODEM_NETWORK_EVENT_EDRX_RECEIVED) {
+    Serial.printf(
+        "Network event: eDRX received (ACT: %d) Requested: %s, NW-Provided: %s, PTW: %s\r\n",
+        data->edrx.actType, data->edrx.requestedEdrx, data->edrx.nwProvidedEdrx,
+        data->edrx.pagingTimeWindow);
+  }
 }
 
 // This function will poll the BlueCherry cloud platform to check if there is an
@@ -335,8 +417,8 @@ void setup()
     return;
   }
 
-  /* Configure power saving mode */
-  modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive);
+  /* Register network event handler */
+  modem.setNetworkEventHandler(myNetworkEventHandler, NULL);
 
   /* Connect to cellular network */
   if(!lteConnected() && !lteConnect()) {
