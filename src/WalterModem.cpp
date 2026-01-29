@@ -1807,9 +1807,57 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
     const char* rspStr = _buffStr(buff);
     int mode = 0;
     int ceReg = 0;
+    char lac[16] = { 0 };
+    char ci[16] = { 0 };
+    int act = 0;
+    char activeTime[16] = { 0 };
+    char periodicTau[16] = { 0 };
+    bool hasPsmInfo = false;
+    bool isResponse = false;
+    bool isUrc = false;
 
-    int parsed = sscanf(rspStr, "+CEREG: %d,%d", &mode, &ceReg);
-    if(parsed == 2) {
+    // Check for comma after first digit to distinguish response from URC
+    const char* firstComma = strchr(rspStr + _strLitLen("+CEREG: "), ',');
+    if(firstComma && (firstComma - rspStr) == _strLitLen("+CEREG: ") + 1) {
+      // Format: +CEREG: x,... (second char is comma, so first is mode)
+      if(*(firstComma + 1) == '"') {
+        // Extended URC: +CEREG: x,"LAC","CI",act,,,"activeTime","periodicTau"
+        int result = sscanf(rspStr, "+CEREG: %d,\"%[^\"]\",\"%[^\"]\",%d,,,\"%[^\"]\",\"%[^\"]\"",
+                            &ceReg, lac, ci, &act, activeTime, periodicTau);
+        if(result >= 4) {
+          hasPsmInfo = (result == 6);
+          isUrc = true;
+        }
+      } else if(*(firstComma + 1) >= '0' && *(firstComma + 1) <= '9') {
+        // Check if this is extended response or simple response
+        const char* secondComma = strchr(firstComma + 1, ',');
+        if(secondComma && *(secondComma + 1) == '"') {
+          // Extended response: +CEREG: x,x,"LAC","CI",act,,,"activeTime","periodicTau"
+          int result =
+              sscanf(rspStr, "+CEREG: %d,%d,\"%[^\"]\",\"%[^\"]\",%d,,,\"%[^\"]\",\"%[^\"]\"",
+                     &mode, &ceReg, lac, ci, &act, activeTime, periodicTau);
+          if(result >= 5) {
+            hasPsmInfo = (result == 7);
+            isResponse = true;
+          }
+        } else {
+          // Simple response: +CEREG: x,x
+          int result = sscanf(rspStr, "+CEREG: %d,%d", &mode, &ceReg);
+          if(result == 2) {
+            isResponse = true;
+          }
+        }
+      }
+    } else {
+      // Simple URC: +CEREG: x
+      int result = sscanf(rspStr, "+CEREG: %d", &ceReg);
+      if(result == 1) {
+        isUrc = true;
+      }
+    }
+
+    // Process based on format type
+    if(isResponse) {
       if(mode > 0) {
         bool attached = ceReg == 5 || ceReg == 1;
         for(size_t i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; i++) {
@@ -1820,18 +1868,65 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
         }
         _regState = (WalterModemNetworkRegState) ceReg;
       }
-    } else if(parsed == 1) {
-      bool attached = mode == 5 || mode == 1;
+    } else if(isUrc) {
+      bool attached = ceReg == 5 || ceReg == 1;
       for(size_t i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; i++) {
         if(_pdpCtxSet[i].state != WALTER_MODEM_PDP_CONTEXT_STATE_INACTIVE) {
           _pdpCtxSet[i].state = attached ? WALTER_MODEM_PDP_CONTEXT_STATE_ATTACHED
                                          : WALTER_MODEM_PDP_CONTEXT_STATE_NOT_ATTACHED;
         }
       }
-      _regState = (WalterModemNetworkRegState) mode;
+      _regState = (WalterModemNetworkRegState) ceReg;
+
       WalterModemEvent newEvent = {};
-      newEvent.type = WALTER_MODEM_EVENT_TYPE_REGISTRATION;
-      newEvent.regstate = _regState;
+      newEvent.type = WALTER_MODEM_EVENT_TYPE_NETWORK;
+      newEvent.network.event = WALTER_MODEM_NETWORK_EVENT_REG_STATE_CHANGE;
+      newEvent.network.data.cereg.state = _regState;
+      newEvent.network.data.cereg.hasPsmInfo = hasPsmInfo;
+
+      if(hasPsmInfo) {
+        _strncpy_s(newEvent.network.data.cereg.lac, lac, sizeof(newEvent.network.data.cereg.lac));
+        _strncpy_s(newEvent.network.data.cereg.ci, ci, sizeof(newEvent.network.data.cereg.ci));
+        newEvent.network.data.cereg.act = act;
+        _strncpy_s(newEvent.network.data.cereg.activeTime, activeTime,
+                   sizeof(newEvent.network.data.cereg.activeTime));
+        _strncpy_s(newEvent.network.data.cereg.periodicTau, periodicTau,
+                   sizeof(newEvent.network.data.cereg.periodicTau));
+      } else {
+        newEvent.network.data.cereg.lac[0] = '\0';
+        newEvent.network.data.cereg.ci[0] = '\0';
+        newEvent.network.data.cereg.act = 0;
+        newEvent.network.data.cereg.activeTime[0] = '\0';
+        newEvent.network.data.cereg.periodicTau[0] = '\0';
+      }
+
+      xQueueSend(_eventQueue.handle, &newEvent, 0);
+    }
+
+    goto after_processing_logic;
+  }
+
+  /* CEDRXP eDRX parameters event (URC) */
+  if(_buffStartsWith(buff, "+CEDRXP: ")) {
+    const char* rspStr = _buffStr(buff);
+    int actType = 0;
+    char requestedEdrx[16] = { 0 };
+    char nwProvidedEdrx[16] = { 0 };
+    char pagingTimeWindow[16] = { 0 };
+
+    int result = sscanf(rspStr, "+CEDRXP: %d,\"%[^\"]\",\"%[^\"]\",\"%[^\"]\"", &actType,
+                        requestedEdrx, nwProvidedEdrx, pagingTimeWindow);
+    if(result == 4) {
+      WalterModemEvent newEvent = {};
+      newEvent.type = WALTER_MODEM_EVENT_TYPE_NETWORK;
+      newEvent.network.event = WALTER_MODEM_NETWORK_EVENT_EDRX_RECEIVED;
+      newEvent.network.data.edrx.actType = actType;
+      _strncpy_s(newEvent.network.data.edrx.requestedEdrx, requestedEdrx,
+                 sizeof(newEvent.network.data.edrx.requestedEdrx));
+      _strncpy_s(newEvent.network.data.edrx.nwProvidedEdrx, nwProvidedEdrx,
+                 sizeof(newEvent.network.data.edrx.nwProvidedEdrx));
+      _strncpy_s(newEvent.network.data.edrx.pagingTimeWindow, pagingTimeWindow,
+                 sizeof(newEvent.network.data.edrx.pagingTimeWindow));
       xQueueSend(_eventQueue.handle, &newEvent, 0);
     }
 
@@ -3791,10 +3886,10 @@ void WalterModem::_dispatchEvent(WalterModemEvent* ev)
   auto start = std::chrono::steady_clock::now();
 
   switch(ev->type) {
-  case WALTER_MODEM_EVENT_TYPE_REGISTRATION:
-    handler += WALTER_MODEM_EVENT_TYPE_REGISTRATION;
-    if(handler->regHandler != nullptr) {
-      handler->regHandler(ev->regstate, handler->args);
+  case WALTER_MODEM_EVENT_TYPE_NETWORK:
+    handler += WALTER_MODEM_EVENT_TYPE_NETWORK;
+    if(handler->netHandler != nullptr) {
+      handler->netHandler(ev->network.event, &ev->network.data, handler->args);
     }
     break;
 
@@ -4046,7 +4141,7 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
     return false;
   }
 
-  if(!configCEREGReports()) {
+  if(!configCEREGReports(WALTER_MODEM_CEREG_REPORTS_ENABLED_UE_PSM_WITH_LOCATION_EMM_CAUSE)) {
     return false;
   }
 
@@ -4731,11 +4826,10 @@ bool WalterModem::getClock(WalterModemRsp* rsp, walterModemCb cb, void* args)
 
 #pragma region EVENT_HANDLERS
 
-void WalterModem::setRegistrationEventHandler(walterModemRegistrationEventHandler handler,
-                                              void* args)
+void WalterModem::setNetworkEventHandler(walterModemNetworkEventHandler handler, void* args)
 {
-  _eventHandlers[WALTER_MODEM_EVENT_TYPE_REGISTRATION].regHandler = handler;
-  _eventHandlers[WALTER_MODEM_EVENT_TYPE_REGISTRATION].args = args;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_NETWORK].netHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_NETWORK].args = args;
 }
 
 void WalterModem::setSystemEventHandler(walterModemSystemEventHandler handler, void* args)

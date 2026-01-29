@@ -1248,7 +1248,7 @@ typedef enum {
   /**
    * @brief Network registration related events.
    */
-  WALTER_MODEM_EVENT_TYPE_REGISTRATION = 0,
+  WALTER_MODEM_EVENT_TYPE_NETWORK = 0,
 
   /**
    * @brief System related events.
@@ -1292,6 +1292,14 @@ typedef enum {
 typedef enum {
   WALTER_MODEM_SYSTEM_EVENT_STARTED,
 } WalterModemEventSystemType;
+
+/**
+ * @brief This enumeration groups the different types of network registration events.
+ */
+typedef enum {
+  WALTER_MODEM_NETWORK_EVENT_REG_STATE_CHANGE,
+  WALTER_MODEM_NETWORK_EVENT_EDRX_RECEIVED,
+} WMNetworkEventType;
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
@@ -2330,6 +2338,26 @@ typedef struct {
 #pragma endregion // STRUCTS RESPONSE
 #pragma region STRUCTS EVENTS
 
+struct WMNetworkEventData {
+  union {
+    struct {
+      WalterModemNetworkRegState state;
+      char lac[16];
+      char ci[16];
+      uint8_t act;
+      char activeTime[16];
+      char periodicTau[16];
+      bool hasPsmInfo;
+    } cereg;
+    struct {
+      uint8_t actType;
+      char requestedEdrx[16];
+      char nwProvidedEdrx[16];
+      char pagingTimeWindow[16];
+    } edrx;
+  };
+};
+
 struct WMGNSSEventData {
   WMGNSSFixEvent gnssfix;
   WMGNSSAssistanceType assistance;
@@ -2377,7 +2405,10 @@ struct WalterModemEvent {
 
   union {
 
-    WalterModemNetworkRegState regstate;
+    struct {
+      WMNetworkEventType event;
+      WMNetworkEventData data;
+    } network;
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
 
@@ -2423,14 +2454,16 @@ struct WalterModemEvent {
 };
 
 /**
- * @brief Header of a network registration event handler.
+ * @brief Header of a network event handler.
  *
- * @param ev The new network registration state.
+ * @param event The network state event.
+ * @param data The network event data including state and PSM info.
  * @param args Optional arguments set by the application layer.
  *
  * @return None.
  */
-typedef void (*walterModemRegistrationEventHandler)(WalterModemNetworkRegState state, void* args);
+typedef void (*walterModemNetworkEventHandler)(WMNetworkEventType event,
+                                               const WMNetworkEventData* data, void* args);
 
 /**
  * @brief Header of a system event handler.
@@ -2535,9 +2568,9 @@ typedef void (*walterModemSocketEventHandler)(WMSocketEventType ev, const WMSock
 typedef struct {
   union {
     /**
-     * @brief Pointer to the registration event handler.
+     * @brief Pointer to the network event handler.
      */
-    walterModemRegistrationEventHandler regHandler;
+    walterModemNetworkEventHandler netHandler;
 
     /**
      * @brief Pointer to the system event handler.
@@ -5696,11 +5729,11 @@ public:
 #pragma region CLASS PUBLIC METHODS EVENT_HANDLERS
 
   /**
-   * @brief Set the network registration event handler.
+   * @brief Set the network event handler.
    *
-   * This function sets the handler that is called when a network registration event occurs.
+   * This function sets the handler that is called when a network event occurs.
    * When this function is called multiple times, only the last handler will be set. To remove
-   * the registration event handler, this function must be called with a nullptr as the
+   * the network event handler, this function must be called with a nullptr as the
    * handler.
    *
    * @param[in] handler The handler function.
@@ -5708,8 +5741,8 @@ public:
    *
    * @return None.
    */
-  static void setRegistrationEventHandler(walterModemRegistrationEventHandler handler = nullptr,
-                                          void* args = nullptr);
+  static void setNetworkEventHandler(walterModemNetworkEventHandler handler = nullptr,
+                                     void* args = nullptr);
 
   /**
    * @brief Set the system event handler.
