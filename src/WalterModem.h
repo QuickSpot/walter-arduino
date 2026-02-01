@@ -2627,8 +2627,9 @@ typedef struct {
   /**
    * @brief This volatile flag is set to true when the buffer is currently
    * not in use and can be used to store the next response in.
+   * Initialized in WalterModem::begin().
    */
-  volatile bool free = true;
+  volatile bool free;
 } WalterModemBuffer;
 
 /**
