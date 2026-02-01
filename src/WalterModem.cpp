@@ -2589,7 +2589,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     if(sock) {
       _socketRelease(sock);
       _dispatchEvent(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, sock->id, 0, nullptr);
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
       if(sockId == _blueCherry.bcSocketId) {
         _blueCherrySocketEventHandler(WALTER_MODEM_SOCKET_EVENT_DISCONNECTED, 0, nullptr);
       }
@@ -2613,7 +2613,7 @@ void WalterModem::_processQueueRsp(WalterModemCmd* cmd, WalterModemBuffer* buff)
     }
     WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_SOCKET;
     if(handler->socketHandler != nullptr
-#ifdef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
        || _blueCherry.bcSocketId != 0
 #endif
     ) {
