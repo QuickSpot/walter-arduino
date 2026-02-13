@@ -39,7 +39,7 @@ jobs:
         run: |
           PR_TITLE="${{ github.event.pull_request.title }}"
           PR_NUMBER=${{ github.event.pull_request.number }}
-          PR_LINK="https://github.com/QuickSpot/arduino/pull/${PR_NUMBER}"
+          PR_LINK="https://github.com/QuickSpot/walter-arduino/pull/${PR_NUMBER}"
           COMMIT_MESSAGE="Sync: src from walter-arduino (${PR_LINK})"
           COMMIT_DESCRIPTION="PR title: \"${PR_TITLE}\", nr: ${PR_NUMBER}"
           echo "COMMIT_MESSAGE=$COMMIT_MESSAGE" >> $GITHUB_ENV
