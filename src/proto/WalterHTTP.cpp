@@ -1,13 +1,15 @@
 /**
  * @file WalterHTTP.cpp
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Mar 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -46,40 +48,30 @@
 #include <WalterDefines.h>
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 #pragma region PRIVATE_METHODS
-void WalterModem::_dispatchEvent(WalterModemHttpEvent event, int profileId)
-{
-  WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_HTTP;
-  if(handler->httpHandler == nullptr) {
-    return;
-  }
-
-  auto start = std::chrono::steady_clock::now();
-  handler->httpHandler(event, profileId, handler->args);
-  _checkEventDuration(start);
-}
 #pragma endregion
 
 #pragma region PUBLIC_METHODS
-bool WalterModem::httpConfigProfile(uint8_t profileId, const char* serverName, uint16_t port,
-                                    uint8_t tlsProfileId, bool useBasicAuth, const char* authUser,
-                                    const char* authPass, uint16_t maxTimeout, uint16_t cnxTimeout,
-                                    uint8_t inactivityTimeout, WalterModemRsp* rsp,
+bool WalterModem::httpConfigProfile(int profile_id, const char* hostname, uint16_t port,
+                                    uint8_t tls_profile_id, bool use_basic_auth,
+                                    const char* auth_user, const char* auth_pass,
+                                    uint16_t max_timeout, uint16_t cnx_timeout,
+                                    uint8_t inactivity_timeout, WalterModemRsp* rsp,
                                     walterModemCb cb, void* args)
 {
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  if(tlsProfileId && port == 80) {
+  if(tls_profile_id && port == 80) {
     port = 443;
   }
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data, "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"", profileId,
-              serverName, port, useBasicAuth, authUser, authPass);
+      sprintf((char*) stringsBuffer->data, "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"",
+              profile_id, hostname, port, use_basic_auth, auth_user, auth_pass);
 
-  if(tlsProfileId) {
+  if(tls_profile_id) {
     stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",1");
   } else {
     stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",0");
@@ -88,208 +80,157 @@ bool WalterModem::httpConfigProfile(uint8_t profileId, const char* serverName, u
   /**
    * cnxTimeout needs to be larger then maxTimout, otherwise modem will return error.
    */
-  if(cnxTimeout > maxTimeout) {
+  if(cnx_timeout > max_timeout) {
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
   stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",%u,,", maxTimeout);
+      sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",%u,,", max_timeout);
 
-  if(tlsProfileId) {
+  if(tls_profile_id) {
     stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%u,", tlsProfileId);
+        sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%u,", tls_profile_id);
   } else {
     stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",");
   }
 
   stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%u,%u",
-                                 cnxTimeout, inactivityTimeout);
+                                 cnx_timeout, inactivity_timeout);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsBuffer);
-
   _returnAfterReply();
 }
 
-bool WalterModem::httpConnect(uint8_t profileId, WalterModemRsp* rsp, walterModemCb cb, void* args)
+bool WalterModem::httpConnect(int profile_id, WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  if(_httpContextSet[profileId].connected) {
+  if(_httpContextSet[profile_id].connected) {
     _returnState(WALTER_MODEM_STATE_OK);
   }
 
-  _runCmd(arr("AT+SQNHTTPCONNECT=", _atNum(profileId)), "+SQNHTTPCONNECT: ", rsp, cb, args);
+  _runCmd(arr("AT+SQNHTTPCONNECT=", _atNum(profile_id)), "+SQNHTTPCONNECT: ", rsp, cb, args);
   _returnAfterReply();
 }
 
-bool WalterModem::httpClose(uint8_t profileId, WalterModemRsp* rsp, walterModemCb cb, void* args)
+bool WalterModem::httpClose(int profile_id, WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  _runCmd(arr("AT+SQNHTTPDISCONNECT=", _atNum(profileId)), "OK", rsp, cb, args);
+  _runCmd(arr("AT+SQNHTTPDISCONNECT=", _atNum(profile_id)), "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
-bool WalterModem::httpGetContextStatus(uint8_t profileId)
+bool WalterModem::httpQuery(int profile_id, const char* uri, WalterModemHttpQueryCmd http_query_cmd,
+                            char* content_type_buf, uint16_t content_type_buf_size,
+                            const char* extra_header_line, WalterModemRsp* rsp, walterModemCb cb,
+                            void* args)
 {
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
-    return false;
-  }
-
-  /* note: in my observation the SQNHTTPCONNECT command is to be avoided.
-   * if the connection is closed by the server, you will not even
-   * receive a +SQNHTTPSH disconnected message (you will on the next
-   * connect attempt). reconnect will be impossible even if you try
-   * to manually disconnect.
-   * and a SQNHTTPQRY will still work and create its own implicit connection.
-   *
-   * (too bad: according to the docs SQNHTTPCONNECT is mandatory for
-   * TLS connections)
-   */
-  return _httpContextSet[profileId].connected;
-}
-
-bool WalterModem::httpQuery(uint8_t profileId, const char* uri,
-                            WalterModemHttpQueryCmd httpQueryCmd, char* contentTypeBuf,
-                            uint16_t contentTypeBufSize, const char* extraHeaderLine,
-                            WalterModemRsp* rsp, walterModemCb cb, void* args)
-{
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
-
-  if(_httpContextSet[profileId].state != WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
-    _returnState(WALTER_MODEM_STATE_BUSY);
-  }
-
-  _httpContextSet[profileId].contentType = contentTypeBuf;
-  _httpContextSet[profileId].contentTypeSize = contentTypeBufSize;
-
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
-    WalterModemHttpContext* ctx = (WalterModemHttpContext*) cmd->completeHandlerArg;
-
-    if(result == WALTER_MODEM_STATE_OK) {
-      ctx->state = WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING;
-    }
-  };
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPQRY=%d,%d,\"%s\"",
-                                 profileId, httpQueryCmd, uri);
+                                 profile_id, http_query_cmd, uri);
 
-  if(extraHeaderLine != NULL && strlen(extraHeaderLine) > 0) {
+  if(extra_header_line != NULL && strlen(extra_header_line) > 0) {
     stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",\"%s\"", extraHeaderLine);
+        sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",\"%s\"", extra_header_line);
   }
 
-  _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, completeHandler,
-          (void*) (_httpContextSet + profileId), WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0,
-          stringsBuffer);
-
+  _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsBuffer);
   _returnAfterReply();
 }
 
-bool WalterModem::httpSend(uint8_t profileId, const char* uri, uint8_t* data, uint16_t dataSize,
-                           WalterModemHttpSendCmd httpSendCmd,
-                           WalterModemHttpPostParam httpPostParam, char* contentTypeBuf,
-                           uint16_t contentTypeBufSize, WalterModemRsp* rsp, walterModemCb cb,
+bool WalterModem::httpSend(int profile_id, const char* uri, uint8_t* buf, uint16_t buf_size,
+                           WalterModemHttpSendCmd http_send_cmd,
+                           WalterModemHttpPostParam http_post_param, char* content_type_buf,
+                           uint16_t content_type_buf_size, WalterModemRsp* rsp, walterModemCb cb,
                            void* args)
 {
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  if(_httpContextSet[profileId].state != WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
-    _returnState(WALTER_MODEM_STATE_BUSY);
-  }
-
-  _httpContextSet[profileId].contentType = contentTypeBuf;
-  _httpContextSet[profileId].contentTypeSize = contentTypeBufSize;
-
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
-    WalterModemHttpContext* ctx = (WalterModemHttpContext*) cmd->completeHandlerArg;
-
-    if(result == WALTER_MODEM_STATE_OK) {
-      ctx->state = WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING;
-    }
-  };
-
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  if(httpPostParam == WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED) {
+  if(http_post_param == WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED) {
     stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d",
-                                   profileId, httpSendCmd, uri, dataSize);
+                                   profile_id, http_send_cmd, uri, buf_size);
   } else {
     stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d,\"%d\"", profileId,
-                httpSendCmd, uri, dataSize, httpPostParam);
+        sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d,\"%d\"", profile_id,
+                http_send_cmd, uri, buf_size, http_post_param);
   }
 
-  _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, completeHandler,
-          (void*) (_httpContextSet + profileId), WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, data, dataSize,
-          stringsBuffer);
-
+  _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
+          WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size, stringsBuffer);
   _returnAfterReply();
 }
 
 bool WalterModem::httpDidRing(uint8_t profileId, uint8_t* targetBuf, uint16_t targetBufSize,
                               WalterModemRsp* rsp)
 {
-  /* this is by definition a blocking call without callback.
-   * it is only used when the arduino user is not taking advantage of
-   * the (TBI) ring notification events.
-   */
-  walterModemCb cb = NULL;
-  void* args = NULL;
+  ESP_LOGW("DEPRECATION", "The httpDidRing method is deprecated and will be removed in future "
+                          "releases. Use httpReceive(...) instead.");
 
-  if(_httpCurrentProfile != 0xff) {
-    _returnState(WALTER_MODEM_STATE_ERROR);
-  }
+  return httpReceive(profileId, targetBuf, (size_t) targetBufSize, rsp, NULL, NULL);
+}
 
-  if(profileId >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+bool WalterModem::httpReceive(int profile_id, uint8_t* buf, size_t buf_size, WalterModemRsp* rsp,
+                              walterModemCb cb, void* args)
+{
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  if(_httpContextSet[profileId].state == WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE) {
-    _returnState(WALTER_MODEM_STATE_NOT_EXPECTING_RING);
-  }
+  size_t readable_size = (buf_size > 1500) ? 1500 : buf_size;
 
-  if(_httpContextSet[profileId].state == WALTER_MODEM_HTTP_CONTEXT_STATE_EXPECT_RING) {
-    _returnState(WALTER_MODEM_STATE_AWAITING_RING);
-  }
+  // Known bug: CME ERROR 4 when attempting to receive a HTTP payload with a fixed size.
+  // Omit size for now and let rsp processor handle payload size
+  WalterModemBuffer* stringsBuffer = _getFreeBuffer();
+  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d", profile_id);
 
-  if(_httpContextSet[profileId].state != WALTER_MODEM_HTTP_CONTEXT_STATE_GOT_RING) {
-    _returnState(WALTER_MODEM_STATE_ERROR);
-  }
-
-  /* ok, got ring. http context fields have been filled.
-   * http status 0 means: timeout (or also disconnected apparently) */
-  if(_httpContextSet[profileId].httpStatus == 0) {
-    _httpContextSet[profileId].state = WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE;
-    _returnState(WALTER_MODEM_STATE_ERROR);
-  }
-
-  /* in the case of chunked data contentLenght can be zero! */
-
-  _httpCurrentProfile = profileId;
-
-  auto completeHandler = [](WalterModemCmd* cmd, WalterModemState result) {
-    _httpContextSet[_httpCurrentProfile].state = WALTER_MODEM_HTTP_CONTEXT_STATE_IDLE;
-    _httpCurrentProfile = 0xff;
-  };
-  _runCmd(arr("AT+SQNHTTPRCV=", _atNum(profileId)), "OK", rsp, cb, args, completeHandler, NULL,
-          WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf, targetBufSize);
+  _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
+          WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
   _returnAfterReply();
 }
 
-void WalterModem::httpSetEventHandler(walterModemHttpEventHandler handler, void* args)
+void WalterModem::setHTTPEventHandler(walterModemHttpEventHandler handler, void* args)
 {
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].httpHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].args = args;
 }
+
+#pragma endregion
+#pragma region DEPRICATION
+bool WalterModem::httpGetContextStatus(uint8_t profile_id)
+{
+  if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
+    return false;
+  }
+
+  ESP_LOGW("DEPRECATION",
+           "The httpGetContextStatus method is deprecated and will be removed in future releases");
+
+  return _httpContextSet[profile_id].connected;
+}
+
+void WalterModem::httpSetEventHandler(walterModemHttpEventHandler handler, void* args)
+{
+  ESP_LOGW("DEPRECATION",
+           "httpSetEventHandler is deprecated and will be removed in future releases. Use "
+           "setHTTPEventHandler(...) instead.");
+
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].httpHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_HTTP].args = args;
+}
+
 #pragma endregion
 #endif

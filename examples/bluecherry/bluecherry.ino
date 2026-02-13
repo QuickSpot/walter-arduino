@@ -1,13 +1,15 @@
 /**
  * @file bluecherry.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 28 Apr 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -65,7 +67,7 @@
 #define ModemSerial Serial2
 
 // Buffer to store OTA firmware messages in
-byte otaBuffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
+byte ota_buffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
 
 // The modem instance
 WalterModem modem;
@@ -77,6 +79,12 @@ WalterModem modem;
  */
 const char* psmActive = "00000001";
 const char* psmTAU = "00000110";
+
+/**
+ * @brief The binary configuration settings for eDRX.
+ */
+const char* edrxValue = "1101";
+const char* edrxPagingTimeWindow = "0000";
 
 // The BlueCherry CA root + intermediate certificate used for CoAP DTLS
 // communication
@@ -175,6 +183,20 @@ bool lteDisconnect()
  */
 bool lteConnect()
 {
+  /* Configure power saving mode */
+  if(modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive)) {
+    Serial.println("Successfully configured PSM");
+  } else {
+    Serial.println("Error: Could not configure PSM");
+  }
+
+  /* Configure eDRX */
+  if(modem.configEDRX(WALTER_MODEM_EDRX_ENABLE_WITH_RESULT, edrxValue, edrxPagingTimeWindow)) {
+    Serial.println("Successfully configured eDRX");
+  } else {
+    Serial.println("Error: Could not configure eDRX");
+  }
+
   /* Set the operational state to NO RF */
   if(modem.setOpState(WALTER_MODEM_OPSTATE_NO_RF)) {
     Serial.println("Successfully set operational state to NO RF");
@@ -208,6 +230,68 @@ bool lteConnect()
   }
 
   return waitForNetwork();
+}
+
+/** * @brief The network registration event handler.
+ *
+ * This function will be called when network registration state changes or when
+ * eDRX parameters are received from the network.
+ *
+ * @note Make sure to keep this handler as lightweight as possible to avoid blocking
+ * the event processing task.
+ *
+ * @param[out] event The network registration state event.
+ * @param[out] data The registration event data including state and PSM info.
+ * @param[out] args User arguments.
+ *
+ * @return void
+ */
+static void myNetworkEventHandler(WMNetworkEventType event, const WMNetworkEventData* data,
+                                  void* args)
+{
+  if(event == WALTER_MODEM_NETWORK_EVENT_REG_STATE_CHANGE) {
+    switch(data->cereg.state) {
+    case WALTER_MODEM_NETWORK_REG_REGISTERED_HOME:
+      Serial.println("Network registration: Registered (home)");
+      if(data->cereg.hasPsmInfo) {
+        Serial.printf("PSM Active Time: %s, TAU: %s\r\n", data->cereg.activeTime,
+                      data->cereg.periodicTau);
+      }
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING:
+      Serial.println("Network registration: Registered (roaming)");
+      if(data->cereg.hasPsmInfo) {
+        Serial.printf("PSM Active Time: %s, TAU: %s\r\n", data->cereg.activeTime,
+                      data->cereg.periodicTau);
+      }
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_NOT_SEARCHING:
+      Serial.println("Network registration: Not searching");
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_SEARCHING:
+      Serial.println("Network registration: Searching");
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_DENIED:
+      Serial.println("Network registration: Denied");
+      break;
+
+    case WALTER_MODEM_NETWORK_REG_UNKNOWN:
+      Serial.println("Network registration: Unknown");
+      break;
+
+    default:
+      break;
+    }
+  } else if(event == WALTER_MODEM_NETWORK_EVENT_EDRX_RECEIVED) {
+    Serial.printf(
+        "Network event: eDRX received (ACT: %d) Requested: %s, NW-Provided: %s, PTW: %s\r\n",
+        data->edrx.actType, data->edrx.requestedEdrx, data->edrx.nwProvidedEdrx,
+        data->edrx.pagingTimeWindow);
+  }
 }
 
 // This function will poll the BlueCherry cloud platform to check if there is an
@@ -250,23 +334,93 @@ void syncBlueCherry()
   return;
 }
 
+bool configureBluecherry()
+{
+  WalterModemRsp rsp = {};
+  unsigned short attempt = 0;
+  while(!modem.blueCherryInit(BC_TLS_PROFILE, ota_buffer, &rsp)) {
+    if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
+       attempt <= 2) {
+      Serial.println("Device is not provisioned for BlueCherry communication, starting ZTP...");
+
+      if(attempt == 0) {
+        if(!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert, &modem)) {
+          Serial.println("Error: Failed to initialize ZTP");
+          continue;
+        }
+
+        // Fetch MAC address
+        uint8_t mac[8] = { 0 };
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
+          Serial.println("Error: Could not add MAC address as ZTP device ID parameter");
+        }
+
+        // Fetch IMEI number
+        if(!modem.getIdentity(&rsp)) {
+          Serial.println("Error: Could not fetch IMEI number from modem");
+        }
+
+        if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI,
+                                                rsp.data.identity.imei)) {
+          Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
+        }
+      }
+      attempt++;
+
+      // Request the BlueCherry device ID
+      if(!BlueCherryZTP::requestDeviceId()) {
+        Serial.println("Error: Could not request device ID");
+        continue;
+      }
+
+      // Generate the private key and CSR
+      if(!BlueCherryZTP::generateKeyAndCsr()) {
+        Serial.println("Error: Could not generate private key");
+      }
+      delay(1000);
+
+      // Request the signed certificate
+      if(!BlueCherryZTP::requestSignedCertificate()) {
+        Serial.println("Error: Could not request signed certificate");
+        continue;
+      }
+
+      // Store BlueCherry TLS certificates + private key in the modem
+      if(!modem.blueCherryProvision(BlueCherryZTP::getCert(), BlueCherryZTP::getPrivKey(),
+                                    bc_ca_cert)) {
+        Serial.println("Error: Failed to upload the DTLS certificates");
+        continue;
+      }
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * @brief The main Arduino setup method.
+ */
 void setup()
 {
   Serial.begin(115200);
-  delay(100);
-  Serial.printf("\r\n\r\n=== WalterModem BlueCherry example ===\r\n\r\n");
+  delay(2000);
+
+  Serial.printf("\r\n\r\n=== WalterModem BlueCherry example (v1.5.0) ===\r\n\r\n");
 
   /* Start the modem */
-  if(WalterModem::begin(&Serial2)) {
+  if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
     Serial.println("Error: Could not initialize the modem");
     return;
   }
 
-  modem.configPSM(WALTER_MODEM_PSM_ENABLE, psmTAU, psmActive);
+  /* Register network event handler */
+  modem.setNetworkEventHandler(myNetworkEventHandler, NULL);
 
-  // Connect to cellular network
+  /* Connect to cellular network */
   if(!lteConnected() && !lteConnect()) {
     Serial.println("Error: Unable to connect to cellular network, restarting Walter "
                    "in 10 seconds");
@@ -274,102 +428,32 @@ void setup()
     ESP.restart();
   }
 
-  WalterModemRsp rsp = {};
-
-  // If this is the first boot, set up bluecherry and ZTP.
+  /* Configure BlueCherry on first boot */
   if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
-    // Initialize the BlueCherry connection
-    unsigned short attempt = 0;
-    while(!modem.blueCherryInit(BC_TLS_PROFILE, otaBuffer, &rsp)) {
-      if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
-         attempt <= 2) {
-        Serial.println("Device is not provisioned for BlueCherry "
-                       "communication, starting Zero Touch Provisioning");
-
-        if(attempt == 0) {
-          // Device is not provisioned yet, initialize BlueCherry zero touch
-          // provisioning
-          if(!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert, &modem)) {
-            Serial.println("Error: Failed to initialize ZTP");
-            continue;
-          }
-
-          // Fetch MAC address
-          uint8_t mac[8] = { 0 };
-          esp_read_mac(mac, ESP_MAC_WIFI_STA);
-          if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
-            Serial.println("Error: Could not add MAC address as ZTP device ID parameter");
-          }
-
-          // Fetch IMEI number
-          if(!modem.getIdentity(&rsp)) {
-            Serial.println("Error: Could not fetch IMEI number from modem");
-          }
-          if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI,
-                                                  rsp.data.identity.imei)) {
-            Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
-          }
-        }
-        attempt++;
-
-        // Request the BlueCherry device ID
-        if(!BlueCherryZTP::requestDeviceId()) {
-          Serial.println("Error: Could not request device ID");
-          continue;
-        }
-
-        // Generate the private key and CSR
-        if(!BlueCherryZTP::generateKeyAndCsr()) {
-          Serial.println("Error: Could not generate private key");
-        }
-        delay(1000);
-
-        // Request the signed certificate
-        if(!BlueCherryZTP::requestSignedCertificate()) {
-          Serial.println("Error: Could not request signed certificate");
-          continue;
-        }
-
-        // Store BlueCherry TLS certificates + private key in the modem
-        if(!modem.blueCherryProvision(BlueCherryZTP::getCert(), BlueCherryZTP::getPrivKey(),
-                                      bc_ca_cert)) {
-          Serial.println("Error: Failed to upload the DTLS certificates");
-          continue;
-        }
-      } else {
-        Serial.println("Error: Failed to initialize BlueCherry cloud platform, "
-                       "restarting Walter in 10 seconds");
-        delay(10000);
-        ESP.restart();
-      }
+    if(configureBluecherry()) {
+      Serial.println("Successfully configured BlueCherry");
+    } else {
+      Serial.println("Error: Could not configure BlueCherry");
+      return;
     }
-    Serial.println("Successfully initialized BlueCherry cloud platform");
-  }
-}
-
-void loop()
-{
-  // Check if the modem is connected to the cellular network, else try to
-  // reconnect
-  if(!lteConnected() && !lteConnect()) {
-    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
-                   "in 10 seconds");
-    delay(10000);
-    ESP.restart();
   }
 
-  WalterModemRsp rsp = {};
+  /* Send a test message to BlueCherry */
+  const char* msg = "Hello from Walter Modem via BlueCherry!";
+  modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
 
-  // Send a message containing the measured RSRP value to an MQTT topic
-  if(modem.getCellInformation(WALTER_MODEM_SQNMONI_REPORTS_SERVING_CELL, &rsp)) {
-    char msg[18];
-    snprintf(msg, sizeof(msg), "{\"RSRP\": %7.2f}", rsp.data.cellInformation.rsrp);
-    modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
-  }
-
-  // Poll BlueCherry platform if an incoming message or firmware update is available
+  /* Poll BlueCherry platform if an incoming message or firmware update is available */
   syncBlueCherry();
 
-  // Go sleep for 5 minutes
+  Serial.println("I'm tired, I'm going to deep sleep now for 300 seconds");
+  Serial.flush();
   modem.sleep(60 * 5);
+}
+
+/**
+ * @brief The main Arduino loop method.
+ */
+void loop()
+{
+  // Nothing to do here
 }

@@ -1,13 +1,15 @@
 /**
  * @file WalterDefines.h
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Mar 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -168,8 +170,8 @@ bool strToFloat(const char* str, int len, float* result);
   ((buff->size > 0) && (buff->data[0] >= '0' && buff->data[0] <= '9'))
 
 /**
- * @brief 0-terminate a WalterModemBuffer. This macro is meant to be used as an assignment in the
- * form of x = _buffStr(buff);
+ * @brief 0-terminate a WalterModemBuffer. This macro is meant to be used as an assignment in
+ * the form of x = _buffStr(buff);
  */
 #define _buffStr(buff)                                                                             \
   (const char*) buff->data;                                                                        \
@@ -251,12 +253,12 @@ bool strToFloat(const char* str, int len, float* result);
  * @param atRsp The expected AT response from the modem.
  * @param rsp Pointer to the response structure to save the response in.
  * @param cb Optional user callback for asynchronous API.
- * @param args Optional argument to pass to the callback.
- * @param ... Optional arguments for the _addQueueCmd function.
+ * @param[in] args Arguments to pass to the callback.
+ * @param ... Optional arguments for the _queueModemCMD function.
  */
 #define _runCmd(atCmd, atRsp, rsp, cb, args, ...)                                                  \
   const char* _cmdArr[WALTER_MODEM_COMMAND_MAX_ELEMS + 1] = atCmd;                                 \
-  WalterModemCmd* cmd = _addQueueCmd(_cmdArr, atRsp, rsp, cb, args, ##__VA_ARGS__);                \
+  WalterModemCmd* cmd = _queueModemCMD(_cmdArr, atRsp, rsp, cb, args, ##__VA_ARGS__);              \
   if(cmd == NULL) {                                                                                \
     _returnState(WALTER_MODEM_STATE_NO_MEMORY);                                                    \
   }                                                                                                \
