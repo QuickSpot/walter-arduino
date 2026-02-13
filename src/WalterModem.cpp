@@ -4153,6 +4153,11 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
     return true;
   }
 
+  for(int i = 0; i < WALTER_MODEM_BUFFER_POOL_SIZE; ++i) {
+    _bufferPool[i].free = true;
+    _bufferPool[i].size = 0;
+  }
+
   _watchdogTimeout = watchdogTimeout;
   if(_watchdogTimeout) {
     /* wdt timeout must be longer than max wait time for a modem response */
