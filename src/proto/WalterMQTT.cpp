@@ -1,13 +1,15 @@
 /**
  * @file WalterMQTT.cpp
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Mar 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -47,59 +49,24 @@
 #include <esp_log.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
-#pragma region PRIVATE_METHODS
-static void mqttResubscribeCallback(const WalterModemRsp* rsp, void* args)
-{
-  /*This is an empty callback so the _runCmd() runs async*/
-}
-
-bool WalterModem::_mqttSubscribeRaw(const char* topicString, uint8_t qos, WalterModemRsp* rsp,
-                                    walterModemCb cb, void* args)
-{
-  _runCmd(arr("AT+SQNSMQTTSUBSCRIBE=0,", _atStr(topicString), ",", _atNum(qos)),
-          "+SQNSMQTTONSUBSCRIBE:0,", rsp, mqttResubscribeCallback, args);
-  _returnState(WALTER_MODEM_STATE_OK);
-}
-
-void WalterModem::_dispatchEvent(WalterModemMQTTEvent event, WalterModemMqttStatus status)
-{
-  WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_MQTT;
-  if(handler->mqttHandler == nullptr) {
-    return;
-  }
-
-  auto start = std::chrono::steady_clock::now();
-  handler->mqttHandler(event, status, handler->args);
-  _checkEventDuration(start);
-}
-#pragma endregion
-
 #pragma region PUBLIC_METHODS
-WalterModemMqttStatus WalterModem::getMqttStatus()
+bool WalterModem::mqttConfig(const char* client_id, const char* username, const char* password,
+                             uint8_t tls_profile_id, WalterModemRsp* rsp, walterModemCb cb,
+                             void* args)
 {
-  return _mqttStatus;
-}
-
-bool WalterModem::mqttConfig(const char* clientId, const char* username, const char* password,
-                             uint8_t tlsProfileId)
-{
-  WalterModemRsp* rsp = NULL;
-  walterModemCb cb = NULL;
-  void* args = NULL;
-
   WalterModemBuffer* buf = _getFreeBuffer();
-  buf->size += sprintf((char*) buf->data, "AT+SQNSMQTTCFG=0,\"%s\"", clientId);
+  buf->size += sprintf((char*) buf->data, "AT+SQNSMQTTCFG=0,\"%s\"", client_id);
 
   if(username && password) {
     buf->size += sprintf((char*) buf->data + buf->size, ",\"%s\",\"%s\"", username, password);
   }
 
-  if(tlsProfileId > 0) {
+  if(tls_profile_id > 0) {
     if(!(username && password)) {
       buf->size += sprintf((char*) buf->data + buf->size, ",,");
     }
 
-    buf->size += sprintf((char*) buf->data + buf->size, ",%u", tlsProfileId);
+    buf->size += sprintf((char*) buf->data + buf->size, ",%u", tls_profile_id);
   }
 
   _runCmd(arr((const char*) buf->data), "OK", rsp, cb, args, NULL, NULL,
@@ -109,36 +76,33 @@ bool WalterModem::mqttConfig(const char* clientId, const char* username, const c
 
 bool WalterModem::mqttDisconnect(WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  _runCmd(arr("AT+SQNSMQTTDISCONNECT=0"), "+SQNSMQTTONDISCONNECT:0,", rsp, cb, args);
+  _runCmd(arr("AT+SQNSMQTTDISCONNECT=0"), "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
-bool WalterModem::mqttConnect(const char* serverName, uint16_t port, uint16_t keepAlive,
+bool WalterModem::mqttConnect(const char* hostname, uint16_t port, uint16_t keep_alive,
                               WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  _runCmd(
-      arr("AT+SQNSMQTTCONNECT=0,", _atStr(serverName), ",", _atNum(port), ",", _atNum(keepAlive)),
-      "+SQNSMQTTONCONNECT:0,", rsp, cb, args);
-  _returnAfterReply();
-}
-
-bool WalterModem::mqttPublish(const char* topicString, uint8_t* data, uint16_t dataSize,
-                              uint8_t qos, WalterModemRsp* rsp, walterModemCb cb, void* args)
-{
-  if(getNetworkRegState() != WALTER_MODEM_NETWORK_REG_REGISTERED_HOME &&
-     getNetworkRegState() != WALTER_MODEM_NETWORK_REG_REGISTERED_ROAMING) {
-    ESP_LOGD("WalterModem", "network is not connected!");
-    _returnState(WALTER_MODEM_STATE_ERROR);
+  // Free all topics on connect
+  for(size_t i = 0; i < WALTER_MODEM_MQTT_MAX_TOPICS; i++) {
+    _mqttTopics[i].free = true;
   }
 
   _runCmd(
-      arr("AT+SQNSMQTTPUBLISH=0,", _atStr(topicString), ",", _atNum(qos), ",", _atNum(dataSize)),
-      "+SQNSMQTTONPUBLISH:0,", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, data,
-      dataSize);
+      arr("AT+SQNSMQTTCONNECT=0,", _atStr(hostname), ",", _atNum(port), ",", _atNum(keep_alive)),
+      "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
-bool WalterModem::mqttSubscribe(const char* topicString, uint8_t qos, WalterModemRsp* rsp,
+bool WalterModem::mqttPublish(const char* topic, uint8_t* buf, uint16_t buf_size, uint8_t qos,
+                              WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+  _runCmd(arr("AT+SQNSMQTTPUBLISH=0,", _atStr(topic), ",", _atNum(qos), ",", _atNum(buf_size)),
+          "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT, buf, buf_size);
+  _returnAfterReply();
+}
+
+bool WalterModem::mqttSubscribe(const char* topic, uint8_t qos, WalterModemRsp* rsp,
                                 walterModemCb cb, void* args)
 {
   int index = -1;
@@ -150,10 +114,10 @@ bool WalterModem::mqttSubscribe(const char* topicString, uint8_t qos, WalterMode
       _mqttTopics[i].free = false;
       _mqttTopics[i].qos = qos;
       _currentTopic = &_mqttTopics[i];
-      _strncpy_s(_mqttTopics[i].topic, topicString, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
+      _strncpy_s(_mqttTopics[i].topic, topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE);
 
       break;
-    } else if(!strncmp(topicString, _mqttTopics[i].topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE - 1)) {
+    } else if(!strncmp(topic, _mqttTopics[i].topic, WALTER_MODEM_MQTT_TOPIC_BUF_SIZE - 1)) {
       /*Topic already in use*/
       _returnState(WALTER_MODEM_STATE_OK);
       break;
@@ -175,55 +139,60 @@ bool WalterModem::mqttSubscribe(const char* topicString, uint8_t qos, WalterMode
     }
   };
 
-  _runCmd(arr("AT+SQNSMQTTSUBSCRIBE=0,", _atStr(topicString), ",", _atNum(qos)),
-          "+SQNSMQTTONSUBSCRIBE:0,", rsp, cb, args, completeHandler);
+  _runCmd(arr("AT+SQNSMQTTSUBSCRIBE=0,", _atStr(topic), ",", _atNum(qos)), "OK", rsp, cb, args,
+          completeHandler);
   _returnAfterReply();
 }
 
+bool WalterModem::mqttReceive(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
+                              WalterModemRsp* rsp, walterModemCb cb, void* args)
+{
+
+  size_t readable_size = (buf_size > 4096) ? 4096 : buf_size;
+
+  if(message_id == 0) {
+    /* no msg id means qos 0 message */
+    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)), "OK", rsp, cb, args, NULL, NULL,
+            WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
+    _returnAfterReply();
+  } else {
+    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(message_id), ",",
+                _atNum(readable_size)),
+            "OK", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size);
+    _returnAfterReply();
+  }
+}
+
+void WalterModem::setMQTTEventHandler(walterModemMQTTEventHandler handler, void* args)
+{
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].mqttHandler = handler;
+  _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].args = args;
+}
+
+#pragma endregion
+#pragma region DEPRICATION
 bool WalterModem::mqttDidRing(const char* topic, uint8_t* targetBuf, uint16_t targetBufSize,
                               WalterModemRsp* rsp)
 {
-  /* this is by definition a blocking call without callback.
-   * it is only used when the arduino user is not taking advantage of
-   * the (TBI) ring notification events which give access to the raw
-   * buffer (a targetBuf is not needed).
-   */
-  walterModemCb cb = NULL;
-  void* args = NULL;
+  ESP_LOGW("DEPRECATION",
+           "this mqttDidRing method is deprecated and will be removed in future releases. Use "
+           "mqttReceive(...) instead.");
 
-  uint8_t idx;
-  for(idx = 0; idx < WALTER_MODEM_MQTT_MAX_PENDING_RINGS; idx++) {
-    if(!strncmp(topic, _mqttRings[idx].topic, strlen(topic)) && !_mqttRings[idx].free) {
-      break;
-    }
-  }
+  return mqttReceive(topic, 0, targetBuf, targetBufSize, rsp, NULL, NULL);
+}
 
-  if(idx == WALTER_MODEM_MQTT_MAX_PENDING_RINGS) {
-    _returnState(WALTER_MODEM_STATE_NO_DATA);
-  }
-
-  if(targetBufSize < _mqttRings[idx].length) {
-    _returnState(WALTER_MODEM_STATE_NO_MEMORY);
-  }
-
-  if(_mqttRings[idx].qos == 0) {
-    /* no msg id means qos 0 message */
-    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic)), "OK", rsp, cb, args, NULL,
-            (void*) (uintptr_t) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT, targetBuf,
-            _mqttRings[idx].length);
-
-    _returnAfterReply();
-  } else {
-    _runCmd(arr("AT+SQNSMQTTRCVMESSAGE=0,", _atStr(topic), ",", _atNum(_mqttRings[idx].messageId)),
-            "OK", rsp, cb, args, NULL, (void*) (uintptr_t) idx, WALTER_MODEM_CMD_TYPE_TX_WAIT,
-            targetBuf, _mqttRings[idx].length);
-
-    _returnAfterReply();
-  }
+WMMQTTConnRC WalterModem::getMqttStatus()
+{
+  ESP_LOGW("DEPRECATION", "getMqttStatus() is deprecated and will be removed in future releases.");
+  return _mqttStatus;
 }
 
 void WalterModem::mqttSetEventHandler(walterModemMQTTEventHandler handler, void* args)
 {
+  ESP_LOGW("DEPRECATION",
+           "mqttSetEventHandler is deprecated and will be removed in future releases. Use "
+           "setMQTTEventHandler(...) instead.");
+
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].mqttHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_MQTT].args = args;
 }

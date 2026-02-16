@@ -15,7 +15,7 @@ To run this example you will need the following items:
 - A SIM card (in case you are going to connect to a network)
 - USB-C cable to flash Walter
 
-## Required software
+## Required Software
 
 Please follow the instructions from the [documentation](https://www.quickspot.io/index.html)
 to [install](https://www.quickspot.io/documentation.html#/walter-modem/setup/arduino) the modem library and [setup](https://www.quickspot.io/documentation.html#/developer-toolchains/arduino) the Arduino IDE for use with Walter.

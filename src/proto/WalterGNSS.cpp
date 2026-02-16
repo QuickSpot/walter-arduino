@@ -1,13 +1,15 @@
 /**
  * @file WalterGNSS.cpp
  * @author Daan Pape <daan@dptechnics.com>
- * @date 28 Mar 2025
- * @copyright DPTechnics bv
+ * @author Arnoud Devoogdt <arnoud@dptechnics.com>
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
  * @section LICENSE
  *
- * Copyright (C) 2023, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
@@ -46,27 +48,14 @@
 #include <WalterDefines.h>
 
 #if CONFIG_WALTER_MODEM_ENABLE_GNSS
-#pragma region PRIVATE_METHODS
-void WalterModem::_dispatchEvent(const WalterModemGNSSFix* fix)
-{
-  WalterModemEventHandler* handler = _eventHandlers + WALTER_MODEM_EVENT_TYPE_GNSS;
-  if(handler->gnssHandler == nullptr) {
-    return;
-  }
-
-  auto start = std::chrono::steady_clock::now();
-  handler->gnssHandler(fix, handler->args);
-  _checkEventDuration(start);
-}
-#pragma endregion
-
 #pragma region PUBLIC_METHODS
-bool WalterModem::gnssConfig(WalterModemGNSSSensMode sensMode, WalterModemGNSSAcqMode acqMode,
-                             WalterModemGNSSLocMode locMode, WalterModemRsp* rsp, walterModemCb cb,
+
+bool WalterModem::gnssConfig(WalterModemGNSSSensMode sens_mode, WalterModemGNSSAcqMode acq_mode,
+                             WalterModemGNSSLocMode loc_mode, WalterModemRsp* rsp, walterModemCb cb,
                              void* args)
 {
-  _runCmd(arr("AT+LPGNSSCFG=", _digitStr(locMode), ",", _digitStr(sensMode), ",2,,1,",
-              _digitStr(acqMode)),
+  _runCmd(arr("AT+LPGNSSCFG=", _digitStr(loc_mode), ",", _digitStr(sens_mode), ",2,,1,",
+              _digitStr(acq_mode)),
           "OK", rsp, cb, args);
   _returnAfterReply();
 }
@@ -77,10 +66,10 @@ bool WalterModem::gnssGetAssistanceStatus(WalterModemRsp* rsp, walterModemCb cb,
   _returnAfterReply();
 }
 
-bool WalterModem::gnssUpdateAssistance(WalterModemGNSSAssistanceType type, WalterModemRsp* rsp,
+bool WalterModem::gnssUpdateAssistance(WMGNSSAssistanceType type, WalterModemRsp* rsp,
                                        walterModemCb cb, void* args)
 {
-  _runCmd(arr("AT+LPGNSSASSISTANCE=", _digitStr(type)), "+LPGNSSASSISTANCE:", rsp, cb, args);
+  _runCmd(arr("AT+LPGNSSASSISTANCE=", _digitStr(type)), "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
@@ -101,27 +90,42 @@ bool WalterModem::gnssPerformAction(WalterModemGNSSAction action, WalterModemRsp
   _runCmd(arr("AT+LPGNSSFIXPROG=\"", gnssActionStr(action), "\""), "OK", rsp, cb, args);
   _returnAfterReply();
 }
-bool WalterModem::gnssSetUTCTime(uint64_t epochTime, WalterModemRsp* rsp, walterModemCb cb,
+
+bool WalterModem::gnssSetUTCTime(uint64_t epoch_time, WalterModemRsp* rsp, walterModemCb cb,
                                  void* args)
 {
   char utcTimeStr[32] = { 0 };
 
-  if(!timeToStr(epochTime, utcTimeStr, sizeof(utcTimeStr))) {
+  if(!timeToStr(epoch_time, utcTimeStr, sizeof(utcTimeStr))) {
     return false; // conversion failed
   }
 
   _runCmd(arr("AT+LPGNSSUTCTIME=", _atStr(utcTimeStr)), "OK", rsp, cb, args);
   _returnAfterReply();
 }
+
 bool WalterModem::gnssGetUTCTime(WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
   _runCmd(arr("AT+LPGNSSUTCTIME?"), "OK", rsp, cb, args);
   _returnAfterReply();
 }
-void WalterModem::gnssSetEventHandler(walterModemGNSSEventHandler handler, void* args)
+
+void WalterModem::setGNSSEventHandler(walterModemGNSSEventHandler handler, void* args)
 {
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].gnssHandler = handler;
   _eventHandlers[WALTER_MODEM_EVENT_TYPE_GNSS].args = args;
 }
+
+#pragma endregion
+#pragma region DEPRICATION
+
+void WalterModem::gnssSetEventHandler(walterModemGNSSEventHandler handler, void* args)
+{
+  ESP_LOGW("DEPRECATION",
+           "gnssSetEventHandler method is deprecated and will be removed in future releases. Use "
+           "setGNSSEventHandler(...) instead.");
+  setGNSSEventHandler(handler, args);
+}
+
 #pragma endregion
 #endif

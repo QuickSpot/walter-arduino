@@ -2,13 +2,14 @@
  * @file BlueCherryZTP.h
  * @author Daan Pape <daan@dptechnics.com>
  * @author Thibo Verheyde <thibo@dptechnics.com>
- * @date 14 Jan 2025
- * @copyright DPTechnics bv
+ * @date 16 January 2026
+ * @version 1.5.0
+ * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief BlueCherry ZTP (Zero Touch Provisioning) library.
  *
  * @section LICENSE
  *
- * Copyright (C) 2025, DPTechnics bv
+ * Copyright (C) 2026, DPTechnics bv
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -304,7 +305,7 @@ public:
    *
    * @return True on success, false if the Type ID is not valid.
    */
-  static bool begin(const char* typeId, const uint8_t tlsProfileId, const char* caCert,
+  static bool begin(const char* typeId, const uint8_t tls_profile_id, const char* caCert,
                     const WalterModem* modem);
 
   /**
