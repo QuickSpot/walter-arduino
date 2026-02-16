@@ -4647,6 +4647,7 @@ public:
    * @param[in] content_type_buf user buffer to store content type header in.
    * @param[in] content_type_buf_size Size of the user buffer, including terminating null
    * byte.
+   * @param[in] extra_header_line Optional extra HTTP header line to send.
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
    * @param[in] args Arguments to pass to the callback.
