@@ -2069,7 +2069,7 @@ typedef struct {
   /*
    * @brief The HTTP status code including our own code to indicate errors during httpDidRing.
    */
-  uint8_t httpStatus;
+  uint16_t httpStatus;
 
   /**
    * @brief The HTTP content length.
