@@ -410,6 +410,7 @@ bool configureBluecherry()
  */
 void setup()
 {
+  WalterModemRsp rsp = {};
   Serial.begin(115200);
   delay(2000);
 
@@ -421,20 +422,6 @@ void setup()
   } else {
     Serial.println("Error: Could not initialize the modem");
     return;
-  }
-
-  /* Set up temperature monitoring */
-  if(modem.configTemperatureMonitor(WALTER_MODEM_TEMP_MONITOR_MODE_ON)) {
-    Serial.println("Successfully configured temperature monitoring");
-  } else {
-    Serial.println("Warning: Could not configure temperature monitoring");
-  }
-
-  /* Set up voltage monitoring */
-  if(modem.configVoltageMonitor(WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE)) {
-    Serial.println("Successfully configured voltage monitoring");
-  } else {
-    Serial.println("Warning: Could not configure voltage monitoring");
   }
 
   /* Register network event handler */
@@ -458,29 +445,55 @@ void setup()
     }
   }
 
+  /* Enable temperature monitoring */
+  if(modem.configTemperatureMonitor(WALTER_MODEM_TEMP_MONITOR_MODE_ON)) {
+    Serial.println("Successfully enabled temperature monitoring");
+  } else {
+    Serial.println("Warning: Could not enable temperature monitoring");
+  }
+
   /* Get temperature reading */
-  WalterModemRsp tempRsp = {};
   int8_t temperature = 0;
-  if(modem.getTemperature(&tempRsp)) {
-    if(tempRsp.type == WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE) {
-      temperature = tempRsp.data.temperature.temperature;
+  if(modem.getTemperature(&rsp)) {
+    if(rsp.type == WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE) {
+      temperature = rsp.data.temperature.temperature;
       Serial.printf("Current temperature: %d°C (status: %d)\r\n", temperature,
-                    tempRsp.data.temperature.status);
+                    rsp.data.temperature.status);
     }
   } else {
     Serial.println("Warning: Could not get temperature reading");
   }
 
+  /* Disable temperature monitoring */
+  if(modem.configTemperatureMonitor(WALTER_MODEM_TEMP_MONITOR_MODE_OFF)) {
+    Serial.println("Successfully disabled temperature monitoring");
+  } else {
+    Serial.println("Warning: Could not disable temperature monitoring");
+  }
+
+  /* Enable voltage monitoring */
+  if(modem.configVoltageMonitor(WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE)) {
+    Serial.println("Successfully enabled voltage monitoring");
+  } else {
+    Serial.println("Warning: Could not enable voltage monitoring");
+  }
+
   /* Get voltage reading */
-  WalterModemRsp voltRsp = {};
   uint16_t voltage = 0;
-  if(modem.getVoltage(&voltRsp)) {
-    if(voltRsp.type == WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE) {
-      voltage = voltRsp.data.voltage.voltage;
-      Serial.printf("Current voltage: %dmV (status: %d)\r\n", voltage, voltRsp.data.voltage.status);
+  if(modem.getVoltage(&rsp)) {
+    if(rsp.type == WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE) {
+      voltage = rsp.data.voltage.voltage;
+      Serial.printf("Current voltage: %dmV (status: %d)\r\n", voltage, rsp.data.voltage.status);
     }
   } else {
     Serial.println("Warning: Could not get voltage reading");
+  }
+
+  /* Disable voltage monitoring */
+  if(modem.configVoltageMonitor(WALTER_MODEM_VOLTAGE_MONITOR_MODE_DISABLED)) {
+    Serial.println("Successfully disabled voltage monitoring");
+  } else {
+    Serial.println("Warning: Could not disable voltage monitoring");
   }
 
   /* Send a message to BlueCherry with sensor data */
