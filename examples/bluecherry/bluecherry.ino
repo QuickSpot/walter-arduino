@@ -301,6 +301,8 @@ static void myNetworkEventHandler(WMNetworkEventType event, const WMNetworkEvent
 void syncBlueCherry()
 {
   WalterModemRsp rsp = {};
+  int attempt = 0;
+  bool fail = false;
 
   do {
     if(!modem.blueCherrySync(&rsp)) {
@@ -308,27 +310,31 @@ void syncBlueCherry()
                     rsp.data.blueCherry.state);
       modem.reset();
       lteConnect();
-      return;
-    }
+      attempt++;
+      fail = true;
+    } else {
+      attempt = 0;
+      fail = false;
+      for(uint8_t msgIdx = 0; msgIdx < rsp.data.blueCherry.messageCount; msgIdx++) {
+        if(rsp.data.blueCherry.messages[msgIdx].topic == 0) {
+          Serial.println("Downloading new firmware version");
+          break;
+        } else {
+          Serial.printf("Incoming message %d/%d:\r\n", msgIdx + 1,
+                        rsp.data.blueCherry.messageCount);
+          Serial.printf("Topic: %02x\r\n", rsp.data.blueCherry.messages[msgIdx].topic);
+          Serial.printf("Data size: %d\r\n", rsp.data.blueCherry.messages[msgIdx].dataSize);
 
-    for(uint8_t msgIdx = 0; msgIdx < rsp.data.blueCherry.messageCount; msgIdx++) {
-      if(rsp.data.blueCherry.messages[msgIdx].topic == 0) {
-        Serial.println("Downloading new firmware version");
-        break;
-      } else {
-        Serial.printf("Incoming message %d/%d:\r\n", msgIdx + 1, rsp.data.blueCherry.messageCount);
-        Serial.printf("Topic: %02x\r\n", rsp.data.blueCherry.messages[msgIdx].topic);
-        Serial.printf("Data size: %d\r\n", rsp.data.blueCherry.messages[msgIdx].dataSize);
+          for(uint8_t byteIdx = 0; byteIdx < rsp.data.blueCherry.messages[msgIdx].dataSize;
+              byteIdx++) {
+            Serial.printf("%c", rsp.data.blueCherry.messages[msgIdx].data[byteIdx]);
+          }
 
-        for(uint8_t byteIdx = 0; byteIdx < rsp.data.blueCherry.messages[msgIdx].dataSize;
-            byteIdx++) {
-          Serial.printf("%c", rsp.data.blueCherry.messages[msgIdx].data[byteIdx]);
+          Serial.print("\r\n");
         }
-
-        Serial.print("\r\n");
       }
     }
-  } while(!rsp.data.blueCherry.syncFinished);
+  } while(!rsp.data.blueCherry.syncFinished || (fail && attempt < 3));
 
   Serial.println("Synchronized with BlueCherry cloud platform");
   return;
@@ -404,6 +410,7 @@ bool configureBluecherry()
  */
 void setup()
 {
+  WalterModemRsp rsp = {};
   Serial.begin(115200);
   delay(2000);
 
@@ -438,9 +445,64 @@ void setup()
     }
   }
 
-  /* Send a test message to BlueCherry */
-  const char* msg = "Hello from Walter Modem via BlueCherry!";
-  modem.blueCherryPublish(0x84, sizeof(msg) - 1, (uint8_t*) msg);
+  /* Enable temperature monitoring */
+  if(modem.configTemperatureMonitor(WALTER_MODEM_TEMP_MONITOR_MODE_ON)) {
+    Serial.println("Successfully enabled temperature monitoring");
+  } else {
+    Serial.println("Warning: Could not enable temperature monitoring");
+  }
+
+  /* Get temperature reading */
+  int8_t temperature = 0;
+  if(modem.getTemperature(&rsp)) {
+    if(rsp.type == WALTER_MODEM_RSP_DATA_TYPE_TEMPERATURE) {
+      temperature = rsp.data.temperature.temperature;
+      Serial.printf("Current temperature: %d°C (status: %d)\r\n", temperature,
+                    rsp.data.temperature.status);
+    }
+  } else {
+    Serial.println("Warning: Could not get temperature reading");
+  }
+
+  /* Disable temperature monitoring */
+  if(modem.configTemperatureMonitor(WALTER_MODEM_TEMP_MONITOR_MODE_OFF)) {
+    Serial.println("Successfully disabled temperature monitoring");
+  } else {
+    Serial.println("Warning: Could not disable temperature monitoring");
+  }
+
+  /* Enable voltage monitoring */
+  if(modem.configVoltageMonitor(WALTER_MODEM_VOLTAGE_MONITOR_MODE_ACTIVE)) {
+    Serial.println("Successfully enabled voltage monitoring");
+  } else {
+    Serial.println("Warning: Could not enable voltage monitoring");
+  }
+
+  /* Get voltage reading */
+  uint16_t voltage = 0;
+  if(modem.getVoltage(&rsp)) {
+    if(rsp.type == WALTER_MODEM_RSP_DATA_TYPE_VOLTAGE) {
+      voltage = rsp.data.voltage.voltage;
+      Serial.printf("Current voltage: %dmV (status: %d)\r\n", voltage, rsp.data.voltage.status);
+    }
+  } else {
+    Serial.println("Warning: Could not get voltage reading");
+  }
+
+  /* Disable voltage monitoring */
+  if(modem.configVoltageMonitor(WALTER_MODEM_VOLTAGE_MONITOR_MODE_DISABLED)) {
+    Serial.println("Successfully disabled voltage monitoring");
+  } else {
+    Serial.println("Warning: Could not disable voltage monitoring");
+  }
+
+  /* Send a message to BlueCherry with sensor data */
+  char msg[128];
+  snprintf(msg, sizeof(msg),
+           "{\"message\":\"Hello from Walter Modem!\",\"temperature\":%d,\"voltage\":%d}",
+           temperature, voltage);
+  Serial.printf("Publishing to BlueCherry: %s\r\n", msg);
+  modem.blueCherryPublish(0x84, strlen(msg), (uint8_t*) msg);
 
   /* Poll BlueCherry platform if an incoming message or firmware update is available */
   syncBlueCherry();
