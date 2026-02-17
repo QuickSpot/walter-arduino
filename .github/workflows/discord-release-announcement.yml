@@ -88,9 +88,26 @@ jobs:
               split_at=$(awk -v str="$chunk" '
                 BEGIN {
                   pos = 0;
-                  for (i = 1; i <= length(str); i++) {
-                    if (substr(str, i, 1) == "\n") {
-                      pos = i;
+                  codeblock = 0;
+                  len = length(str);
+                  i = 1;
+                  while (i <= len) {
+                    if (i + 2 <= len && substr(str, i, 3) == "```") {
+                      if (codeblock == 0) {
+                        codeblock = 1;
+                        if (i > 1) {
+                          pos = i - 1;
+                        }
+                      } else {
+                        codeblock = 0;
+                        pos = i + 2;
+                      }
+                      i = i + 3;
+                    } else {
+                      if (codeblock == 0 && substr(str, i, 1) == "\n") {
+                        pos = i;
+                      }
+                      i = i + 1;
                     }
                   }
                   print pos;
