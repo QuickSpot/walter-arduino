@@ -232,9 +232,19 @@ This is the Changelog for WalterModem
 
 > This release contains several breaking changes to earlier versions. Please read the description and review the updated examples carefully before updating.
 
-- release(1.5.0) [#129](https://github.com/QuickSpot/walter-arduino/pull/129)
+### Features
+
+- feat(WalterModem): Event handling refactor and parser fixes [BREAKING] ([#136](https://github.com/QuickSpot/walter-arduino/pull/136))
+- feat(WalterModem): Modem temperature and voltage monitoring support ([#137](https://github.com/QuickSpot/walter-arduino/pull/137))
 
 ### Bug Fixes
 
 - fix(WalterSocket): panic after close before data received racecondition ([#110](https://github.com/QuickSpot/walter-arduino/pull/110))
 - fix(WalterModem): Retrieving ICCID and eUICCID using getSIMCardID() ([#126](https://github.com/QuickSpot/walter-arduino/pull/126))
+- fix(http): httpStatus should be uint16_t ([#128](https://github.com/QuickSpot/walter-esp-idf/pull/128))
+- Add extra_header_line parameter to HTTP function ([#120](https://github.com/QuickSpot/walter-arduino/pull/120))
+
+### Examples
+
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(WalterModem): Updated examples for latest changes [BREAKING] ([#153](https://github.com/QuickSpot/walter-esp-idf/pull/153))
+
