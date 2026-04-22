@@ -4709,7 +4709,7 @@ bool WalterModem::unlockSIM(WalterModemRsp* rsp, walterModemCb cb, void* args, c
     return getSIMState(rsp, cb, args);
   }
 
-  _runCmd(arr("AT+CPIN=", _simPIN), "OK", rsp, cb, args);
+  _runCmd(arr("AT+CPIN=", _atStr(_simPIN)), "OK", rsp, cb, args);
   _returnAfterReply();
 }
 
