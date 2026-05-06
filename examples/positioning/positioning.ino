@@ -580,7 +580,7 @@ bool attemptGNSSFix()
   }
 
   /* Disconnect from the network (Required for GNSS) */
-  if(lteConnected && !lteDisconnect()) {
+  if(lteConnected() && !lteDisconnect()) {
     Serial.println("Error: Could not disconnect from the LTE network");
     return false;
   }
