@@ -446,6 +446,12 @@ void setup()
     return;
   }
 
+  /* Connect to the cellular network */
+  if(!lteConnect()) {
+    Serial.println("Error: LTE connect failed");
+    return;
+  }
+
   /* Configure the MQTTS client */
   if(modem.mqttConfig((char*) out_buf, MQTTS_USERNAME, MQTTS_PASSWORD, MQTTS_TLS_PROFILE)) {
     Serial.println("Successfully configured the MQTT client");
