@@ -438,6 +438,12 @@ void setup()
     return;
   }
 
+  /* Connect to the cellular network */
+  if(!lteConnect()) {
+    Serial.println("Error: LTE connect failed");
+    return;
+  }
+
   /* Configure MQTT with TLS profile (MQTTS) */
   if(modem.mqttConfig(AWS_MQTTS_CLIENT_ID, 0, 0, AWS_MQTT_TLS_PROFILE)) {
     Serial.println("MQTTS configuration succeeded");
