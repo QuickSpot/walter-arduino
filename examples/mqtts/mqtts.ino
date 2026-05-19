@@ -438,6 +438,11 @@ void setup()
   /* Set the MQTT event handler */
   modem.setMQTTEventHandler(myMQTTEventHandler, NULL);
 
+  if(!lteConnect()) {
+      Serial.println("Error: LTE connect failed");
+      return;
+  }
+  
   /* Set up the TLS profile */
   if(setupTLSProfile()) {
     Serial.println("TLS Profile setup succeeded");
