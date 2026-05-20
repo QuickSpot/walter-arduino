@@ -2364,7 +2364,7 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
           if(strncmp("Cc", key, key_len) == 0) {
             strToUint16(value, value_len, &(cmd->rsp->data.cellInformation.cc));
           } else if(strncmp("Nc", key, key_len) == 0) {
-            strToUint8(value, value_len, &(cmd->rsp->data.cellInformation.nc));
+            strToUint16(value, value_len, &(cmd->rsp->data.cellInformation.nc));
           } else if(strncmp("RSRP", key, key_len) == 0) {
             strToFloat(value, value_len, &(cmd->rsp->data.cellInformation.rsrp));
           } else if(strncmp("CINR", key, key_len) == 0) {

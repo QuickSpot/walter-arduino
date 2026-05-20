@@ -2319,7 +2319,7 @@ typedef struct {
   /**
    * @brief Mobile network operator code.
    */
-  uint8_t nc;
+  uint16_t nc;
 
   /**
    * @brief Reference Signal Received Power.
