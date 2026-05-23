@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<!--
+  @file SerialModemCommTool.html
+  @version 1.2
+  @brief A web-based tool for communicating with serial modems using AT commands
+  @author <@3dsf>
+  @date 2025
+  @copyright This is free and unencumbered software released into the public domain
+  @license Public Domain
+  @see https://github.com/QuickSpot/walter-arduino/tree/main/examples/passthrough
+  @requires Web Serial API (Chrome/Edge desktop browsers only)
+  @warning Does NOT work in Firefox, Safari, or mobile browsers
+  
+  Description:
+    This tool allows you to connect to a serial modem using the Web Serial API,
+    send AT commands, and view responses in real-time.
+  
+  Features:
+    - Web Serial API for browser-to-serial communication
+    - Preset AT command buttons for common operations
+    - Command history with localStorage persistence
+    - Special control buttons (Ctrl+Z, Enter)
+    - Log export and management
+    - Auto-detection on connection
+
+  Browser Requirements:
+    - Chrome/Edge (desktop) - Web Serial API support required
+    - Does NOT work in Firefox, Safari, or mobile browsers
+
+  Customization:
+    - Add preset command buttons in the .preset-buttons section
+    - Modify initial auto-detect commands in autoDetectModem()
+    - Adjust styling in the <style> section
+    - Request new features via GitHub Issues or use AI!
+
+-->
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Serial Modem Comm Tool</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      padding: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 600px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    textarea, input[type="text"], select {
+      width: 100%;
+      padding: 10px;
+      margin-top: 10px;
+      font-family: monospace;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      margin-top: 10px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      background-color: #2196f3;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #1976d2;
+    }
+    label {
+      margin-top: 15px;
+      display: block;
+      font-weight: bold;
+    }
+    .preset-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .preset-buttons button {
+      flex: 1 1 auto;
+      font-size: 14px;
+      padding: 8px 12px;
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    .actions button {
+      flex: 1 1 auto;
+    }
+    .highlight {
+      background-color: #ffe5e5;
+    }
+    .ctrl-z-btn {
+      background-color: #f44336 !important;
+    }
+    .ctrl-z-btn:hover {
+      background-color: #d32f2f !important;
+    }
+    .enter-btn {
+      background-color: #9e9e9e !important;
+    }
+    .enter-btn:hover {
+      background-color: #757575 !important;
+    }
+    /* Connection status indicator */
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      transition: background-color 0.3s ease;
+    }
+    .status-disconnected {
+      background-color: #f44336;
+    }
+    .status-connected {
+      background-color: #4caf50;
+    }
+    .connect-btn-connected {
+      background-color: #f44336 !important;
+    }
+    .connect-btn-connected:hover {
+      background-color: #d32f2f !important;
+    }
+    /* Reduced prominence for disclaimer */
+    .disclaimer {
+      background: #fafafa;
+      color: #6c757d;
+      border: 1px dashed #ddd;
+      border-radius: 4px;
+      padding: 10px;
+      margin-top: 28px;
+      margin-bottom: 10px;
+      font-size: 13px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Serial Modem Comm Tool</h2>
+
+    <!-- Connect Button with Status Indicator -->
+    <button id="connectBtn">
+      <span id="statusIndicator" class="status-indicator status-disconnected"></span>
+      <span id="connectBtnText">Connect to Modem</span>
+    </button>
+
+    <!-- Preset AT Command Buttons -->
+    <div class="preset-buttons">
+      <button data-cmd="AT">AT</button>
+      <button data-cmd="ATI">ATI</button>
+      <button data-cmd="AT+CSQ">AT+CSQ</button>
+      <button data-cmd="AT+CGMI">AT+CGMI</button>
+      <!-- Add your custom preset buttons here -->
+    </div>
+
+    <!-- Ctrl+Z Button (for SMS/command end) -->
+    <button id="ctrlZBtn" class="ctrl-z-btn">Ctrl+Z</button>
+    <!-- Enter Button (sends carriage return) -->
+    <button id="enterBtn" class="enter-btn">Enter</button>
+
+    <!-- Command History Dropdown -->
+    <label for="commandHistory">Command History:</label>
+    <select id="commandHistory">
+      <option value="">-- Select Previous Command --</option>
+    </select>
+
+    <!-- Manual Command Input -->
+    <label for="commandInput">Send AT Command:</label>
+    <input type="text" id="commandInput" placeholder="e.g. AT, ATI, AT+CSQ" />
+    <button id="sendBtn">Send Command</button>
+
+    <!-- Output/Logs -->
+    <label for="output">Modem Response:</label>
+    <textarea id="output" rows="10" readonly></textarea>
+
+    <!-- Log Actions -->
+    <div class="actions">
+      <button id="copyLogs">Copy Logs</button>
+      <button id="exportLogs">Export Logs</button>
+      <button id="clearLogs">Clear Logs</button>
+    </div>
+
+    <!-- Browser Disclaimer -->
+    <div class="disclaimer">
+      <strong>Note:</strong>
+      This tool uses the <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Serial_API" target="_blank" rel="noopener">Web Serial API</a> and is supported only in Chromium-based desktop browsers (like Google Chrome and Microsoft Edge).<br>
+      It will not work in Firefox, Safari, Internet Explorer, or most mobile browsers.<br>
+      For best results, use the latest version of Chrome or Edge.
+    </div>
+  </div>
+
+  <script>
+    // Global variables and state
+    let port;                           // Main serial port object
+    let writer;                         // Stream writer for sending data
+    let reader;                         // Stream reader for receiving data
+    let keepReading = true;             // Flag to control read loop
+    let buffer = '';                    // Buffer for incoming serial data
+    let isConnected = false;            // Connection status flag
+    
+    // Command history (loaded from localStorage, persists across sessions)
+    const history = JSON.parse(localStorage.getItem('modemCommandHistory') || '[]');
+
+    // Serial port connection
+    
+    /**
+     * Handles connect button clicks
+     * Establishes connection to serial modem via Web Serial API
+     */
+    document.getElementById('connectBtn').addEventListener('click', async () => {
+      if (!isConnected) {
+        // Connect
+        await connectModem();
+      }
+    });
+
+    /**
+     * Establishes connection to serial modem via Web Serial API
+     * Prompts user to select serial port, opens at 115200 baud
+     * Sets up text encoding/decoding streams and starts read loop
+     */
+    async function connectModem() {
+      try {
+        // Prompt user to select a serial port
+        port = await navigator.serial.requestPort();
+        await port.open({ baudRate: 115200 });
+
+        // Set up text encoding/decoding streams for string communication
+        const textDecoder = new TextDecoderStream();
+        const textEncoder = new TextEncoderStream();
+
+        // Pipe port streams through text encoders
+        port.readable.pipeTo(textDecoder.writable);
+        textEncoder.readable.pipeTo(port.writable);
+
+        // Get reader/writer for text communication
+        reader = textDecoder.readable.getReader();
+        writer = textEncoder.writable.getWriter();
+
+        // Update connection status
+        updateConnectionStatus(true);
+        keepReading = true;
+
+        // Start background read loop and auto-detection
+        readLoop();
+        logOutput('Connected to modem.');
+        await autoDetectModem();
+      } catch (err) {
+        logOutput('Connection failed: ' + err);
+        updateConnectionStatus(false);
+      }
+    }
+
+    // Command sending and user interactions
+    
+    /**
+     * Sends manual AT command from text input
+     * Adds carriage return, logs with timestamp, saves to history
+     */
+    document.getElementById('sendBtn').addEventListener('click', async () => {
+      const commandInput = document.getElementById('commandInput');
+      const command = commandInput.value;
+      if (!command || !writer) return;
+      
+      await writer.write(command + "\r");        // Send command + CR
+      const timestamp = new Date().toLocaleTimeString();
+      logOutput(`[${timestamp}] > ${command}`, true);
+      addToHistory(command);                     // Save to persistent history
+      commandInput.value = '';                   // Clear input field
+    });
+
+    /**
+     * Handles selection from command history dropdown
+     * Populates the input field with selected previous command
+     */
+    document.getElementById('commandHistory').addEventListener('change', e => {
+      const selected = e.target.value;
+      if (selected) document.getElementById('commandInput').value = selected;
+    });
+
+    // Log management actions
+    
+    /**
+     * Copies all log content to clipboard
+     */
+    document.getElementById('copyLogs').addEventListener('click', () => {
+      const output = document.getElementById('output');
+      output.select();
+      document.execCommand('copy');
+    });
+
+    /**
+     * Downloads log content as a text file
+     */
+    document.getElementById('exportLogs').addEventListener('click', () => {
+      const text = document.getElementById('output').value;
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'modem_logs.txt';
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    /**
+     * Clears all log content from the display
+     */
+    document.getElementById('clearLogs').addEventListener('click', () => {
+      document.getElementById('output').value = '';
+    });
+
+    // Preset and control buttons
+    
+    /**
+     * Handles clicks on preset AT command buttons
+     * Fills input field with preset command and sends it automatically
+     */
+    document.querySelectorAll('.preset-buttons button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('commandInput').value = btn.getAttribute('data-cmd');
+        document.getElementById('sendBtn').click();
+      });
+    });
+
+    /**
+     * Ctrl+Z Button: Sends ASCII 26 (EOF/End of file)
+     * Used to terminate SMS messages and certain AT command sequences
+     */
+    document.getElementById('ctrlZBtn').addEventListener('click', async () => {
+      if (!writer) return;
+      await writer.write(String.fromCharCode(26)); // Ctrl+Z (ASCII 26)
+      const timestamp = new Date().toLocaleTimeString();
+      logOutput(`[${timestamp}] > [Ctrl+Z]`, true);
+    });
+
+    /**
+     * Enter Button: Sends carriage return (CR)
+     * Used to confirm commands or navigate modem interfaces
+     */
+    document.getElementById('enterBtn').addEventListener('click', async () => {
+      if (!writer) return;
+      await writer.write('\r'); // Carriage return
+      const timestamp = new Date().toLocaleTimeString();
+      logOutput(`[${timestamp}] > [Enter]`, true);
+    });
+
+    // Modem communication functions
+    
+    /**
+     * Auto-detects modem on connection by sending basic AT commands
+     * Customize the commands array to change detection behavior
+     */
+    async function autoDetectModem() {
+      const commands = ['AT', 'ATI'];  // Basic AT test and identification
+      for (const cmd of commands) {
+        await writer.write(cmd + '\r');
+        logOutput(cmd);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+
+    /**
+     * Main read loop for incoming serial data
+     * Runs continuously while connected, processing incoming responses
+     */
+    async function readLoop() {
+      while (port.readable && keepReading) {
+        try {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) processIncomingData(value);
+        } catch (err) {
+          logOutput('Read error: ' + err);
+        }
+      }
+    }
+
+    /**
+     * Processes incoming serial data and displays it in the log
+     * Handles line breaks and filters empty lines for clean output
+     */
+    function processIncomingData(data) {
+      buffer += data;
+      // Split buffer into lines, keep incomplete line in buffer
+      const lines = buffer.split(/\r\n|\r|\n/);
+      buffer = lines.pop() || '';
+      
+      // Only display non-empty lines to reduce clutter
+      const nonEmptyLines = lines.filter(line => line.trim() !== '');
+      nonEmptyLines.forEach(line => {
+        // Indent response to visually separate from commands
+        const indent = '             ';
+        logOutput(`${indent}${line}`);
+      });
+      if (nonEmptyLines.length > 0) logOutput(''); // Add spacing after responses
+    }
+
+    // Utility functions
+    
+    /**
+     * Updates the connection status indicator and button appearance
+     * @param {boolean} connected - Whether the modem is connected
+     */
+    function updateConnectionStatus(connected) {
+      isConnected = connected;
+      const indicator = document.getElementById('statusIndicator');
+      const btnText = document.getElementById('connectBtnText');
+      const connectBtn = document.getElementById('connectBtn');
+      
+      if (connected) {
+        indicator.className = 'status-indicator status-connected';
+        btnText.textContent = 'Connected';
+        connectBtn.disabled = true;
+        connectBtn.style.opacity = '0.6';
+      } else {
+        indicator.className = 'status-indicator status-disconnected';
+        btnText.textContent = 'Connect to Modem';
+        connectBtn.disabled = false;
+        connectBtn.style.opacity = '1';
+      }
+    }
+    
+    /**
+     * Adds text to the output log with automatic scrolling
+     * @param {string} text - Text to add to log
+     * @param {boolean} isCommand - Whether this is a user command (affects formatting)
+     */
+    function logOutput(text, isCommand = false) {
+      const output = document.getElementById('output');
+      output.value += `${text}\n`;
+      output.scrollTop = output.scrollHeight; // Auto-scroll to bottom
+    }
+
+    // Command history management (localStorage)
+    
+    /**
+     * Saves current command history to browser localStorage
+     * Enables persistence across browser sessions
+     */
+    function saveHistoryToStorage() {
+      localStorage.setItem('modemCommandHistory', JSON.stringify(history));
+    }
+
+    /**
+     * Loads saved command history from localStorage
+     * Populates the dropdown with previously used commands
+     */
+    function loadHistoryFromStorage() {
+      const historySelect = document.getElementById('commandHistory');
+      history.forEach(cmd => {
+        const option = document.createElement('option');
+        option.value = cmd;
+        option.textContent = cmd;
+        historySelect.appendChild(option);
+      });
+    }
+
+    /**
+     * Adds a new command to the history (if not already present)
+     * Updates both the UI dropdown and localStorage
+     */
+    function addToHistory(cmd) {
+      if (!history.includes(cmd)) {
+        history.push(cmd);
+        const option = document.createElement('option');
+        option.value = cmd;
+        option.textContent = cmd;
+        document.getElementById('commandHistory').appendChild(option);
+        saveHistoryToStorage(); // Persist to localStorage
+      }
+    }
+
+    // Cleanup and initialization
+    
+    /**
+     * Initialize application when DOM is ready
+     * Loads saved command history from localStorage
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+      loadHistoryFromStorage();
+    });
+  </script>
+</body>
