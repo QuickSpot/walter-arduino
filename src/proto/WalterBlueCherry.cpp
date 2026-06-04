@@ -330,6 +330,22 @@ bool WalterModem::blueCherryIsProvisioned()
 bool WalterModem::blueCherryInit(uint8_t tls_profile_id, uint8_t* ota_buffer, WalterModemRsp* rsp,
                                  uint16_t ack_timeout_s)
 {
+  if(_blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED &&
+     _blueCherry.status != WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED) {
+    _blueCherry.tls_profile_id = tls_profile_id;
+    _blueCherry.ota_buffer = ota_buffer;
+    _blueCherry.ack_timeout_s = ack_timeout_s;
+
+    if(rsp) {
+      rsp->type = WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY;
+      rsp->data.blueCherry.state = _blueCherry.status;
+      rsp->data.blueCherry.messageCount = 0;
+    }
+
+    ESP_LOGD("WalterModem", "BlueCherry already initialized");
+    return true;
+  }
+
   if((!blueCherryIsProvisioned() ||
       !tlsConfigProfile(tls_profile_id, WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
                         WALTER_MODEM_TLS_VERSION_12, 6, 5, 0))) {
