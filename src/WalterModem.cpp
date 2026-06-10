@@ -312,6 +312,34 @@ const char* _pdpTypeStr(WalterModemPDPType type)
 }
 
 /**
+ * @brief Convert a broken-down UTC time to a unix timestamp.
+ *
+ * Portable replacement for the non-standard timegm(). Unlike mktime(), this is unaffected by the
+ * TZ environment variable: the struct tm fields are always interpreted as UTC.
+ *
+ * Uses Howard Hinnant's days_from_civil algorithm; tm_wday, tm_yday and tm_isdst are ignored.
+ *
+ * @param tm The broken-down time, interpreted as UTC.
+ *
+ * @return The unix timestamp.
+ */
+static int64_t _timegm(const struct tm* tm)
+{
+  int y = tm->tm_year + 1900;
+  int m = tm->tm_mon + 1;
+  int d = tm->tm_mday;
+  if(m <= 2) {
+    y -= 1;
+  }
+  const int era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = (unsigned) (y - era * 400);
+  const unsigned doy = (153u * (m + (m > 2 ? -3 : 9)) + 2u) / 5u + d - 1;
+  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  const int64_t days = (int64_t) era * 146097 + (int64_t) doe - 719468;
+  return days * 86400 + tm->tm_hour * 3600 + tm->tm_min * 60 + tm->tm_sec;
+}
+
+/**
  * @brief Convert a time string to a unix timestamp.
  *
  * No time zone is taken into consideration. If the time string is a local time, the time zone
@@ -329,9 +357,7 @@ int64_t strTotime(const char* timeStr, const char* format = "%Y-%m-%dT%H:%M:%S")
     return -1;
   }
 
-  /* Without setting time zone, mktime will assume UTC+00 on arduino, thus behaving like timegm */
-  time_t utcTime = std::mktime(&tm);
-  return (int64_t) utcTime;
+  return _timegm(&tm);
 }
 
 /**
@@ -2588,8 +2614,8 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
     tm.tm_year += 2000 - 1900; // years since 1900
     tm.tm_mon -= 1;            // months since January
 
-    // mktime assumes system local time — use as-is then offset to UTC
-    time_t local_time = mktime(&tm);
+    // Interpret the broken-down time as UTC, then apply the modem's reported offset.
+    int64_t local_time = _timegm(&tm);
 
     // Convert quarter-hour offset (e.g. +08 = 8 * 900)
     int offset_seconds = tz_offset * 15 * 60;
