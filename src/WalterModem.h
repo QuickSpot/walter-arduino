@@ -4675,6 +4675,7 @@ public:
    * @param[in] content_type_buf user buffer to store content type header in.
    * @param[in] content_type_buf_size Size of the user buffer, including terminating null
    * byte.
+   * @param[in] extra_header_line Optional extra HTTP header line to send.
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
    * @param[in] args Arguments to pass to the callback.
@@ -4686,6 +4687,7 @@ public:
            WalterModemHttpSendCmd http_send_cmd = WALTER_MODEM_HTTP_SEND_CMD_POST,
            WalterModemHttpPostParam http_post_param = WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED,
            char* content_type_buf = NULL, uint16_t content_type_buf_size = 0,
+           const char* extra_header_line = NULL,
            WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
