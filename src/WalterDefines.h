@@ -90,7 +90,7 @@ const char* _pdpTypeStr(WalterModemPDPType type);
  * @param format The time format to parse. (For example, "%Y-%m-%dT%H:%M:%S")
  * @return The Unix timestamp on success, or -1 on error.
  */
-int64_t strTotime(const char* timeStr, const char* format);
+int64_t strTotime(const char* timeStr, const char* format = "%Y-%m-%dT%H:%M:%S");
 
 /**
  * @brief Convert a unix timestamp to a formatted time string.
@@ -117,7 +117,8 @@ bool timeToStr(uint64_t timestamp, char* buffer, size_t buffer_len,
  * @param max Maximum allowed value (e.g., UINT32_MAX).
  * @return true if conversion was successful; false otherwise.
  */
-bool strToUint32(const char* str, int len, uint32_t* result, int radix, uint32_t max);
+bool strToUint32(const char* str, int len, uint32_t* result, int radix = 10,
+                 uint32_t max = UINT32_MAX);
 
 /**
  * @brief Convert a string into an unsigned 16-bit integer.
@@ -128,7 +129,7 @@ bool strToUint32(const char* str, int len, uint32_t* result, int radix, uint32_t
  * @param radix Conversion radix (e.g., 10).
  * @return true if conversion was successful; false otherwise.
  */
-bool strToUint16(const char* str, int len, uint16_t* result, int radix);
+bool strToUint16(const char* str, int len, uint16_t* result, int radix = 10);
 
 /**
  * @brief Convert a string into an unsigned 8-bit integer.
@@ -139,7 +140,7 @@ bool strToUint16(const char* str, int len, uint16_t* result, int radix);
  * @param radix Conversion radix (e.g., 10).
  * @return true if conversion was successful; false otherwise.
  */
-bool strToUint8(const char* str, int len, uint8_t* result, int radix);
+bool strToUint8(const char* str, int len, uint8_t* result, int radix = 10);
 
 /**
  * @brief Convert a string into an IEEE754 float.

@@ -350,7 +350,7 @@ static int64_t _timegm(const struct tm* tm)
  *
  * @return The unix timestamp or -1 on error.
  */
-int64_t strTotime(const char* timeStr, const char* format = "%Y-%m-%dT%H:%M:%S")
+int64_t strTotime(const char* timeStr, const char* format)
 {
   struct tm tm {};
   if(strptime(timeStr, format, &tm) == NULL) {
@@ -409,8 +409,7 @@ bool timeToStr(uint64_t timestamp, char* buffer, size_t buffer_len, const char* 
  *
  * @return True when the conversion was successful, false if the conversion failed.
  */
-bool strToUint32(const char* str, int len, uint32_t* result, int radix = 10,
-                 uint32_t max = UINT32_MAX)
+bool strToUint32(const char* str, int len, uint32_t* result, int radix, uint32_t max)
 {
   size_t l = len == -1 ? strlen(str) : (size_t) len;
 
@@ -453,7 +452,7 @@ bool strToUint32(const char* str, int len, uint32_t* result, int radix = 10,
  *
  * @return True when the conversion was successful, false if the conversion failed.
  */
-bool strToUint16(const char* str, int len, uint16_t* result, int radix = 10)
+bool strToUint16(const char* str, int len, uint16_t* result, int radix)
 {
   uint32_t tmpResult = 0;
 
@@ -477,7 +476,7 @@ bool strToUint16(const char* str, int len, uint16_t* result, int radix = 10)
  *
  * @return True when the conversion was successful, false if the conversion failed.
  */
-bool strToUint8(const char* str, int len, uint8_t* result, int radix = 10)
+bool strToUint8(const char* str, int len, uint8_t* result, int radix)
 {
   uint32_t tmpResult = 0;
 

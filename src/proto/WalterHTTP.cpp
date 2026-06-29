@@ -152,8 +152,8 @@ bool WalterModem::httpQuery(int profile_id, const char* uri, WalterModemHttpQuer
 bool WalterModem::httpSend(int profile_id, const char* uri, uint8_t* buf, uint16_t buf_size,
                            WalterModemHttpSendCmd http_send_cmd,
                            WalterModemHttpPostParam http_post_param, char* content_type_buf,
-                           uint16_t content_type_buf_size, const char* extra_header_line = NULL,
-                           WalterModemRsp* rsp = NULL, walterModemCb cb,
+                           uint16_t content_type_buf_size, const char* extra_header_line,
+                           WalterModemRsp* rsp, walterModemCb cb,
                            void* args)
 {
   if(profile_id >= WALTER_MODEM_MAX_HTTP_PROFILES) {
