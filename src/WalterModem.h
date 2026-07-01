@@ -2405,10 +2405,15 @@ struct WMNetworkEventData {
   };
 };
 
+#if CONFIG_WALTER_MODEM_ENABLE_GNSS
+
 struct WMGNSSEventData {
   WMGNSSFixEvent gnssfix;
   WMGNSSAssistanceType assistance;
 };
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
 struct WMSocketEventData {
   uint8_t conn_id;
@@ -2417,6 +2422,9 @@ struct WMSocketEventData {
   uint8_t data[1500];
 };
 
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_HTTP
+
 struct WMHTTPEventData {
   uint8_t profile_id;
   uint8_t rc;
@@ -2424,6 +2432,9 @@ struct WMHTTPEventData {
   char content_type[64];
   uint16_t data_len;
 };
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_COAP
 
 struct WMCoAPEventData {
   uint8_t profile_id;
@@ -2435,6 +2446,9 @@ struct WMCoAPEventData {
   char reason[16];
 };
 
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
 struct WMMQTTEventData {
   WMMQTTConnRC rc;
   char topic[WALTER_MODEM_MQTT_TOPIC_BUF_SIZE];
@@ -2442,6 +2456,8 @@ struct WMMQTTEventData {
   uint8_t qos;
   int mid;
 };
+
+#endif
 
 struct WalterModemTempData {
   WalterModemTempMonitorMode mode;

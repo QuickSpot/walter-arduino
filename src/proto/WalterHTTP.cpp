@@ -46,6 +46,7 @@
  */
 
 #include <WalterDefines.h>
+#include <esp_log.h>
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 #pragma region PRIVATE_METHODS
 #pragma endregion
