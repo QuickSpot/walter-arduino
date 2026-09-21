@@ -312,8 +312,7 @@ void myMessageHandler(uint8_t topic, uint16_t len, const uint8_t* data, void* ar
  *
  * @return True when this handler took the event's decision.
  */
-bool myOtaHandler(WalterModemBlueCherryOtaEvent event, const WalterModemBlueCherryOtaInfo* info,
-                  void* args)
+bool myOtaHandler(BlueCherryOtaEvent event, const BlueCherryOtaInfo* info, void* args)
 {
   switch(event) {
   case BLUECHERRY_OTA_EVENT_AVAILABLE:
@@ -357,7 +356,7 @@ bool myOtaHandler(WalterModemBlueCherryOtaEvent event, const WalterModemBlueCher
  *
  * @return void
  */
-void myStateHandler(WalterModemBlueCherryState state, void* args)
+void myStateHandler(BlueCherryState state, void* args)
 {
   switch(state) {
   case BLUECHERRY_STATE_NOT_PROVISIONED:
@@ -392,7 +391,7 @@ static bool initializeBlueCherry()
   /* PSRAM, falling back to a library-allocated one in internal RAM. This descriptor is read during
    * init and not kept, so only the buffer it points at has to outlive the call. PSRAM has to be
    * enabled in the board menu ("PSRAM: QSPI PSRAM") for the allocation to succeed. */
-  WalterModemBlueCherryPublishBuffer publishBuffer = {};
+  BlueCherryPublishBuffer publishBuffer = {};
   publishBuffer.buffer = (uint8_t*) heap_caps_malloc(BC_PUBLISH_BUFFER_SIZE, MALLOC_CAP_SPIRAM);
   publishBuffer.size = BC_PUBLISH_BUFFER_SIZE;
 
