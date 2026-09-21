@@ -48,29 +48,38 @@
  * This sketch sends and receives mqtt data using the DPTechnics BlueCherry cloud
  * platform. It also supports OTA updates which are scheduled through the BlueCherry web interface.
  */
-#include <BlueCherryZTP.h>
-#include <WalterModem.h>
+
+#include <WalterBlueCherry.h>
 #include <Arduino.h>
-#include <esp_mac.h>
+#include <esp_heap_caps.h>
 
 // The cellular Access Point Name
 // Leave blank for autodetection
 #define CELLULAR_APN ""
 
-// Define BlueCherry cloud device ID
+// The BlueCherry device type this firmware belongs to, used for Zero-Touch Provisioning
 #define BC_DEVICE_TYPE "walter01"
 
-// Define modem TLS profile used for BlueCherry cloud platform
+// The modem TLS profile BlueCherry may use
 #define BC_TLS_PROFILE 1
 
-// Rename Serial2 to ModemSerial
-#define ModemSerial Serial2
+// The size of the buffer holding messages waiting to be published
+#define BC_PUBLISH_BUFFER_SIZE 4096
 
-// Buffer to store OTA firmware messages in
-byte ota_buffer[SPI_FLASH_BLOCK_SIZE] = { 0 };
-
-// The modem instance
+/**
+ * @brief The modem instance.
+ */
 WalterModem modem;
+
+/**
+ * @brief The BlueCherry cloud client.
+ */
+WalterBlueCherry bc;
+
+/**
+ * @brief Flag used to signal when BlueCherry has nothing left to do.
+ */
+volatile bool bc_synchronized = false;
 
 /**
  * @brief The binary configuration settings for PSM.
@@ -85,31 +94,6 @@ const char* psmTAU = "00000110";
  */
 const char* edrxValue = "1101";
 const char* edrxPagingTimeWindow = "0000";
-
-// The BlueCherry CA root + intermediate certificate used for CoAP DTLS
-// communication
-const char* bc_ca_cert = "-----BEGIN CERTIFICATE-----\r\n\
-MIIBlTCCATqgAwIBAgICEAAwCgYIKoZIzj0EAwMwGjELMAkGA1UEBhMCQkUxCzAJ\r\n\
-BgNVBAMMAmNhMB4XDTI0MDMyNDEzMzM1NFoXDTQ0MDQwODEzMzM1NFowJDELMAkG\r\n\
-A1UEBhMCQkUxFTATBgNVBAMMDGludGVybWVkaWF0ZTBZMBMGByqGSM49AgEGCCqG\r\n\
-SM49AwEHA0IABJGFt28UrHlbPZEjzf4CbkvRaIjxDRGoeHIy5ynfbOHJ5xgBl4XX\r\n\
-hp/r8zOBLqSbu6iXGwgjp+wZJe1GCDi6D1KjZjBkMB0GA1UdDgQWBBR/rtuEomoy\r\n\
-49ovMAnj5Hpmk2gTGjAfBgNVHSMEGDAWgBR3Vw0Y1sUvMhkX7xySsX55tvsu8TAS\r\n\
-BgNVHRMBAf8ECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBhjAKBggqhkjOPQQDAwNJ\r\n\
-ADBGAiEApN7DmuufC/aqyt6g2Y8qOWg6AXFUyTcub8/Y28XY3KgCIQCs2VUXCPwn\r\n\
-k8jR22wsqNvZfbndpHthtnPqI5+yFXrY4A==\r\n\
------END CERTIFICATE-----\r\n\
------BEGIN CERTIFICATE-----\r\n\
-MIIBmDCCAT+gAwIBAgIUDjfXeosg0fphnshZoXgQez0vO5UwCgYIKoZIzj0EAwMw\r\n\
-GjELMAkGA1UEBhMCQkUxCzAJBgNVBAMMAmNhMB4XDTI0MDMyMzE3MzU1MloXDTQ0\r\n\
-MDQwNzE3MzU1MlowGjELMAkGA1UEBhMCQkUxCzAJBgNVBAMMAmNhMFkwEwYHKoZI\r\n\
-zj0CAQYIKoZIzj0DAQcDQgAEB00rHNthOOYyKj80cd/DHQRBGSbJmIRW7rZBNA6g\r\n\
-fbEUrY9NbuhGS6zKo3K59zYc5R1U4oBM3bj6Q7LJfTu7JqNjMGEwHQYDVR0OBBYE\r\n\
-FHdXDRjWxS8yGRfvHJKxfnm2+y7xMB8GA1UdIwQYMBaAFHdXDRjWxS8yGRfvHJKx\r\n\
-fnm2+y7xMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgGGMAoGCCqGSM49\r\n\
-BAMDA0cAMEQCID7AcgACnXWzZDLYEainxVDxEJTUJFBhcItO77gcHPZUAiAu/ZMO\r\n\
-VYg4UI2D74WfVxn+NyVd2/aXTvSBp8VgyV3odA==\r\n\
------END CERTIFICATE-----\r\n";
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -294,114 +278,142 @@ static void myNetworkEventHandler(WMNetworkEventType event, const WMNetworkEvent
   }
 }
 
-// This function will poll the BlueCherry cloud platform to check if there is an
-// incoming MQTT message or new firmware version available. If a new firmware
-// version is available, the device automatically downloads and reboots with the
-// new firmware.
-void syncBlueCherry()
+/**
+ * @brief Handle a message the cloud sent down.
+ *
+ * Runs on the BlueCherry synchronisation task, so it must not block. The payload is a pointer into
+ * the receive buffer, so copy anything that has to outlive the call.
+ *
+ * @param topic The single byte topic index the cloud maps to an MQTT topic.
+ * @param len The number of bytes in data.
+ * @param data The payload, valid only for the duration of the call.
+ * @param args User arguments.
+ *
+ * @return void
+ */
+void myMessageHandler(uint8_t topic, uint16_t len, const uint8_t* data, void* args)
 {
-  WalterModemRsp rsp = {};
-  int attempt = 0;
-  bool fail = false;
-
-  do {
-    if(!modem.blueCherrySync(&rsp)) {
-      Serial.printf("Error during BlueCherry cloud platform synchronisation: %d\r\n",
-                    rsp.data.blueCherry.state);
-      modem.reset();
-      lteConnect();
-      attempt++;
-      fail = true;
-    } else {
-      attempt = 0;
-      fail = false;
-      for(uint8_t msgIdx = 0; msgIdx < rsp.data.blueCherry.messageCount; msgIdx++) {
-        if(rsp.data.blueCherry.messages[msgIdx].topic == 0) {
-          Serial.println("Downloading new firmware version");
-          break;
-        } else {
-          Serial.printf("Incoming message %d/%d:\r\n", msgIdx + 1,
-                        rsp.data.blueCherry.messageCount);
-          Serial.printf("Topic: %02x\r\n", rsp.data.blueCherry.messages[msgIdx].topic);
-          Serial.printf("Data size: %d\r\n", rsp.data.blueCherry.messages[msgIdx].dataSize);
-
-          for(uint8_t byteIdx = 0; byteIdx < rsp.data.blueCherry.messages[msgIdx].dataSize;
-              byteIdx++) {
-            Serial.printf("%c", rsp.data.blueCherry.messages[msgIdx].data[byteIdx]);
-          }
-
-          Serial.print("\r\n");
-        }
-      }
-    }
-  } while(!rsp.data.blueCherry.syncFinished || (fail && attempt < 3));
-
-  Serial.println("Synchronized with BlueCherry cloud platform");
-  return;
+  Serial.printf("Incoming message on topic 0x%02x (%u bytes)\r\n", topic, len);
+  Serial.printf("%.*s\r\n", len, (const char*) data);
 }
 
-bool configureBluecherry()
+/**
+ * @brief Handle a firmware update event, taking both update decisions in the application.
+ *
+ * Runs on the BlueCherry synchronisation task, so it must not block.
+ *
+ * Two events carry a decision: AVAILABLE, where otaStart accepts the offer, and COMPLETE, where
+ * the image is installed and only the restart is left. Returning false hands either back to the
+ * library, which then downloads and restarts on its own. The other three are notifications.
+ *
+ * @param event The event that occurred.
+ * @param info Details for the event, valid only for the duration of the call.
+ * @param args User arguments.
+ *
+ * @return True when this handler took the event's decision.
+ */
+bool myOtaHandler(WalterModemBlueCherryOtaEvent event, const WalterModemBlueCherryOtaInfo* info,
+                  void* args)
 {
-  WalterModemRsp rsp = {};
-  unsigned short attempt = 0;
-  while(!modem.blueCherryInit(BC_TLS_PROFILE, ota_buffer, &rsp)) {
-    if(rsp.data.blueCherry.state == WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED &&
-       attempt <= 2) {
-      Serial.println("Device is not provisioned for BlueCherry communication, starting ZTP...");
+  switch(event) {
+  case BLUECHERRY_OTA_EVENT_AVAILABLE:
+    Serial.printf("OTA: firmware v%d available (%lu bytes), accepting\r\n", info->version,
+                  (unsigned long) info->size);
+    bc.otaStart();
+    return true;
 
-      if(attempt == 0) {
-        if(!BlueCherryZTP::begin(BC_DEVICE_TYPE, BC_TLS_PROFILE, bc_ca_cert, &modem)) {
-          Serial.println("Error: Failed to initialize ZTP");
-          continue;
-        }
+  case BLUECHERRY_OTA_EVENT_STARTED:
+    Serial.printf("OTA: downloading firmware v%d\r\n", info->version);
+    break;
 
-        // Fetch MAC address
-        uint8_t mac[8] = { 0 };
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_MAC, mac)) {
-          Serial.println("Error: Could not add MAC address as ZTP device ID parameter");
-        }
+  case BLUECHERRY_OTA_EVENT_PROGRESS:
+    Serial.printf("OTA: %lu / %lu bytes\r\n", (unsigned long) info->bytes_received,
+                  (unsigned long) info->size);
+    break;
 
-        // Fetch IMEI number
-        if(!modem.getIdentity(&rsp)) {
-          Serial.println("Error: Could not fetch IMEI number from modem");
-        }
+  case BLUECHERRY_OTA_EVENT_COMPLETE:
+    Serial.printf("OTA: firmware v%d installed, restarting\r\n", info->version);
+    Serial.flush();
+    ESP.restart();
+    return true;
 
-        if(!BlueCherryZTP::addDeviceIdParameter(BLUECHERRY_ZTP_DEVICE_ID_TYPE_IMEI,
-                                                rsp.data.identity.imei)) {
-          Serial.println("Error: Could not add IMEI as ZTP device ID parameter");
-        }
-      }
-      attempt++;
-
-      // Request the BlueCherry device ID
-      if(!BlueCherryZTP::requestDeviceId()) {
-        Serial.println("Error: Could not request device ID");
-        continue;
-      }
-
-      // Generate the private key and CSR
-      if(!BlueCherryZTP::generateKeyAndCsr()) {
-        Serial.println("Error: Could not generate private key");
-      }
-      delay(1000);
-
-      // Request the signed certificate
-      if(!BlueCherryZTP::requestSignedCertificate()) {
-        Serial.println("Error: Could not request signed certificate");
-        continue;
-      }
-
-      // Store BlueCherry TLS certificates + private key in the modem
-      if(!modem.blueCherryProvision(BlueCherryZTP::getCert(), BlueCherryZTP::getPrivKey(),
-                                    bc_ca_cert)) {
-        Serial.println("Error: Failed to upload the DTLS certificates");
-        continue;
-      }
-    } else {
-      return false;
-    }
+  case BLUECHERRY_OTA_EVENT_FAILED:
+    Serial.printf("OTA: firmware v%d failed with error %u\r\n", info->version, info->error_code);
+    break;
   }
+
+  return false;
+}
+
+/**
+ * @brief Report what the BlueCherry connection is doing.
+ *
+ * Runs on the BlueCherry synchronisation task, so it must not block. Publish and sync report the
+ * transitions they make themselves, so it can also run on the calling task. IDLE is the only state
+ * in which it is safe to sleep.
+ *
+ * @param state The state that was just entered.
+ * @param args User arguments.
+ *
+ * @return void
+ */
+void myStateHandler(WalterModemBlueCherryState state, void* args)
+{
+  switch(state) {
+  case BLUECHERRY_STATE_NOT_PROVISIONED:
+    Serial.println("BlueCherry holds no credentials yet, provisioning...");
+    break;
+
+  case BLUECHERRY_STATE_AWAIT_CONNECTION:
+    Serial.println("BlueCherry is connecting...");
+    break;
+
+  case BLUECHERRY_STATE_IDLE:
+    Serial.println("Synchronized with the BlueCherry cloud platform");
+    bc_synchronized = true;
+    break;
+
+  default:
+    break;
+  }
+}
+
+/**
+ * @brief Give BlueCherry its buffers and handlers.
+ *
+ * Runs on every boot: it resumes a session that survived deep sleep and re-registers the handlers
+ * and buffers, which do not survive one. Talks to the modem, never to the cloud, so it needs no
+ * network and there is nothing to retry.
+ *
+ * @return True when BlueCherry is ready to be published to.
+ */
+static bool initializeBlueCherry()
+{
+  /* PSRAM, falling back to a library-allocated one in internal RAM. This descriptor is read during
+   * init and not kept, so only the buffer it points at has to outlive the call. PSRAM has to be
+   * enabled in the board menu ("PSRAM: QSPI PSRAM") for the allocation to succeed. */
+  WalterModemBlueCherryPublishBuffer publishBuffer = {};
+  publishBuffer.buffer = (uint8_t*) heap_caps_malloc(BC_PUBLISH_BUFFER_SIZE, MALLOC_CAP_SPIRAM);
+  publishBuffer.size = BC_PUBLISH_BUFFER_SIZE;
+
+  if(publishBuffer.buffer == NULL) {
+    Serial.println("Warning: No PSRAM available, letting BlueCherry allocate its own publish "
+                   "buffer");
+    publishBuffer.size = 0;
+  }
+
+  if(!bc.init(BC_TLS_PROFILE, BC_DEVICE_TYPE, myMessageHandler, NULL,
+              publishBuffer.buffer != NULL ? &publishBuffer : NULL)) {
+    Serial.println("Error: Could not initialize BlueCherry");
+    return false;
+  }
+
+  /* Both optional: without them the library takes the update decisions itself, and bc.getState()
+   * answers what the state handler reports. */
+  bc.setOtaHandler(myOtaHandler, NULL);
+  bc.setStateHandler(myStateHandler, NULL);
+
+  Serial.println("Successfully initialized BlueCherry");
   return true;
 }
 
@@ -416,7 +428,7 @@ void setup()
 
   Serial.printf("\r\n\r\n=== WalterModem BlueCherry example (v1.5.1) ===\r\n\r\n");
 
-  /* Start the modem */
+  /* 1. Start the modem. */
   if(modem.begin(&Serial2)) {
     Serial.println("Successfully initialized the modem");
   } else {
@@ -424,27 +436,15 @@ void setup()
     return;
   }
 
-  /* Register network event handler */
+  /* 2. Register the network event handler, before anything can change the registration state. */
   modem.setNetworkEventHandler(myNetworkEventHandler, NULL);
 
-  /* Connect to cellular network */
-  if(!lteConnected() && !lteConnect()) {
-    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
-                   "in 10 seconds");
-    delay(10000);
-    ESP.restart();
+  /* 3. Hand BlueCherry its buffers and handlers. Nothing here needs the network. */
+  if(!initializeBlueCherry()) {
+    return;
   }
 
-  /* Configure BlueCherry on first boot */
-  if(esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_UNDEFINED) {
-    if(configureBluecherry()) {
-      Serial.println("Successfully configured BlueCherry");
-    } else {
-      Serial.println("Error: Could not configure BlueCherry");
-      return;
-    }
-  }
-
+  /* 4. Read the sensors. Both monitors are modem-local, so they need no network either. */
   /* Enable temperature monitoring */
   if(modem.configTemperatureMonitor(WALTER_MODEM_TEMP_MONITOR_MODE_ON)) {
     Serial.println("Successfully enabled temperature monitoring");
@@ -496,17 +496,36 @@ void setup()
     Serial.println("Warning: Could not disable voltage monitoring");
   }
 
-  /* Send a message to BlueCherry with sensor data */
+  /* 5. Queue a message. Never touches the network; it goes out on the next synchronisation. */
   char msg[128];
   snprintf(msg, sizeof(msg),
            "{\"message\":\"Hello from Walter Modem!\",\"temperature\":%d,\"voltage\":%d}",
            temperature, voltage);
   Serial.printf("Publishing to BlueCherry: %s\r\n", msg);
-  modem.blueCherryPublish(0x84, strlen(msg), (uint8_t*) msg);
+  bc.publish(0x84, strlen(msg), (const uint8_t*) msg);
 
-  /* Poll BlueCherry platform if an incoming message or firmware update is available */
-  syncBlueCherry();
+  /* 6. Connect to the cellular network. Everything above this line is local to the board, so the
+   * radio is only asked for once there is something to send. */
+  if(!lteConnected() && !lteConnect()) {
+    Serial.println("Error: Unable to connect to cellular network, restarting Walter "
+                   "in 10 seconds");
+    delay(10000);
+    ESP.restart();
+  }
 
+  /* 7. Synchronise. A sleepy device drives this itself rather than with setAutoSync, so it decides
+   * how many exchanges run before it sleeps. The flag is cleared here and not next to the publish:
+   * an idle reported before this line answers an exchange the task ran on its own. */
+  bc_synchronized = false;
+  bc.sync();
+
+  /* No time-out on purpose: an unsettled exchange is still retrying, or still pulling a firmware
+   * update down, and sleeping through either costs the transfer its progress. */
+  while(!bc_synchronized) {
+    delay(100);
+  }
+
+  /* The modem stays powered, so the session survives and the next boot resumes it. */
   Serial.println("I'm tired, I'm going to deep sleep now for 300 seconds");
   Serial.flush();
   modem.sleep(60 * 5);

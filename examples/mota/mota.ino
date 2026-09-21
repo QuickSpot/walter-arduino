@@ -69,8 +69,6 @@
 
 WalterModem modem;
 
-uint8_t ota_buffer[SPI_FLASH_BLOCK_SIZE];
-
 void setup()
 {
   Serial.begin(115200);
@@ -80,7 +78,7 @@ void setup()
 
   WalterModem::begin(&Serial2);
 
-  modem.offlineMotaUpgrade(ota_buffer);
+  modem.offlineMotaUpgrade();
 }
 
 void loop()
