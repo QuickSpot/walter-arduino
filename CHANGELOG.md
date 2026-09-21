@@ -248,3 +248,25 @@ This is the Changelog for WalterModem
 
 - [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] example(WalterModem): Updated examples for latest changes [BREAKING] ([#153](https://github.com/QuickSpot/walter-esp-idf/pull/153))
 
+## [v1.5.1](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.5.1)
+
+### Features
+
+- feat(HTTP): extra headers for httpSend ([#130](https://github.com/QuickSpot/walter-esp-idf/pull/130))
+
+### Bug Fixes
+
+- fix(WalterModem): SIM unlock ([#157](https://github.com/QuickSpot/walter-esp-idf/pull/157))
+- fix(cell-info): widen cellInformation.nc to uint16_t for 3-digit MNCs ([#149](https://github.com/QuickSpot/walter-arduino/pull/149))
+- fix(bluecherry): bluecherryInit() returns early if already initialized ([#150](https://github.com/QuickSpot/walter-arduino/pull/150))
+- fix(WalterModem): parse modem clock as UTC regardless of host TZ ([#160](https://github.com/QuickSpot/walter-esp-idf/pull/160))
+- fix(WalterModem): restore compilation and esp_driver_uart added to REQUIRES ([#165](https://github.com/QuickSpot/walter-esp-idf/pull/165))
+- fix(WalterModem): missing CONFIG_WALTER_MODEM_ENABLE_* checks ([#164](https://github.com/QuickSpot/walter-esp-idf/pull/164))
+- fix(WalterModem): toggling protocol modules using kconfig now compiles ([#170](https://github.com/QuickSpot/walter-esp-idf/pull/170))
+
+### Examples
+
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] fix(mqtt): add missing lteConnect call in mqtts example ([#161](https://github.com/QuickSpot/walter-esp-idf/pull/161))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(mqtt): add missing lteConnect call in mqtts example ([#147](https://github.com/QuickSpot/walter-arduino/pull/147))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(mqtt): add missing lteConnect call in aws_mqtt example ([#148](https://github.com/QuickSpot/walter-arduino/pull/148))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(GNSS): lteConnected check in GNSS assistance ([#144](https://github.com/QuickSpot/walter-arduino/pull/144))
