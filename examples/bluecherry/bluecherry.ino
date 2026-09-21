@@ -402,11 +402,15 @@ static bool initializeBlueCherry()
     publishBuffer.size = 0;
   }
 
-  if(!bc.init(BC_TLS_PROFILE, BC_DEVICE_TYPE, myMessageHandler, NULL,
+  if(!bc.init(BC_TLS_PROFILE, BC_DEVICE_TYPE,
               publishBuffer.buffer != NULL ? &publishBuffer : NULL)) {
     Serial.println("Error: Could not initialize BlueCherry");
     return false;
   }
+
+  /* Optional, but recommended: the only way this application sees its downlink. The library has
+   * no default for it, the payloads being application data it cannot interpret. */
+  bc.setMsgHandler(myMessageHandler, NULL);
 
   /* Both optional: without them the library takes the update decisions itself, and bc.getState()
    * answers what the state handler reports. */
