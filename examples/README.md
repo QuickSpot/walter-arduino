@@ -26,8 +26,10 @@ The included examples are:
  - [mqtt](mqtt/): this sketch makes Walter connect to a network and
    send and receive MQTT messages using the MQTT commands in the modem.
 
- - [bluecherry](bluecherry/): this sketch makes Walter connect to a network and
-   send and receive MQTT messages and an ota update using the DPTechnics COAP to MQTT bridge.
+ - [bluecherry](bluecherry/): this sketch makes Walter connect to the DPTechnics
+   BlueCherry cloud platform to publish and receive MQTT messages and to take
+   firmware updates scheduled from the BlueCherry web interface. Provisioning is
+   zero-touch, so the sketch only needs a device type and a TLS profile.
 
  - [sensor_shield](sensor_shield/): this sketch requires Walter to be placed onto
    a board which contains various sensors. It will read out the sensors and
