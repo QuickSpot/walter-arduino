@@ -100,6 +100,13 @@ bool WalterModem::socketConfig(int socket_id, int pdp_ctx_id, uint16_t mtu,
                                uint16_t send_delay_ms, WalterModemRsp* rsp, walterModemCb cb,
                                void* args)
 {
+  if((int) conn_timeout * 1000 > WALTER_MODEM_CMD_TIMEOUT_MS - 5000) {
+    ESP_LOGW("WalterModem",
+             "conn_timeout %us is within 5s of the %dms command time-out: a slow dial is retried "
+             "while the modem may still answer the first attempt",
+             (unsigned) conn_timeout, WALTER_MODEM_CMD_TIMEOUT_MS);
+  }
+
   WalterModemSocket* sock = _socketGet(socket_id);
 
   if(sock == NULL) {

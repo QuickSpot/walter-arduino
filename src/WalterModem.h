@@ -100,8 +100,8 @@ for efficient configuration management."
 #ifndef CONFIG_WALTER_MODEM_ENABLE_COAP
 #define CONFIG_WALTER_MODEM_ENABLE_COAP 1
 #endif
-#ifndef CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-#define CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY 1
+#ifndef CONFIG_BLUECHERRY_ENABLE
+#define CONFIG_BLUECHERRY_ENABLE 1
 #endif
 #ifndef CONFIG_WALTER_MODEM_ENABLE_MOTA
 #define CONFIG_WALTER_MODEM_ENABLE_MOTA 1
@@ -109,16 +109,12 @@ for efficient configuration management."
 
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && !CONFIG_WALTER_MODEM_ENABLE_MOTA
+#if CONFIG_BLUECHERRY_ENABLE && !CONFIG_WALTER_MODEM_ENABLE_MOTA
 #error Bluecherry cannot be enabled with OTA or MOTA disabled.
 #endif
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && !CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+#if CONFIG_BLUECHERRY_ENABLE && !CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 #error Bluecherry cannot be enabled with sockets disabled. Please enable sockets in the configuration.
-#endif
-
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY && !CONFIG_WALTER_MODEM_ENABLE_COAP
-#error Bluecherry cannot be enabled with CoAP disabled. Please enable CoAP in the configuration.
 #endif
 
 #define CONFIG_INT(name, default_value) CONFIG(name, const int, default_value)
@@ -132,6 +128,11 @@ for efficient configuration management."
 #define CONFIG_INT64(name, default_value) CONFIG(name, const int64_t, default_value)
 
 #pragma region KCONFIG
+
+/**
+ * @brief The maximum number of milliseconds to wait.
+ */
+CONFIG_INT(WALTER_MODEM_CMD_TIMEOUT_MS, 180000)
 
 /**
  * @brief The maximum number of items in the CMD queue.
@@ -211,19 +212,6 @@ CONFIG_UINT8(WALTER_MODEM_MAX_TLS_PROFILES, 6)
  * @brief The maximum number of sockets.
  */
 CONFIG_UINT8(WALTER_MODEM_MAX_SOCKETS, 6)
-
-#endif
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-
-/**
- * @brief The default hostname for Bluecherry.
- */
-CONFIG(WALTER_MODEM_BLUECHERRY_HOSTNAME, const char*, "coap.bluecherry.io")
-
-/**
- * @brief The default port for Bluecherry CoAP.
- */
-CONFIG(WALTER_MODEM_BLUECHERRY_PORT, uint16_t, 5684)
 
 #endif
 
@@ -335,19 +323,10 @@ CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
 #define WALTER_MODEM_MQTT_TOPIC_BUF_SIZE (WALTER_MODEM_MQTT_TOPIC_MAX_SIZE + 1)
 
 #endif
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY || CONFIG_WALTER_MODEM_ENABLE_MOTA
-
 /**
- * @brief The maximum size of an incoming protocol message payload.
+ * @brief SPI flash sectors per erase block, usually large erase block is 32k/64k.
  */
-constexpr uint16_t WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN = 1220;
-
-/**
- * @brief The maximum size of an outgoing message payload.
- */
-constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024;
-
-#endif
+#define SPI_SECTORS_PER_BLOCK 16
 
 /**
  * @brief SPI flash erase block size
@@ -358,11 +337,6 @@ constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024;
  * @brief Encrypted block size within flash.
  */
 #define ENCRYPTED_BLOCK_SIZE 16
-
-/**
- * @brief SPI flash sectors per erase block, usually large erase block is 32k/64k.
- */
-#define SPI_SECTORS_PER_BLOCK 16
 
 #pragma endregion // CONFIG
 
@@ -414,7 +388,7 @@ constexpr uint16_t WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN = 1024;
 
 #include <condition_variable>
 
-#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+#if CONFIG_WALTER_MODEM_ENABLE_MOTA || CONFIG_BLUECHERRY_ENABLE
 
 #include <esp_partition.h>
 #include <esp_vfs.h>
@@ -783,7 +757,6 @@ typedef enum {
   WALTER_MODEM_RSP_DATA_TYPE_GNSS_UTC_TIME,
   WALTER_MODEM_RSP_DATA_TYPE_CLOCK,
   WALTER_MODEM_RSP_DATA_TYPE_IDENTITY,
-  WALTER_MODEM_RSP_DATA_TYPE_BLUECHERRY,
   WALTER_MODEM_RSP_DATA_TYPE_HTTP,
   WALTER_MODEM_RSP_DATA_TYPE_COAP,
   WALTER_MODEM_RSP_DATA_TYPE_MQTT,
@@ -1235,58 +1208,6 @@ typedef enum {
 
 #endif
 #pragma endregion
-#pragma region ENUMS PROTO BLUECHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY || CONFIG_WALTER_MODEM_ENABLE_MOTA
-
-#define WALTER_MODEM_BLUECHERRY_COAP_HEADER_SIZE 5
-
-/**
- * @brief The possible statuses of a BlueCherry communication cycle.
- */
-typedef enum {
-  WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED,
-  WALTER_MODEM_BLUECHERRY_STATUS_NOT_PROVISIONED,
-  WALTER_MODEM_BLUECHERRY_STATUS_NOT_CONNECTED,
-  WALTER_MODEM_BLUECHERRY_STATUS_IDLE,
-  WALTER_MODEM_BLUECHERRY_STATUS_AWAITING_RESPONSE,
-  WALTER_MODEM_BLUECHERRY_STATUS_RESPONSE_READY,
-  WALTER_MODEM_BLUECHERRY_STATUS_TIMED_OUT,
-} WalterModemBlueCherryStatus;
-
-/**
- * @brief The possible statuses of the custom BlueCherry CoAP protocol.
- */
-typedef enum {
-  WALTER_MODEM_BLUECHERRY_COAP_RSP_VALID = 0x43,
-  WALTER_MODEM_BLUECHERRY_COAP_RSP_CONTINUE = 0x61
-} WalterModemBlueCherryCoapRspStatus;
-
-/**
- * @brief The possible send types of the custom BlueCherry CoAP protocol.
- */
-typedef enum {
-  WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_CON = 0,
-  WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_NON = 1,
-  WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_ACK = 2,
-  WALTER_MODEM_BLUECHERRY_COAP_SEND_TYPE_RST = 3
-} WalterModemBlueCherryCoapSendType;
-
-/**
- * @brief The possible types of BlueCherry events.
- */
-typedef enum {
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE = 1,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_CHUNK = 2,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_FINISH = 3,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_OTA_ERROR = 4,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_INITIALIZE = 5,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_CHUNK = 6,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_FINISH = 7,
-  WALTER_MODEM_BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8
-} WalterModemBlueCherryEventType;
-
-#endif
-#pragma endregion
 #pragma endregion
 #pragma region ENUMS EVENT_TYPES
 
@@ -1681,167 +1602,6 @@ typedef struct {
 
 #pragma endregion
 #pragma region STRUCTS PROTO
-#pragma region STRUCTS PROTO BLUECHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY || CONFIG_WALTER_MODEM_ENABLE_MOTA
-
-/**
- * @brief This structure contains one of possibly multiple BlueCherry messages delivered in a CoAP
- * datagram.
- */
-typedef struct {
-  /**
-   * @brief The MQTT topic number.
-   */
-  int topic;
-
-  /**
-   * @brief The data size af the message.
-   */
-  uint8_t dataSize;
-
-  /**
-   * @brief The data of the message.
-   */
-  uint8_t* data;
-} WalterModemBlueCherryMessage;
-
-/**
- * @brief This structure represents the BlueCherry data with the individual messages.
- */
-typedef struct {
-  /**
-   * @brief The BlueCherry connection state
-   */
-  WalterModemBlueCherryStatus state;
-
-  /**
-   * @brief Flag to indicate if synchronisation is finished.
-   */
-  bool syncFinished;
-
-  /**
-   * @brief The amount of the messages.
-   */
-  int messageCount;
-
-  /**
-   * @brief The array containing the BlueCherry messages.
-   */
-  WalterModemBlueCherryMessage messages[16];
-} WalterModemBlueCherryData;
-
-/**
- * @brief This structure represents the state of the BlueCherry connection.
- */
-typedef struct {
-  // TODO: save CoAP specific state here
-  /**
-   * @brief CoAP message id of the message being composed or sent. Start at 1, 0 is invalid.
-   */
-  uint16_t curMessageId = 1;
-
-  /**
-   * @brief The UDP socket ID of the bluecherry CoAP socket.
-   */
-  int bcSocketId = 0;
-
-  /**
-   * @brief The TLS profile used by the BlueCherry connection.
-   */
-  uint8_t tls_profile_id;
-
-  /**
-   * @brief The BlueCherry cloud CoAP port.
-   */
-  uint16_t port = 5684;
-
-  /**
-   * @brief Timeout for ACK of outgoing BlueCherry CoAP messages, in seconds.
-   */
-  uint16_t ack_timeout_s = 60;
-
-  /**
-   * @brief The outgoing CoAP message buffer.
-   */
-  uint8_t messageOut[WALTER_MODEM_MAX_OUTGOING_MESSAGE_LEN];
-
-  /**
-   * @brief Length of the CoAP message being composed so far
-   *
-   * Reserved space for CoAP headers on initial boot without token.
-   */
-  uint16_t messageOutLen = 5;
-
-  /**
-   * @brief Buffer for the incoming CoAP message.
-   */
-  uint8_t messageIn[WALTER_MODEM_MAX_INCOMING_MESSAGE_LEN];
-
-  /**
-   * @brief Length of the incoming CoAP message.
-   */
-  uint16_t messageInLen = 0;
-
-  /**
-   * @brief Last acknowledged message id, 0 means nothing received yet.
-   */
-  uint16_t lastAckedMessageId = 0;
-
-  /**
-   * @brief Flag that indicates whether more data is ready on bridge, meaning an extra
-   * synchronisation is required.
-   */
-  bool moreDataAvailable = false;
-
-  /**
-   * @brief Status indicator for last BlueCherry synchronization cycle.
-   */
-  WalterModemBlueCherryStatus status = WALTER_MODEM_BLUECHERRY_STATUS_NOT_INITIALIZED;
-
-  /**
-   * @brief Time when the last message was sent.
-   */
-  time_t lastTransmissionTime = 0;
-
-  /**
-   * @brief Pointer to where the incoming OTA data should be saved.
-   */
-  uint8_t* ota_buffer = NULL;
-
-  /**
-   * @brief The current position in the OTA buffer.
-   */
-  uint32_t otaBufferPos = 0;
-
-  /**
-   * @brief A buffer used to store the start of an OTA file, this is metadata and not actual
-   * firmware data.
-   */
-  uint8_t otaSkipBuffer[ENCRYPTED_BLOCK_SIZE];
-
-  /**
-   * @brief Flag used to signal an error.
-   */
-  bool emitErrorEvent = false;
-
-  /**
-   * @brief The total size of the OTA image.
-   */
-  uint32_t otaSize = 0;
-
-  /**
-   * @brief The OTA progress in percent, 0 means that the OTA is not currently running.
-   */
-  uint32_t otaProgress = 0;
-
-  /**
-   * @brief The current OTA partition.
-   */
-  const esp_partition_t* otaPartition = NULL;
-} WalterModemBlueCherryState;
-
-#endif
-#pragma endregion
 #pragma region STRUCTS PROTO COAP
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
@@ -2830,14 +2590,6 @@ union WalterModemRspData {
    */
   WalterModemIdentity identity;
 
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-
-  /**
-   * @brief The BlueCherry data
-   */
-  WalterModemBlueCherryData blueCherry;
-
-#endif
 #if CONFIG_WALTER_MODEM_ENABLE_HTTP
 
   /**
@@ -3221,8 +2973,20 @@ struct WalterModemStpResponseTransferBlock {
  * @brief The WalterModem class allows you to use the Sequans Monarch 2 modem and positioning
  * functionality.
  */
+#if CONFIG_BLUECHERRY_ENABLE
+class WalterBlueCherry;
+#endif
+
 class WalterModem
 {
+#if CONFIG_BLUECHERRY_ENABLE
+  /* BlueCherry is layered on top of the modem driver rather than part of it, but it reaches for
+   * three things the public API does not expose: socket reservation, socket lookup and the TLS
+   * credential presence check. It also shares the firmware staging buffer with the modem firmware
+   * upgrade paths. */
+  friend class WalterBlueCherry;
+#endif
+
 #pragma region CLASS PRIVATE
 private:
 #pragma region CLASS PRIVATE VARIABLES
@@ -3363,6 +3127,14 @@ private:
   static inline WalterModemNetworkRegState _regState = WALTER_MODEM_NETWORK_REG_NOT_SEARCHING;
 
   /**
+   * @brief Whether the last +CEREG reported an attached network.
+   *
+   * False until one says otherwise: nothing is attached before the radio has been brought up, and
+   * a deep sleep wake asks the modem outright rather than assume its own zeroed RAM.
+   */
+  static inline bool _networkAttached = false;
+
+  /**
    * @brief The current type of Radio Access Technology in use.
    */
   static inline WalterModemRAT _ratType = WALTER_MODEM_RAT_UNKNOWN;
@@ -3440,14 +3212,6 @@ private:
 
 #endif
 #pragma endregion
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY || CONFIG_WALTER_MODEM_ENABLE_MOTA
-
-  /*
-   * @brief The current BlueCherry state.
-   */
-  static inline WalterModemBlueCherryState _blueCherry = {};
-
-#endif
 #pragma region CLASS PRIVATE MOTA
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
@@ -3540,7 +3304,7 @@ private:
   /**
    * @brief Helper to boot modem to recovery modem and start upgrade.
    *
-   * @return The modem's maximum block size.
+   * @return The modem's maximum block size, or 0 when the STP session did not open.
    */
   static uint16_t _modemFirmwareUpgradeStart(void);
 
@@ -3556,12 +3320,13 @@ private:
   /**
    * @brief Helper to transfer a chunk of the modem firmware to modem during MOTA update.
    *
+   * @param block The bytes to send, borrowed from BlueCherry's staging buffer.
    * @param blockSize The size of the block in bytes.
    * @param transactionId The transaction id.
    *
    * @return None.
    */
-  static void _modemFirmwareUpgradeBlock(size_t blockSize, uint32_t transactionId);
+  static void _modemFirmwareUpgradeBlock(uint8_t* block, size_t blockSize, uint32_t transactionId);
 
 #endif
 #pragma endregion
@@ -3942,117 +3707,20 @@ private:
   static void _processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* rsp);
 
 #pragma endregion
-#pragma region CLASS PRIVATE METHODS PROTO BLUECHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+#pragma region CLASS PRIVATE FIRMWARE TRANSFER STATE
+#if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
   /**
-   * @brief Process an incoming BlueCherry event.
+   * @brief The announced size of the modem firmware transfer in progress, in bytes.
    *
-   * This function is called when blueCherryDidRing encounters a BlueCherry management packet,
-   * eg for OTA updates.
-   *
-   * @param data The event data.
-   * @param len The length of the data block.
-   *
-   * @return Whether we should emit an error BC event on next sync.
+   * MOTA only - the ESP32 update keeps its own counters in WalterBlueCherry's op data.
    */
-  static bool _blueCherryProcessEvent(uint8_t* data, uint8_t len);
+  static inline uint32_t _motaSize = 0;
 
   /**
-   * @brief Configure a UDP socket to connect to the bluecherry cloud.
-   *
-   * @return True if successfully configured a socket, False if not.
+   * @brief The number of bytes of the modem firmware transfer committed so far.
    */
-  static bool _blueCherrySocketConfigure();
-
-  /**
-   * @brief Connect to bluecherry with a socket.
-   *
-   * @return True if successfully configured, dialed or resumed a socket. False if unable
-   * to establish a connection.
-   */
-  static bool _blueCherrySocketConnect();
-
-  /**
-   * @brief The custom socket event handler for bluecherry communications.
-   */
-  static void _blueCherrySocketEventHandler(WMSocketEventType event, uint16_t dataReceived,
-                                            uint8_t* dataBuffer);
-
-  /**
-   * @brief Write the outgoing buffer's CoAP headers and set them accordingly.
-   */
-  static void _blueCherrySetCoapHeaders(uint8_t code, uint8_t tokenLen, uint16_t msgId);
-
-  /**
-   * @brief Send data to bluecherry over a UDP socket using a custom tailored CoAP protocol.
-   *
-   * @return True on successfull transmission and received acknowledgement. False when no
-   * acknowledgement was received in the CoAP timeout period.
-   */
-  static bool _blueCherryCoapSend();
-
-  /**
-   * @brief Process the incoming bluecherry CoAP datagram.
-   *
-   * @return True if successfully processed the datagram, False if malformed.
-   */
-  static bool _blueCherryCoapProcessResponse(uint16_t dataReceived, uint8_t* dataBuffer);
-
-#endif
-#pragma endregion
-#pragma region CLASS PRIVATE METHODS OTA
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
-
-  /**
-   * @brief Process OTA init event
-   *
-   * This function prepares a OTA update and checks the announced update image size against
-   * the update partition size.
-   *
-   * @param data The event data, being the announced size of the image
-   * @param len The length of the update data.
-   *
-   * @return Whether we should emit an error BC event on next sync, in case announced size is
-   * too large for partitioning.
-   */
-  static bool _processOtaInitializeEvent(uint8_t* data, uint16_t len);
-
-  /**
-   * @brief Write a flash sector to flash, erasing the block first if on an as of yet
-   * uninitialized block
-   *
-   * @param None.
-   *
-   * @return True if succeeded, false if not.
-   */
-  static bool _otaBufferToFlash(void);
-
-  /**
-   * @brief Process OTA chunk event
-   *
-   * This function accepts a chunk of the OTA update binary image. If the chunk is empty, the
-   * BlueCherry cloud server signals a cancel of the upload in progress.
-   *
-   * @param data The chunk data
-   * @param len The length of the chunk data
-   *
-   * @return Whether we should emit an error BC event on next sync, in case size so far
-   * exceeds announced size, or if it is an empty chunk.
-   */
-  static bool _processOtaChunkEvent(uint8_t* data, uint16_t len);
-
-  /**
-   * @brief Process an OTA finish event.
-   *
-   * This function verifies the exact announced size has been flashed, could verify the
-   * optional included SHA256.
-   *
-   * @return Whether we should emit an error BC event on next sync, in case the size
-   * mismatches the announced size, or the optional included SHA256 digest mismatches the
-   * corresponding image.
-   */
-  static bool _processOtaFinishEvent(void);
+  static inline uint32_t _motaProgress = 0;
 
 #endif
 #pragma endregion
@@ -4069,8 +3737,6 @@ private:
    * @return True on success, false on error.
    */
   static bool _motaFormatAndMount(void);
-
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
 
   /**
    * @brief Initialze a modem firmware update.
@@ -4097,8 +3763,6 @@ private:
    * @return True on success, false on error.
    */
   static bool _processMotaChunkEvent(uint8_t* data, uint16_t len);
-
-#endif
 
   /**
    * @brief Finish the reception of the new modem firmware.
@@ -4753,124 +4417,86 @@ public:
 #endif
 #pragma endregion
 
+
   /**
    * =============================================================================================
-   * BLUECHERRY FUNCTIONS
+   * BLUECHERRY FUNCTIONS (DEPRECATED)
    * =============================================================================================
    */
 
 #pragma region CLASS PUBLIC METHODS PROTO BLUECHERRY
-#if CONFIG_WALTER_MODEM_ENABLE_BLUECHERRY
+#if CONFIG_BLUECHERRY_ENABLE
 
   /**
    * @brief Upload BlueCherry credentials to the modem.
    *
-   * Upload Walter's certificate and private key and the BlueCherry cloud server CA
-   * certificate to the modem. The key parameters are NULL terminated strings containing the
-   * PEM data with each line terminated by CRLF.
-   *
-   * @param[in] cert_pem Walter X.509 certificate as PEM string
-   * @param[in] priv_key_pem Walter private key as PEM string
-   * @param[in] ca_cert BlueCherry CA certificate
-   * @param[out] rsp Pointer to the response structure to save the result in.
-   * @param[in] cb Callback function, if not NULL this function will not block.
-   * @param[in] args Arguments to pass to the callback.
-   *
-   * @return True on success, false otherwise.
-   */
-  static bool blueCherryProvision(const char* cert_pem, const char* priv_key_pem,
-                                  const char* ca_cert, WalterModemRsp* rsp = NULL,
-                                  walterModemCb cb = NULL, void* args = NULL);
-
-  /**
-   * @brief Check if Walter is provisioned for BlueCherry IoT connectivity.
-   *
-   * This function checks if the necessary certificates and private key are present in the
-   * modem's NVRAM. It does not check if the credentials are valid, but only checks if the
-   * BlueCherry reserved slot indexes are occupied inside the modem's NVRAM.
-   *
-   * @return True when provisioned, false if not.
-   */
-  static bool blueCherryIsProvisioned();
-
-  /**
-   * @brief Initialize BlueCherry MQTT <-> CoAP bridge.
-   *
-   * This function will set the TLS profile id and initialize the accumulated outgoing
-   * datagram, initialize the current message id to 1, the last acknowledged id to 0 and set
-   * the state machine to IDLE.
-   *
-   * @param[in] tls_profile_id DTLS is used with the given profile (1-6).
-   * @param[in] ota_buffer A user-supplied buffer for OTA updates to flash, aligned to 4K bytes.
-   * @param[out] rsp Pointer to the response structure to save the result in.
-   * @param[in] ack_timeout_s Timeout for ACK of outgoing BlueCherry CoAP messages, in seconds.
+   * @param cert_pem The device certificate in PEM format.
+   * @param priv_key_pem The device private key in PEM format.
+   * @param ca_cert The BlueCherry CA chain in PEM format.
+   * @param rsp Ignored, the call is always synchronous.
+   * @param cb Ignored, the call is always synchronous.
+   * @param args Ignored, the call is always synchronous.
    *
    * @return True on success, false on error.
    */
-  static bool blueCherryInit(uint8_t tls_profile_id, uint8_t* ota_buffer = NULL,
-                             WalterModemRsp* rsp = NULL, uint16_t ack_timeout_s = 60);
+  [[deprecated("Use WalterBlueCherry::provision instead")]] static bool
+  blueCherryProvision(const char* cert_pem, const char* priv_key_pem, const char* ca_cert,
+                      WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
-   * @brief Enqueue a MQTT publish message.
+   * @brief Check whether the modem holds BlueCherry credentials.
    *
-   * This function will add the message to the accumulated outgoing datagram, which will -
-   * after blueCherrySync - be sent to the BlueCherry cloud server and published through MQTT.
+   * @return True when the certificate, key and CA are all present, false otherwise.
+   */
+  [[deprecated("Use WalterBlueCherry::isProvisioned instead")]] static bool
+  blueCherryIsProvisioned();
+
+  /**
+   * @brief Queue a message for publication.
    *
-   * @param[in] topic The topic of the message, passed as the topic index.
-   * @param[in] len The length of the data.
-   * @param[in] data The data to send.
+   * @param topic The single byte topic index the cloud maps to an MQTT topic.
+   * @param len The number of bytes in data.
+   * @param data The payload, which is copied.
+   *
+   * @return True when queued, false on error.
+   */
+  [[deprecated("Use WalterBlueCherry::publish instead")]] static bool
+  blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data);
+
+  /**
+   * @brief Close the BlueCherry session and release the modem socket.
+   *
+   * @param rsp Ignored, the call is always synchronous.
+   * @param cb Ignored, the call is always synchronous.
+   * @param args Ignored, the call is always synchronous.
    *
    * @return True on success, false on error.
    */
-  static bool blueCherryPublish(uint8_t topic, uint8_t len, uint8_t* data);
+  [[deprecated("Use WalterBlueCherry::close instead")]] static bool
+  blueCherryClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL, void* args = NULL);
 
   /**
-   * @brief Send accumulated MQTT messages and poll for incoming data.
+   * @brief Get the progress of the firmware update in progress, as a percentage.
    *
-   * This function will send all accumulated MQTT publish messages to the BlueCherry cloud
-   * server, and ask the server for an acknowledgement and for the new incoming MQTT messages
-   * since the last blueCherrySync call.
-   *
-   * Even if nothing was enqueued for publish, this call must frequently be executed if Walter
-   * is subscribed to one or more MQTT topics or has enabled BlueCherry OTA updates.
-   *
-   * A response might not fit in a single datagram response. As long as syncFinished is false,
-   * this function needs to be called again repeatedly.
-   *
-   * @return True on success, false on error.
+   * @return The percentage of the image written to flash.
    */
-  static bool blueCherrySync(WalterModemRsp* rsp);
+  [[deprecated("Use WalterBlueCherry::getOtaProgressPercentage instead")]] static size_t
+  blueCherryGetOtaProgressPercentage();
 
   /**
-   * @brief Close the BlueCherry platform CoAP connection.
+   * @brief Get the progress of the firmware update in progress, in bytes.
    *
-   * This function will close the CoAP connection to the Bluecherry cloud platform. Usually
-   * there is no need to call this function, unless using deep sleep mode (which might cause a
-   * modem bug in the latest modem firmware versions).
-   *
-   * @param[out] rsp Pointer to the response structure to save the result in.
-   * @param[in] cb Callback function, if not NULL this function will not block.
-   * @param[in] args Arguments to pass to the callback.
-   *
-   * @return True if succeeded, false on error.
+   * @return The number of bytes written to flash.
    */
-  static bool blueCherryClose(WalterModemRsp* rsp = NULL, walterModemCb cb = NULL,
-                              void* args = NULL);
+  [[deprecated("Use WalterBlueCherry::getOtaProgressBytes instead")]] static size_t
+  blueCherryGetOtaProgressBytes();
 
   /**
-   * @brief This function returns the current OTA progress.
+   * @brief Get the total size of the firmware update in progress.
+   *
+   * @return The announced image size in bytes, or 0 when no update is running.
    */
-  static size_t blueCherryGetOtaProgressPercentage();
-
-  /**
-   * @brief This function returns the current OTA progress in bytes.
-   */
-  static size_t blueCherryGetOtaProgressBytes();
-
-  /**
-   * @brief This function returns the total OTA size.
-   */
-  static size_t blueCherryGetOtaSize();
+  [[deprecated("Use WalterBlueCherry::getOtaSize instead")]] static size_t blueCherryGetOtaSize();
 
 #endif
 #pragma endregion
@@ -5063,7 +4689,7 @@ public:
    * @return True on "OK" response, false otherwise.
    */
   static bool socketConfig(int socket_id, int pdp_ctx_id = 1, uint16_t mtu = 300,
-                           uint16_t exchange_timeout = 0, uint16_t conn_timeout = 30,
+                           uint16_t exchange_timeout = 0, uint16_t conn_timeout = 20,
                            uint16_t send_delay_ms = 5000, WalterModemRsp* rsp = NULL,
                            walterModemCb cb = NULL, void* args = NULL);
 
@@ -5851,18 +5477,15 @@ public:
 #if CONFIG_WALTER_MODEM_ENABLE_MOTA
 
   /**
-   * @brief Offline update modem firmware from file on flash
+   * @brief Offline update modem firmware from a file on flash.
    *
-   * This function upgrades the modem firmware from a file called mota.dup on the FAT
-   * filesystem on the flash. See the ModemFota example sketch. Do not forget to put the
-   * supplied FAT image on the flash using esptool - see comments in ModemFota.ino.
+   * Upgrades the modem from a file called mota.dup on the FAT partition, which has to be put
+   * there with esptool beforehand. The transfer buffer is the library's own, so nothing has to be
+   * supplied.
    *
-   * Do not combine with initBlueCherry.
-   *
-   * @param[in] ota_buffer Buffer we can use for block transfers to modem, expected to be at least
-   * SPI_FLASH_SEC_SIZE = 4K
+   * Do not combine with a running BlueCherry session: both drive the same STP transfer state.
    */
-  static void offlineMotaUpgrade(uint8_t* ota_buffer);
+  static void offlineMotaUpgrade();
 
 #endif
 #pragma endregion
