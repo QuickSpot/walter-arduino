@@ -46,7 +46,8 @@
  * @section DESCRIPTION
  *
  * This file contains a sketch which uses the modem in Walter to subscribe and
- * publish data to an MQTT broker.
+ * publish data to an MQTT broker. The messages are about 2 KB, alternating between
+ * multi-line and single-line payloads published at QoS 1 and QoS 0.
  */
 
 #include <HardwareSerial.h>
@@ -57,6 +58,11 @@
 #define MQTT_HOST "broker.emqx.io"
 #define MQTT_TOPIC "walter-test-topic"
 #define MQTT_CLIENT_ID "walter-client"
+
+/**
+ * @brief The approximate size of a published message in bytes.
+ */
+#define MQTT_MESSAGE_SIZE 2000
 
 /**
  * @brief The modem instance.
@@ -307,7 +313,13 @@ static void myMQTTEventHandler(WMMQTTEventType event, const WMMQTTEventData* dat
     Serial.printf("MQTT: Message (id: %d) received on topic '%s' (size: %ld bytes)\r\n", data->mid,
                   data->topic, data->msg_length);
 
-    /* Receive the MQTT message from the modem buffer */
+    /* Keep room for the terminator, the message is printed as a string */
+    if(data->msg_length >= sizeof(in_buf)) {
+      Serial.printf("Could not receive MQTT message (%u bytes do not fit)\r\n", data->msg_length);
+      break;
+    }
+
+    /* Receive the MQTT message from the modem buffer, exactly the size reported by the ring */
     memset(in_buf, 0, sizeof(in_buf));
     if(modem.mqttReceive(data->topic, data->mid, in_buf, data->msg_length)) {
       Serial.printf("Received message: %s\r\n", in_buf);
@@ -325,14 +337,30 @@ static void myMQTTEventHandler(WMMQTTEventType event, const WMMQTTEventData* dat
 /**
  * @brief Common routine to publish a message to an MQTT topic.
  */
-static bool mqttPublishMessage(const char* topic, const char* message)
+static bool mqttPublishMessage(const char* topic, const char* message, uint8_t qos)
 {
-  Serial.printf("Publishing to topic '%s': %s ...\r\n", topic, message);
-  if(!modem.mqttPublish(topic, (uint8_t*) message, strlen(message))) {
+  Serial.printf("Publishing %u bytes to topic '%s' (QoS %u) ...\r\n", (unsigned) strlen(message),
+                topic, qos);
+  if(!modem.mqttPublish(topic, (uint8_t*) message, strlen(message), qos)) {
     Serial.println("Publishing failed");
     return false;
   }
   return true;
+}
+
+/**
+ * @brief Build a message of about MQTT_MESSAGE_SIZE bytes which starts with the client id and
+ * sequence number, followed by text lines joined by CRLF (multi-line) or by spaces (single line).
+ */
+static void buildMessage(char* out, size_t size, int seq, bool multiLine)
+{
+  int len = snprintf(out, size, "%s-%d", (char*) out_buf, seq);
+
+  for(int line = 1; len > 0 && (size_t) len + 64 < size; line++) {
+    len += snprintf(out + len, size - len,
+                    "%sline %02d: The quick brown fox jumps over the lazy dog",
+                    multiLine ? "\r\n" : " ", line);
+  }
 }
 
 /**
@@ -379,7 +407,7 @@ void setup()
 void loop()
 {
   static int seq = 0;
-  static char out_msg[64];
+  static char out_msg[MQTT_MESSAGE_SIZE + 1];
   seq++;
 
   if(!lteConnected()) {
@@ -402,8 +430,12 @@ void loop()
     return;
   }
 
-  sprintf(out_msg, "%s-%d", out_buf, seq);
-  if(!mqttPublishMessage(MQTT_TOPIC, out_msg)) {
+  /* Cycle through multi-line/single-line payloads at QoS 1 and QoS 0. A QoS 0 publish is
+   * delivered at QoS 0, so the message is received without a message id. */
+  bool multiLine = seq % 2;
+  uint8_t qos = (seq / 2) % 2 ? 0 : 1;
+  buildMessage(out_msg, sizeof(out_msg), seq, multiLine);
+  if(!mqttPublishMessage(MQTT_TOPIC, out_msg, qos)) {
     Serial.println("MQTT publish failed");
     mqtt_connected = false;
   }

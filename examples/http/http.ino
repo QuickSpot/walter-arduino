@@ -44,8 +44,8 @@
  *
  * @section DESCRIPTION
  *
- * This file contains a sketch which uses the modem in Walter to make a
- * HTTP GET/POST request and show the result.
+ * This file contains a sketch which uses the modem in Walter to make
+ * HTTP GET/POST requests, including a large multi-line page, and show the result.
  */
 
 #include <HardwareSerial.h>
@@ -53,9 +53,14 @@
 #include <esp_mac.h>
 
 #define HTTP_PORT 80
-#define HTTP_HOST "quickspot.io"
-#define HTTP_GET_ENDPOINT "/hello/get"
-#define HTTP_POST_ENDPOINT "/hello/post"
+#define HTTP_HOST "httpbin.org"
+#define HTTP_GET_ENDPOINT "/get"
+#define HTTP_POST_ENDPOINT "/post"
+
+/**
+ * @brief A multi-line HTML page of about 3.7 KB.
+ */
+#define HTTP_LARGE_ENDPOINT "/html"
 
 /**
  * @brief HTTP profile
@@ -74,10 +79,10 @@ WalterModemRsp rsp = {};
 
 /**
  * @brief The buffer to receive from the HTTP server.
- * @note Make sure this is sufficiently large enough for incoming data. (Up to 1500 bytes supported
- * by Sequans)
+ * @note The response is received straight into this buffer, make sure it can hold the largest
+ * response you expect (the size is reported by the ring event).
  */
-uint8_t in_buf[1500] = { 0 };
+uint8_t in_buf[8192] = { 0 };
 
 /**
  * @brief This function checks if we are connected to the LTE network
@@ -277,10 +282,18 @@ static void myHTTPEventHandler(WMHTTPEventType event, const WMHTTPEventData* dat
         "HTTP: Message received on profile %d. (status: %d | content-type: %s | size: %u)\r\n",
         data->profile_id, data->status, data->content_type, data->data_len);
 
-    /* Receive the HTTP message from the modem buffer */
+    /* Keep room for the terminator, the message is printed as a string */
+    if(data->data_len >= sizeof(in_buf)) {
+      Serial.printf("Could not receive HTTP message for profile %d (%u bytes do not fit)\r\n",
+                    data->profile_id, data->data_len);
+      break;
+    }
+
+    /* Receive the HTTP message from the modem buffer, exactly the size reported by the ring */
     memset(in_buf, 0, sizeof(in_buf));
     if(modem.httpReceive(data->profile_id, in_buf, data->data_len)) {
-      Serial.printf("Received message for profile %d: %s\r\n", data->profile_id, in_buf);
+      Serial.printf("Received message for profile %d (%u bytes): %s\r\n", data->profile_id,
+                    data->data_len, in_buf);
     } else {
       Serial.printf("Could not receive HTTP message for profile %d\r\n", data->profile_id);
     }
@@ -380,10 +393,20 @@ void loop()
   Serial.println();
 
   // Example POST
-  const char jsonBody[] = "{\"hello\":\"quickspot\"}";
+  const char jsonBody[] = "{\"hello\":\"walter\"}";
   if(!httpPost(HTTP_POST_ENDPOINT, (const uint8_t*) jsonBody, strlen(jsonBody),
                "application/json")) {
     Serial.println("HTTP POST failed, restarting...");
+    delay(1000);
+    ESP.restart();
+  }
+
+  delay(5000);
+  Serial.println();
+
+  // Example GET of a large multi-line page
+  if(!httpGet(HTTP_LARGE_ENDPOINT)) {
+    Serial.println("HTTP GET failed, restarting...");
     delay(1000);
     ESP.restart();
   }

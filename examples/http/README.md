@@ -3,7 +3,8 @@
 ## Purpose
 
 This example demonstrates how Walter can send and receive requests using **HTTP**.
-Walter will make a HTTP GET and POST request to a remote webserver.
+Walter will make HTTP GET and POST requests to [httpbin.org](https://httpbin.org), including a GET of
+a 3.7 KB multi-line HTML page.
 
 ## Required Hardware
 
@@ -29,10 +30,14 @@ Before flashing the example, configure the routes and credentials:
 
   ```cpp
   #define HTTP_PORT 80
-  #define HTTP_HOST "quickspot.io"
-  #define HTTP_GET_ENDPOINT "/hello/get"
-  #define HTTP_POST_ENDPOINT "/hello/post"
+  #define HTTP_HOST "httpbin.org"
+  #define HTTP_GET_ENDPOINT "/get"
+  #define HTTP_POST_ENDPOINT "/post"
+  #define HTTP_LARGE_ENDPOINT "/html"
   ```
+
+* Responses are received straight into `in_buf`, so make it large enough for the biggest response
+  you expect. `httpReceive()` must be given the size reported by the ring event.
 
 ## Running the example
 
