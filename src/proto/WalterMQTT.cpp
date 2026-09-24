@@ -55,18 +55,18 @@ bool WalterModem::mqttConfig(const char* client_id, const char* username, const 
                              void* args)
 {
   WalterModemBuffer* buf = _getFreeBuffer();
-  buf->size += sprintf((char*) buf->data, "AT+SQNSMQTTCFG=0,\"%s\"", client_id);
+  _bufPrintf(buf, "AT+SQNSMQTTCFG=0,\"%s\"", client_id);
 
   if(username && password) {
-    buf->size += sprintf((char*) buf->data + buf->size, ",\"%s\",\"%s\"", username, password);
+    _bufPrintf(buf, ",\"%s\",\"%s\"", username, password);
   }
 
   if(tls_profile_id > 0) {
     if(!(username && password)) {
-      buf->size += sprintf((char*) buf->data + buf->size, ",,");
+      _bufPrintf(buf, ",,");
     }
 
-    buf->size += sprintf((char*) buf->data + buf->size, ",%u", tls_profile_id);
+    _bufPrintf(buf, ",%u", tls_profile_id);
   }
 
   _runCmd(arr((const char*) buf->data), "OK", rsp, cb, args, NULL, NULL,
@@ -147,7 +147,7 @@ bool WalterModem::mqttSubscribe(const char* topic, uint8_t qos, WalterModemRsp* 
 bool WalterModem::mqttReceive(const char* topic, int message_id, uint8_t* buf, size_t buf_size,
                               WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-
+  /* The response carries no length, buf_size is the number of bytes read (the ring's msg_length) */
   size_t readable_size = (buf_size > 4096) ? 4096 : buf_size;
 
   if(message_id == 0) {

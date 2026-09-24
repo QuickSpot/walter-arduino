@@ -63,8 +63,7 @@ bool WalterModem::coapReceive(int profile_id, int message_id, uint8_t* buf, size
   size_t readable_size = (buf_size > 1024) ? 1024 : buf_size;
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPRCV=%d,%u,%u", profile_id,
-                                 message_id, readable_size);
+  _bufPrintf(stringsBuffer, "AT+SQNCOAPRCV=%d,%u,%u", profile_id, message_id, readable_size);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
@@ -84,20 +83,16 @@ bool WalterModem::coapCreateContext(int profile_id, const char* hostname, int po
   }
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPCREATE=%d,\"%s\",%d,",
-                                 profile_id, hostname, port);
+  _bufPrintf(stringsBuffer, "AT+SQNCOAPCREATE=%d,\"%s\",%d,", profile_id, hostname, port);
 
   if(local_port > -1) {
-    stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%d", local_port);
+    _bufPrintf(stringsBuffer, "%d", local_port);
   }
 
-  stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",%d,60", tls_profile_id != 0);
+  _bufPrintf(stringsBuffer, ",%d,60", tls_profile_id != 0);
 
   if(tls_profile_id) {
-    stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",,%d", tls_profile_id);
+    _bufPrintf(stringsBuffer, ",,%d", tls_profile_id);
   }
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
@@ -144,18 +139,15 @@ bool WalterModem::coapSetOptions(int profile_id, WalterModemCoapOptAction action
 
   if(action == WALTER_MODEM_COAP_OPT_SET || action == WALTER_MODEM_COAP_OPT_EXTEND) {
     if(values && *values) {
-      stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d,\"%s\"",
-                                     profile_id, action, code, values);
+      _bufPrintf(stringsBuffer, "AT+SQNCOAPOPT=%d,%d,%d,\"%s\"", profile_id, action, code, values);
     } else {
-      stringsBuffer->size +=
-          sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d", profile_id, action, code);
+      _bufPrintf(stringsBuffer, "AT+SQNCOAPOPT=%d,%d,%d", profile_id, action, code);
     }
   } else if(action == WALTER_MODEM_COAP_OPT_DELETE) {
-    stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data, "AT+SQNCOAPOPT=%d,%d,%d", profile_id, action, code);
+    _bufPrintf(stringsBuffer, "AT+SQNCOAPOPT=%d,%d,%d", profile_id, action, code);
   } else {
     /* make sure something sane is in the buffer if wrong action */
-    stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT");
+    _bufPrintf(stringsBuffer, "AT");
   }
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,

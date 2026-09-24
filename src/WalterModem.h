@@ -155,9 +155,16 @@ CONFIG_INT(WALTER_MODEM_EVENT_TASK_STACK_SIZE, 8192)
 CONFIG_UINT8(WALTER_MODEM_DEFAULT_CMD_ATTEMPTS, 3)
 
 /**
- * @brief The number of buffers in the buffer pool.
+ * @brief The number of AT buffers in the buffer pool, each WALTER_MODEM_AT_BUFFER_SIZE bytes.
  */
 CONFIG_UINT8(WALTER_MODEM_BUFFER_POOL_SIZE, 8)
+
+/**
+ * @brief The size of an AT buffer, which holds one received AT line or URC, or one formatted AT
+ * command. Received payloads are written straight into the caller's buffer and do not count
+ * towards it.
+ */
+CONFIG_UINT16(WALTER_MODEM_AT_BUFFER_SIZE, 512)
 
 /**
  * @brief The maximum numbers of characters of the APN.
@@ -254,11 +261,6 @@ CONFIG_UINT8(WALTER_MODEM_MQTT_MAX_TOPICS, 4)
  * @brief The maximum number of elements allowed to build an AT command.
  */
 #define WALTER_MODEM_COMMAND_MAX_ELEMS 63
-
-/**
- * @brief The maximum size of an AT response buffer.
- */
-#define WALTER_MODEM_RSP_BUF_SIZE 1540
 
 /**
  * @brief The size of an APN buffer.
@@ -2684,7 +2686,7 @@ typedef struct {
   /**
    * @brief Pointer to the data in the buffer.
    */
-  uint8_t data[WALTER_MODEM_RSP_BUF_SIZE] = { 0 };
+  uint8_t data[WALTER_MODEM_AT_BUFFER_SIZE] = { 0 };
 
   /**
    * @brief The number of actual data bytes in the buffer.
@@ -2831,6 +2833,47 @@ typedef struct {
 } WalterModemCmdFsm;
 
 /**
+ * @brief The destination of a received payload. The RX task streams payload bytes straight into
+ * the buffer of the command that requested them, instead of into a pool buffer.
+ */
+typedef struct {
+  /**
+   * @brief The caller's buffer (cmd->payload), or NULL to discard the payload.
+   */
+  uint8_t* buf = NULL;
+
+  /**
+   * @brief The capacity of buf (cmd->payloadSize).
+   */
+  size_t size = 0;
+
+  /**
+   * @brief The number of bytes stored in buf.
+   */
+  size_t written = 0;
+
+  /**
+   * @brief The number of bytes that did not fit in buf.
+   */
+  size_t dropped = 0;
+
+  /**
+   * @brief The command the sink was armed for. Blocks arming twice for the same transmission.
+   */
+  WalterModemCmd* owner = NULL;
+
+  /**
+   * @brief The pool buffer that holds the payload header, used to log the payload in place.
+   */
+  WalterModemBuffer* hdrBuf = NULL;
+
+  /**
+   * @brief The offset in hdrBuf at which the payload was cut out.
+   */
+  uint16_t hdrAt = 0;
+} WalterModemPayloadSink;
+
+/**
  * @brief This structure groups the AT parser's working data.
  */
 typedef struct {
@@ -2848,6 +2891,11 @@ typedef struct {
    * @brief In raw data chunk parser state, we remember nr expected bytes
    */
   size_t rawChunkSize = 0;
+
+  /**
+   * @brief The destination of the payload currently being received.
+   */
+  WalterModemPayloadSink sink = {};
 } walter_modem_at_parser_data_t;
 
 /**
@@ -3110,6 +3158,12 @@ private:
    * @brief The data of the AT parser.
    */
   static inline walter_modem_at_parser_data_t _parserData = {};
+
+  /**
+   * @brief Guards the payload sink, which the RX task writes into caller memory while the command
+   * task can finish or retransmit the owning command.
+   */
+  static inline portMUX_TYPE _sinkLock = portMUX_INITIALIZER_UNLOCKED;
 
   /**
    * @brief The memory pool to save pending commands in.
@@ -3490,6 +3544,19 @@ private:
   static WalterModemBuffer* _getFreeBuffer(void);
 
   /**
+   * @brief Append formatted text to a pool buffer used to build an AT command.
+   *
+   * Text that does not fit is truncated and logged, instead of overrunning the buffer.
+   *
+   * @param buf The pool buffer to append to.
+   * @param fmt The printf style format string.
+   *
+   * @return None.
+   */
+  static void _bufPrintf(WalterModemBuffer* buf, const char* fmt, ...)
+      __attribute__((format(printf, 2, 3)));
+
+  /**
    * @brief Handle an AT data byte.
    *
    * This function is used by the AT data parser to add a databyte to the buffer currently in
@@ -3514,6 +3581,66 @@ private:
    * @return None.
    */
   static void _addATBytesToBuffer(const char* data, size_t length);
+
+  /**
+   * @brief Write received payload bytes into the payload sink.
+   *
+   * Bytes that do not fit the sink are counted as dropped. A sink without a buffer discards.
+   *
+   * @param data The payload bytes.
+   * @param length The number of payload bytes.
+   *
+   * @return None.
+   */
+  static void _addPayloadBytes(const char* data, size_t length);
+
+  /**
+   * @brief Point the payload sink at the buffer of the command that requested the payload.
+   *
+   * The sink only uses the command's buffer while it is the current command and has not received
+   * its payload yet in the current transmission. Otherwise a header payload is discarded, and a
+   * headerless payload is not recognised at all.
+   *
+   * @param cmd The receive command the payload belongs to, or NULL.
+   * @param hdrAt The offset in the parser buffer at which the payload starts.
+   * @param headerless True when the response carries no length, so the command's payloadSize is
+   * the number of bytes to read.
+   *
+   * @return The number of payload bytes the command expects, 0 when the sink was not armed for it.
+   */
+  static size_t _armPayloadSink(WalterModemCmd* cmd, uint16_t hdrAt, bool headerless);
+
+  /**
+   * @brief Stop writing payload bytes into caller memory.
+   *
+   * @param owner The command that may not arm the sink again until it is retransmitted, or NULL.
+   *
+   * @return None.
+   */
+  static void _disarmPayloadSink(WalterModemCmd* owner);
+
+  /**
+   * @brief Check whether the current command expects a response without a length header.
+   *
+   * @param cmd Optional output, set to the current command when it does.
+   *
+   * @return The marker that precedes the payload ("<<<" for HTTP, "" for MQTT), or NULL.
+   */
+  static const char* _headerlessMarker(WalterModemCmd** cmd);
+
+  /**
+   * @brief Recognise the payload of a response without a length header.
+   *
+   * The command's payloadSize is the number of bytes to read. The bytes already in the parser
+   * buffer are moved into the sink, leaving the leading CRLF and the marker behind.
+   *
+   * @param cmd The receive command.
+   * @param marker The marker that precedes the payload.
+   * @param lead The length of the leading CRLF in the parser buffer (0 or 2).
+   *
+   * @return true if more payload bytes are expected, false otherwise.
+   */
+  static bool _expectingHeaderlessPayload(WalterModemCmd* cmd, const char* marker, size_t lead);
 
   /**
    * @brief Copy the currently received data buffer into the task queue.
@@ -4222,6 +4349,9 @@ public:
   /**
    * @brief Receive data from an incoming MQTT connection.
    *
+   * @warning targetBufSize must be the message length reported by the ring event, see
+   * mqttReceive.
+   *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
   [[deprecated("Use mqttReceive(topic, message_id, buf, buf_size, rsp, cb, "
@@ -4234,10 +4364,15 @@ public:
    *
    * This function will receive MQTT data from the modem buffer for a specific topic.
    *
+   * The modem's response carries no length, so exactly buf_size bytes are read. Pass the message
+   * length reported by the WALTER_MODEM_MQTT_EVENT_MESSAGE event (msg_length). A larger value makes
+   * the command wait for bytes that never arrive until it times out.
+   *
    * @param[in] topic The topic to receive data from.
    * @param[in] message_id The message ID to receive; if 0, receive the next message.
    * @param[out] buf User buffer to store the received data. No termination.
-   * @param[in] buf_size Size of the buffer (maximum bytes to receive). (1..4096)
+   * @param[in] buf_size The message length from the ring event, buf must hold at least this many
+   * bytes. (1..4096)
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
    * @param[in] args Arguments to pass to the callback.
@@ -4390,6 +4525,8 @@ public:
   /**
    * @brief Receive data from an incoming HTTP connection.
    *
+   * @warning targetBufSize must be the data length reported by the ring event, see httpReceive.
+   *
    * @deprecated This method is deprecated and will be removed in a future release.
    */
   [[deprecated("Use httpReceive(profileId, targetBuf, targetBufSize, rsp, "
@@ -4402,9 +4539,15 @@ public:
    *
    * This function will receive HTTP data from the modem buffer for a specific profile.
    *
+   * The modem's response carries no length, so exactly buf_size bytes are read. Pass the data
+   * length reported by the WALTER_MODEM_HTTP_EVENT_RING event (data_len). A larger value makes the
+   * command wait for bytes that never arrive until it times out, a smaller one fails the command
+   * with WALTER_MODEM_STATE_NO_MEMORY.
+   *
    * @param[in] profile_id The profile id of the HTTP context (0, 1 or 2).
    * @param[out] buf User buffer to store the received data. No termination.
-   * @param[in] buf_size Size of the buffer (maximum bytes to receive). (64-1500 | 0 for no limit)
+   * @param[in] buf_size The data length from the ring event, buf must hold at least this many
+   * bytes. (0..65535)
    * @param[out] rsp Pointer to the response structure to save the result in.
    * @param[in] cb Callback function, if not NULL this function will not block.
    * @param[in] args Arguments to pass to the callback.

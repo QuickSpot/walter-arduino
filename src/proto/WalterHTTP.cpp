@@ -68,14 +68,13 @@ bool WalterModem::httpConfigProfile(int profile_id, const char* hostname, uint16
   }
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data, "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"",
-              profile_id, hostname, port, use_basic_auth, auth_user, auth_pass);
+  _bufPrintf(stringsBuffer, "AT+SQNHTTPCFG=%d,\"%s\",%d,%d,\"%s\",\"%s\"", profile_id, hostname,
+             port, use_basic_auth, auth_user, auth_pass);
 
   if(tls_profile_id) {
-    stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",1");
+    _bufPrintf(stringsBuffer, ",1");
   } else {
-    stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",0");
+    _bufPrintf(stringsBuffer, ",0");
   }
 
   /**
@@ -85,18 +84,15 @@ bool WalterModem::httpConfigProfile(int profile_id, const char* hostname, uint16
     _returnState(WALTER_MODEM_STATE_ERROR);
   }
 
-  stringsBuffer->size +=
-      sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",%u,,", max_timeout);
+  _bufPrintf(stringsBuffer, ",%u,,", max_timeout);
 
   if(tls_profile_id) {
-    stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%u,", tls_profile_id);
+    _bufPrintf(stringsBuffer, "%u,", tls_profile_id);
   } else {
-    stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",");
+    _bufPrintf(stringsBuffer, ",");
   }
 
-  stringsBuffer->size += sprintf((char*) stringsBuffer->data + stringsBuffer->size, "%u,%u",
-                                 cnx_timeout, inactivity_timeout);
+  _bufPrintf(stringsBuffer, "%u,%u", cnx_timeout, inactivity_timeout);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, NULL, 0, stringsBuffer);
@@ -137,12 +133,10 @@ bool WalterModem::httpQuery(int profile_id, const char* uri, WalterModemHttpQuer
   }
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPQRY=%d,%d,\"%s\"",
-                                 profile_id, http_query_cmd, uri);
+  _bufPrintf(stringsBuffer, "AT+SQNHTTPQRY=%d,%d,\"%s\"", profile_id, http_query_cmd, uri);
 
   if(extra_header_line != NULL && strlen(extra_header_line) > 0) {
-    stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data + stringsBuffer->size, ",\"%s\"", extra_header_line);
+    _bufPrintf(stringsBuffer, ",\"%s\"", extra_header_line);
   }
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
@@ -163,14 +157,13 @@ bool WalterModem::httpSend(int profile_id, const char* uri, uint8_t* buf, uint16
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
   if(http_post_param == WALTER_MODEM_HTTP_POST_PARAM_UNSPECIFIED) {
-    stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d",
-                                   profile_id, http_send_cmd, uri, buf_size);
+    _bufPrintf(stringsBuffer, "AT+SQNHTTPSND=%d,%d,\"%s\",%d", profile_id, http_send_cmd, uri,
+               buf_size);
   } else {
-    stringsBuffer->size +=
-        sprintf((char*) stringsBuffer->data, "AT+SQNHTTPSND=%d,%d,\"%s\",%d,\"%d\"", profile_id,
-                http_send_cmd, uri, buf_size, http_post_param);
+    _bufPrintf(stringsBuffer, "AT+SQNHTTPSND=%d,%d,\"%s\",%d,\"%d\"", profile_id, http_send_cmd,
+               uri, buf_size, http_post_param);
     if(extra_header_line != NULL && strlen(extra_header_line) > 0) {
-        stringsBuffer->size += sprintf((char *)stringsBuffer->data + stringsBuffer->size, ",\"%s\"", extra_header_line);
+      _bufPrintf(stringsBuffer, ",\"%s\"", extra_header_line);
     }
   }
 
@@ -195,12 +188,13 @@ bool WalterModem::httpReceive(int profile_id, uint8_t* buf, size_t buf_size, Wal
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
-  size_t readable_size = (buf_size > 1500) ? 1500 : buf_size;
+  /* The response carries no length, buf_size is the number of bytes read (the ring's data_len) */
+  size_t readable_size = (buf_size > UINT16_MAX) ? UINT16_MAX : buf_size;
 
   // Known bug: CME ERROR 4 when attempting to receive a HTTP payload with a fixed size.
   // Omit size for now and let rsp processor handle payload size
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();
-  stringsBuffer->size += sprintf((char*) stringsBuffer->data, "AT+SQNHTTPRCV=%d", profile_id);
+  _bufPrintf(stringsBuffer, "AT+SQNHTTPRCV=%d", profile_id);
 
   _runCmd(arr((const char*) stringsBuffer->data), "OK", rsp, cb, args, NULL, NULL,
           WALTER_MODEM_CMD_TYPE_TX_WAIT, buf, readable_size, stringsBuffer);
