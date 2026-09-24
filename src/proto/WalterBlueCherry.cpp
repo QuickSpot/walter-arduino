@@ -69,6 +69,7 @@
 #include <esp_task_wdt.h>
 #include <esp_timer.h>
 #include <bootloader_random.h>
+#include <freertos/message_buffer.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
 #include <mbedtls/ctr_drbg.h>
@@ -100,7 +101,7 @@ static const char* TAG = "[BlueCherry]";
 #define BLUECHERRY_LIB_NAME "WalterModem"
 #define BLUECHERRY_LIB_VERSION_MAJOR 1
 #define BLUECHERRY_LIB_VERSION_MINOR 5
-#define BLUECHERRY_LIB_VERSION_PATCH 0
+#define BLUECHERRY_LIB_VERSION_PATCH 1
 
 /**
  * @brief The MCU reported to the cloud in INIT_INFO.
@@ -205,9 +206,12 @@ static const char* TAG = "[BlueCherry]";
 #define BLUECHERRY_RTC_MAGIC 0x42433031UL
 
 /**
- * @brief The depth of the queue carrying socket ring notifications to the sync task.
+ * @brief The size of the buffer holding received datagrams until the sync task reads them.
+ *
+ * Room for two of the largest, each stored behind a size_t length: the answer being waited for and
+ * a duplicate of it. A message buffer holds one byte less than its size, hence the extra one.
  */
-#define BLUECHERRY_RX_QUEUE_DEPTH 8
+#define BLUECHERRY_RX_BUFFER_SIZE (2 * (BLUECHERRY_MAX_INCOMING_MESSAGE_LEN + sizeof(size_t)) + 1)
 
 /**
  * @brief How many datagrams a resume drains before it gives up on the socket.
@@ -220,11 +224,16 @@ static const char* TAG = "[BlueCherry]";
 static const UBaseType_t BLUECHERRY_SP = 10;
 
 /**
- * @brief The retransmission parameters of RFC 7252.
+ * @brief The retransmission parameters, deliberately slower than the RFC 7252 defaults to limit
+ * retransmits on a slow UDP link. MAX_RETRANSMITS counts every transmission, the first included:
+ * the waits are 4, 8 and 16 s times a random factor of 1 to 1.07, 28 to 30 s in total.
+ *
+ * The factor is drawn with esp_random(), not rand(), which is never seeded and would draw the same
+ * one on every device.
  */
-static const uint8_t BLUECHERRY_MAX_RETRANSMITS = 4;
-static const double BLUECHERRY_ACK_TIMEOUT = 2.0;
-static const double BLUECHERRY_ACK_RANDOM_FACTOR = 1.5;
+static const uint8_t BLUECHERRY_MAX_RETRANSMITS = 3;
+static const double BLUECHERRY_ACK_TIMEOUT = 4.0;
+static const double BLUECHERRY_ACK_RANDOM_FACTOR = 1.07;
 
 /**
  * @brief How long a single read waits for a datagram before reporting a timeout, in milliseconds.
@@ -430,17 +439,6 @@ typedef struct {
 } _bluecherry_ring_t;
 
 /**
- * @brief One entry per socket ring notification.
- *
- * Only the byte count is carried: the bytes stay in the modem until the synchronisation task asks
- * for them, which keeps AT+SQNSRECV off the event task and lets the datagram land straight in the
- * receive buffer.
- */
-typedef struct {
-  uint16_t len;
-} _bluecherry_ring_evt_t;
-
-/**
  * @brief The operational data used by the BlueCherry cloud connection.
  */
 typedef struct {
@@ -568,11 +566,18 @@ static _bluecherry_t _bluecherry_opdata = {};
 RTC_DATA_ATTR static _bluecherry_rtc_t _bluecherry_rtc;
 
 /**
- * @brief The queue carrying socket ring notifications from the event task.
+ * @brief Received datagrams, read out of the modem by the event task and read by the sync task.
+ *
+ * Plays the part of the socket's own receive buffer on WiFi.
  */
-static StaticQueue_t _bc_rx_queue_buf;
-static uint8_t _bc_rx_queue_mem[BLUECHERRY_RX_QUEUE_DEPTH * sizeof(_bluecherry_ring_evt_t)];
-static QueueHandle_t _bc_rx_queue = NULL;
+static StaticMessageBuffer_t _bc_rx_buf_struct;
+static uint8_t _bc_rx_buf_mem[BLUECHERRY_RX_BUFFER_SIZE];
+static MessageBufferHandle_t _bc_rx_buf = NULL;
+
+/**
+ * @brief Where the event task reads a datagram out of the modem before it is buffered.
+ */
+static uint8_t _bc_rx_scratch[BLUECHERRY_MAX_INCOMING_MESSAGE_LEN];
 
 /**
  * @brief Set when the modem reports the BlueCherry socket closed.
@@ -739,8 +744,7 @@ static void _bluecherry_widen_watchdog(uint16_t current_sec)
 #endif
 
   if(ret == ESP_OK) {
-    ESP_LOGD(TAG, "Task watchdog widened from %us to %ds", current_sec,
-             BLUECHERRY_WDT_TIMEOUT_S);
+    ESP_LOGD(TAG, "Task watchdog widened from %us to %ds", current_sec, BLUECHERRY_WDT_TIMEOUT_S);
   } else {
     ESP_LOGW(TAG, "Could not widen the %us task watchdog to %ds, a dial may trip it", current_sec,
              BLUECHERRY_WDT_TIMEOUT_S);
@@ -2085,38 +2089,31 @@ static void _bluecherry_cleanup_session(void)
 {
   _bluecherry_cleanup_network();
 
-  if(_bc_rx_queue != NULL) {
-    xQueueReset(_bc_rx_queue);
+  if(_bc_rx_buf != NULL) {
+    xMessageBufferReset(_bc_rx_buf);
   }
   _bc_peer_closed = false;
   _bluecherry_opdata.in_buf_len = 0;
 }
 
 /**
- * @brief Read one datagram from the modem.
+ * @brief Read one datagram from the BlueCherry socket.
  *
  * Stands in for the Mbed TLS read of the reference client, and reports the same three outcomes so
  * that the retransmission loops above can be used unchanged: a positive byte count,
  * MBEDTLS_ERR_SSL_TIMEOUT when nothing arrived, and any other negative value for a hard failure.
  *
- * The event task records the length of every datagram the modem announces; this is what actually
- * fetches the bytes, so no AT command runs on the event task and every announced datagram is
- * eventually drained. Draining matters: an unread datagram stays in the modem and is handed over
- * on the next read instead, where it would answer the wrong exchange.
- *
- * The modem is never asked for bytes it has not announced. The announcement is also what says how
- * many bytes there are, and asking without one fails with +CME ERROR, so the queue is the only
- * thing that may start a read - with one exception, _bluecherry_drain_socket.
+ * The event task reads every datagram out of the modem the moment it is announced, so this only
+ * takes the next one from the receive buffer, the way recv() takes it from a socket's on WiFi.
  *
  * @param buf The buffer to read into.
- * @param len The capacity of the buffer.
+ * @param len The capacity of the buffer, at least BLUECHERRY_MAX_INCOMING_MESSAGE_LEN: a datagram
+ * that does not fit is left where it is and never handed over.
  *
  * @return The number of bytes read, or a negative Mbed TLS error code.
  */
 static int _bluecherry_mbed_dtls_read(unsigned char* buf, size_t len)
 {
-  _bluecherry_ring_evt_t evt;
-
   _bluecherry_tickle_watchdog();
 
   if(_bc_peer_closed) {
@@ -2125,39 +2122,15 @@ static int _bluecherry_mbed_dtls_read(unsigned char* buf, size_t len)
     return MBEDTLS_ERR_NET_RECV_FAILED;
   }
 
-  if(_bc_rx_queue == NULL || _bluecherry_opdata.sock <= 0) {
+  if(_bc_rx_buf == NULL || _bluecherry_opdata.sock <= 0) {
     return MBEDTLS_ERR_NET_RECV_FAILED;
   }
 
-  /* The queue's own wait replaces the poll loop of the reference client. The timeout is the same
+  /* The buffer's own wait replaces the poll loop of the reference client. The timeout is the same
    * one its Mbed TLS configuration used, so the caller's retransmit accounting is unchanged. */
-  if(xQueueReceive(_bc_rx_queue, &evt, pdMS_TO_TICKS(BLUECHERRY_SSL_READ_TIMEOUT)) != pdTRUE) {
-    return MBEDTLS_ERR_SSL_TIMEOUT;
-  }
-
-  if(evt.len == 0) {
-    return MBEDTLS_ERR_SSL_TIMEOUT;
-  }
-
-  if(evt.len > len) {
-    ESP_LOGW(TAG, "A %uB datagram does not fit the %uB receive buffer and will be truncated",
-             evt.len, (unsigned) len);
-  }
-  uint16_t want = evt.len > len ? (uint16_t) len : evt.len;
-
-  WalterModemRsp rsp = {};
-  if(!WalterModem::socketReceive(_bluecherry_opdata.sock, buf, want, &rsp)) {
-    /* Reported as "nothing arrived" rather than as a broken link. The modem refuses a read it has
-     * nothing for, and losing the session over that would cost a handshake and drive the connect
-     * backoff up. A link that is genuinely gone arrives as a socket close instead, which is
-     * handled above. The exchange still fails if this keeps happening, by running out of
-     * retransmits. */
-    ESP_LOGW(TAG, "Could not read the announced %uB from the BlueCherry socket", evt.len);
-    return MBEDTLS_ERR_SSL_TIMEOUT;
-  }
-
-  int got = (int) rsp.data.socketResponse.bytesReceived;
-  return got > 0 ? got : MBEDTLS_ERR_SSL_TIMEOUT;
+  size_t got =
+      xMessageBufferReceive(_bc_rx_buf, buf, len, pdMS_TO_TICKS(BLUECHERRY_SSL_READ_TIMEOUT));
+  return got > 0 ? (int) got : MBEDTLS_ERR_SSL_TIMEOUT;
 }
 
 /**
@@ -2246,7 +2219,7 @@ static bool _bluecherry_dtls_connect(const char* host, uint16_t port)
 
   _bluecherry_tickle_watchdog();
 
-  xQueueReset(_bc_rx_queue);
+  xMessageBufferReset(_bc_rx_buf);
   _bc_peer_closed = false;
 
   ESP_LOGI(TAG, "Connected to %s:%u on socket %d", host, port, sock_id);
@@ -2305,8 +2278,8 @@ static esp_err_t _bluecherry_parse_ack_meta(const uint8_t* buf, size_t len, uint
  * @brief Perform a CoAP transmit and receive round trip with the BlueCherry cloud.
  *
  * Fills in the CoAP header the message reserved room for and runs the confirmable exchange,
- * retransmitting on the RFC 7252 schedule until the acknowledgement for this exact message id
- * arrives.
+ * retransmitting on the BLUECHERRY_ACK_TIMEOUT schedule until the acknowledgement for this exact
+ * message id arrives.
  *
  * A packet that is not that acknowledgement is read out and discarded without being parsed. Per
  * RFC 7252 an acknowledgement repeating a message id already handled within the session is a
@@ -2351,7 +2324,7 @@ static esp_err_t _bluecherry_coap_rxtx(_bluecherry_msg_t* msg)
   data[4] = 0xFF;
 
   double timeout = BLUECHERRY_ACK_TIMEOUT *
-                   (1 + (rand() / (RAND_MAX + 1.0)) * (BLUECHERRY_ACK_RANDOM_FACTOR - 1));
+                   (1 + (esp_random() / 4294967296.0) * (BLUECHERRY_ACK_RANDOM_FACTOR - 1));
 
   for(uint8_t attempt = 1; attempt <= BLUECHERRY_MAX_RETRANSMITS; ++attempt) {
     /* Monotonic, so that a clock step mid exchange cannot make the deadline expire instantly or
@@ -2461,7 +2434,7 @@ static bool _bluecherry_ztp_coap_rxtx_common(uint8_t* tx_buf, uint16_t tx_len, u
   }
 
   double timeout = BLUECHERRY_ACK_TIMEOUT *
-                   (1 + (rand() / (RAND_MAX + 1.0)) * (BLUECHERRY_ACK_RANDOM_FACTOR - 1));
+                   (1 + (esp_random() / 4294967296.0) * (BLUECHERRY_ACK_RANDOM_FACTOR - 1));
 
   /* Receive into the session buffer instead of a second kilobyte of stack. Provisioning only runs
    * from BLUECHERRY_STATE_NOT_PROVISIONED, before any CoAP session exists, so in_buf is idle and
@@ -3753,12 +3726,34 @@ void WalterBlueCherry::_handleSocketEvent(WMSocketEventType event, uint16_t data
 {
   switch(event) {
   case WALTER_MODEM_SOCKET_EVENT_RING: {
-    /* Only the length is recorded. Issuing the AT command that fetches the bytes here would run it
-     * on the event task, where it would block every other event behind it for as long as the
-     * modem takes to answer. */
-    _bluecherry_ring_evt_t evt = { data_len };
-    if(_bc_rx_queue == NULL || xQueueSend(_bc_rx_queue, &evt, 0) != pdTRUE) {
-      ESP_LOGW(TAG, "Dropping a %u byte BlueCherry ring, the receive queue is full", data_len);
+    /* Read out here, the moment it is announced, the way a socket's receive buffer fills on WiFi.
+     * A datagram left in the modem is handed over in answer to a later read instead, where it
+     * answers the wrong exchange. */
+    if(data_len == 0 || _bc_rx_buf == NULL || _bluecherry_opdata.sock <= 0) {
+      break;
+    }
+
+    uint16_t want = data_len;
+    if(want > sizeof(_bc_rx_scratch)) {
+      ESP_LOGW(TAG, "A %uB datagram does not fit the %uB receive buffer and will be truncated",
+               data_len, (unsigned) sizeof(_bc_rx_scratch));
+      want = (uint16_t) sizeof(_bc_rx_scratch);
+    }
+
+    WalterModemRsp rsp = {};
+    if(!WalterModem::socketReceive(_bluecherry_opdata.sock, _bc_rx_scratch, want, &rsp)) {
+      ESP_LOGW(TAG, "Could not read the announced %uB from the BlueCherry socket", data_len);
+      break;
+    }
+
+    size_t got = rsp.data.socketResponse.bytesReceived;
+    if(got > want) {
+      got = want;
+    }
+
+    if(got > 0 && xMessageBufferSend(_bc_rx_buf, _bc_rx_scratch, got, 0) != got) {
+      ESP_LOGW(TAG, "Dropping a %uB BlueCherry datagram, the receive buffer is full",
+               (unsigned) got);
     }
     break;
   }
@@ -3807,11 +3802,11 @@ bool WalterBlueCherry::init(uint8_t tls_profile_id, const char* device_type_id,
     return false;
   }
 
-  if(_bc_rx_queue == NULL) {
-    _bc_rx_queue = xQueueCreateStatic(BLUECHERRY_RX_QUEUE_DEPTH, sizeof(_bluecherry_ring_evt_t),
-                                      _bc_rx_queue_mem, &_bc_rx_queue_buf);
-    if(_bc_rx_queue == NULL) {
-      ESP_LOGE(TAG, "Could not create the BlueCherry receive queue");
+  if(_bc_rx_buf == NULL) {
+    _bc_rx_buf =
+        xMessageBufferCreateStatic(sizeof(_bc_rx_buf_mem), _bc_rx_buf_mem, &_bc_rx_buf_struct);
+    if(_bc_rx_buf == NULL) {
+      ESP_LOGE(TAG, "Could not create the BlueCherry receive buffer");
       _bluecherry_ring_deinit();
       return false;
     }
@@ -3825,9 +3820,8 @@ bool WalterBlueCherry::init(uint8_t tls_profile_id, const char* device_type_id,
    * leave two running. The stack has to carry the deepest operation, which is provisioning: a
    * DTLS handshake, the CBOR buffers and an EC key generation. */
   if(_sync_task == NULL) {
-    BaseType_t ret =
-        xTaskCreate(_bluecherry_sync_task, "bc_sync", BLUECHERRY_SYNC_TASK_STACK_SIZE,
-                    NULL, BLUECHERRY_SP, &_sync_task);
+    BaseType_t ret = xTaskCreate(_bluecherry_sync_task, "bc_sync", BLUECHERRY_SYNC_TASK_STACK_SIZE,
+                                 NULL, BLUECHERRY_SP, &_sync_task);
     if(ret != pdPASS) {
       _sync_task = NULL;
       ESP_LOGE(TAG, "Could not start the synchronisation task");

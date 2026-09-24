@@ -1853,7 +1853,9 @@ void WalterModem::_cmdProcessingTask(void* args)
         break;
 
       case WALTER_MODEM_CMD_STATE_SYNC_LOCK_NOTIFIED:
-        /* We need to wait until the other thread is ready */
+        /* We need to wait until the other thread is ready. Nothing wakes this task when it is, so
+         * poll: blocking the full timeout stalls any command already queued behind this one. */
+        blockTime = 1;
         break;
 
       case WALTER_MODEM_CMD_STATE_COMPLETE:
