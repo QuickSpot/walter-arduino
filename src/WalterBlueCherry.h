@@ -268,7 +268,8 @@ typedef enum {
    * @brief An update is available, details are in BlueCherryOtaInfo.
    *
    * Carries a decision: the download. Return true and nothing happens until otaStart is called,
-   * with no deadline. Raised again on every reconnect while the update is still on offer.
+   * with no deadline. Raised again on every reconnect while the update is still on offer. A
+   * download that had already started resumes on reconnect without asking again.
    */
   BLUECHERRY_OTA_EVENT_AVAILABLE,
 
@@ -696,8 +697,9 @@ private:
   /**
    * @brief Snapshot the resumable BlueCherry state into RTC memory before deep sleep.
    *
-   * Called from WalterModem::_sleepPrepare. Also flushes a partially staged OTA sector to flash,
-   * since the staging buffer lives in regular RAM which deep sleep does not preserve.
+   * Called from WalterModem::_sleepPrepare. Stops the synchronisation task first, so nothing is
+   * sent after the snapshot. An interrupted firmware download resumes from what is on flash after
+   * the wake, since the staging buffer lives in RAM that deep sleep does not keep.
    *
    * @return None.
    */

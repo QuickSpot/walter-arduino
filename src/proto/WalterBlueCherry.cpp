@@ -264,6 +264,14 @@ static const uint32_t BLUECHERRY_SSL_READ_TIMEOUT = 100;
 #define BLUECHERRY_SYNC_IDLE_MAX_MS 1000
 
 /**
+ * @brief How long a deep sleep waits for the synchronisation task to stop, in milliseconds.
+ *
+ * Long enough for an AT command already under way. A task still busy after it is in a dial, and
+ * the next boot starts a new session instead.
+ */
+#define BLUECHERRY_SLEEP_WAIT_MS 5000
+
+/**
  * @brief Returned by a cycle that left work outstanding, deliberately outside the esp_err_t range.
  */
 #define BLUECHERRY_SYNC_CONTINUE 0x100
@@ -336,12 +344,13 @@ typedef enum {
   BLUECHERRY_EVENT_TYPE_MOTA_FINISH = 7,
   BLUECHERRY_EVENT_TYPE_MOTA_ERROR = 8,
   BLUECHERRY_EVENT_TYPE_PARTITION_HASH = 9,
-  BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE = 10,
-  BLUECHERRY_EVENT_TYPE_OTA_START = 11,
-  BLUECHERRY_EVENT_TYPE_OTA_CHUNK = 12,
-  BLUECHERRY_EVENT_TYPE_OTA_VERIFIED = 13,
-  BLUECHERRY_EVENT_TYPE_OTA_ERROR = 14,
-  BLUECHERRY_EVENT_TYPE_INIT_INFO = 15
+  BLUECHERRY_EVENT_TYPE_INIT_INFO = 10,
+  BLUECHERRY_EVENT_TYPE_OTA_INITIALIZE = 11,
+  BLUECHERRY_EVENT_TYPE_OTA_START = 12,
+  BLUECHERRY_EVENT_TYPE_OTA_CHUNK = 13,
+  BLUECHERRY_EVENT_TYPE_OTA_RESUME = 14,
+  BLUECHERRY_EVENT_TYPE_OTA_VERIFIED = 15,
+  BLUECHERRY_EVENT_TYPE_OTA_ERROR = 16
 } _bluecherry_event_type;
 
 /**
@@ -364,7 +373,8 @@ typedef enum {
   BLUECHERRY_OTA_STATE_OFFERED,
   BLUECHERRY_OTA_STATE_DOWNLOADING,
   BLUECHERRY_OTA_STATE_AWAITING_VERIFIED,
-  BLUECHERRY_OTA_STATE_COMPLETE
+  BLUECHERRY_OTA_STATE_COMPLETE,
+  BLUECHERRY_OTA_STATE_RESUMING
 } _bluecherry_ota_state;
 
 /**
@@ -468,6 +478,9 @@ typedef struct {
 
   uint16_t cur_message_id;
   uint16_t last_acked_message_id;
+
+  /** @brief The message id of the last frame handed to the modem, acknowledged or not. */
+  uint16_t sent_message_id;
   int64_t last_tx_us;
 
   size_t in_buf_len;
@@ -495,6 +508,11 @@ typedef struct {
   uint8_t ota_expected_hash[BLUECHERRY_PARTITION_HASH_LEN];
   bool ota_unverified;
   int8_t ota_target_version;
+
+  /**
+   * @brief True while a RESUME still has to be queued for the current session.
+   */
+  bool ota_resume_due;
 
   /**
    * @brief Priority slot for one outgoing internal channel frame.
@@ -540,10 +558,7 @@ typedef struct {
   uint8_t ota_partition_slot;
   uint8_t ota_expected_hash[BLUECHERRY_PARTITION_HASH_LEN];
   uint8_t ota_skip_buffer[ENCRYPTED_BLOCK_SIZE];
-
-  /** @brief Bytes that could not be flushed before sleeping, see _bluecherry_ota_sleep_flush. */
-  uint8_t ota_tail[ENCRYPTED_BLOCK_SIZE];
-  uint8_t ota_tail_len;
+  bool ota_resume_due;
 
   uint16_t pending_event_len;
   uint8_t pending_event[BLUECHERRY_PENDING_EVENT_SIZE];
@@ -663,6 +678,17 @@ static portMUX_TYPE _bluecherry_state_lock = portMUX_INITIALIZER_UNLOCKED;
  */
 static bool _sync_requested = false;
 
+/**
+ * @brief Raised by _sleepPrepare. The synchronisation task stops at its next step and does not
+ * run again before the deep sleep.
+ */
+static bool _sleep_requested = false;
+
+/**
+ * @brief Raised by the synchronisation task once it has stopped for the deep sleep.
+ */
+static bool _sync_parked = false;
+
 /* Defined further down, but needed before their definitions. */
 static esp_err_t _bluecherry_sync_once(void);
 static void _bluecherry_ota_service_requests(void);
@@ -693,6 +719,35 @@ static void _bluecherry_tickle_watchdog(void)
   if(_watchdog) {
     esp_task_wdt_reset();
   }
+}
+
+/**
+ * @brief Stop the synchronisation task for good once a deep sleep is requested.
+ *
+ * Called before anything is sent and before a response is read, so nothing goes out and nothing
+ * changes after _sleepPrepare took its snapshot.
+ *
+ * @return None.
+ */
+static void _bluecherry_park_for_sleep(void)
+{
+  portENTER_CRITICAL(&_bluecherry_state_lock);
+  bool sleeping = _sleep_requested;
+  portEXIT_CRITICAL(&_bluecherry_state_lock);
+
+  if(!sleeping) {
+    return;
+  }
+
+  if(_watchdog) {
+    esp_task_wdt_delete(NULL);
+  }
+
+  portENTER_CRITICAL(&_bluecherry_state_lock);
+  _sync_parked = true;
+  portEXIT_CRITICAL(&_bluecherry_state_lock);
+
+  vTaskSuspend(NULL);
 }
 
 /**
@@ -1198,6 +1253,7 @@ static void _bluecherry_sync_task(void* args)
      * calls collapse into one cycle, and one raised mid-cycle is still pending here. */
     uint32_t triggered = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(_bluecherry_sync_wait_ms()));
 
+    _bluecherry_park_for_sleep();
     _bluecherry_tickle_watchdog();
 
     /* The task starts before init finishes, and init can still fail after that. */
@@ -1284,13 +1340,6 @@ static bool _bluecherry_ota_buffer_to_flash(void)
 
   size_t flash_offset = _bluecherry_opdata.ota_partition->address + ota_progress;
 
-  /* Deep sleep can leave ota_progress part way into a sector, because the staging buffer lives in
-   * RAM that does not survive and is flushed out where it stands. Being mid sector can only mean
-   * bytes were already written there, which means the sector was already erased - so the erase is
-   * skipped rather than attempted at an unaligned offset, which esp_partition_erase_range would
-   * reject. */
-  bool mid_sector = (ota_progress % SPI_FLASH_SEC_SIZE) != 0;
-
   // if it's the block boundary, than erase the whole block from here
   bool block_erase = (ota_size - ota_progress >= SPI_FLASH_BLOCK_SIZE) &&
                      (flash_offset % SPI_FLASH_BLOCK_SIZE == 0);
@@ -1306,7 +1355,7 @@ static bool _bluecherry_ota_buffer_to_flash(void)
       flash_offset >= (_bluecherry_opdata.ota_partition->address + ota_size) /
                           SPI_FLASH_BLOCK_SIZE * SPI_FLASH_BLOCK_SIZE;
 
-  if(!mid_sector && (block_erase || partition_head_sectors || partition_tail_sectors)) {
+  if(block_erase || partition_head_sectors || partition_tail_sectors) {
     if(esp_partition_erase_range(_bluecherry_opdata.ota_partition, ota_progress,
                                  block_erase ? SPI_FLASH_BLOCK_SIZE : SPI_FLASH_SEC_SIZE) !=
        ESP_OK) {
@@ -1429,6 +1478,7 @@ static void _bluecherry_ota_reset(void)
   _bluecherry_opdata.ota_buffer_pos = 0;
   _bluecherry_opdata.ota_target_version = 0;
   _bluecherry_opdata.ota_unverified = false;
+  _bluecherry_opdata.ota_resume_due = false;
   _bluecherry_opdata.ota_partition = NULL;
   memset(_bluecherry_opdata.ota_expected_hash, 0, BLUECHERRY_PARTITION_HASH_LEN);
 }
@@ -1496,6 +1546,55 @@ static void _bluecherry_ota_begin(void)
   ESP_LOGI(TAG, "OTA: requesting firmware v%d (%lu bytes)", _bluecherry_opdata.ota_target_version,
            (unsigned long) _bluecherry_opdata.ota_size);
   _bluecherry_ota_notify(BLUECHERRY_OTA_EVENT_STARTED, 0);
+}
+
+/**
+ * @brief Keep an interrupted download so it can resume from what is on flash.
+ *
+ * Only a download that already received a chunk is kept, since only then had the cloud committed
+ * to it. The staged bytes are dropped: flash ends on a sector boundary while downloading, so the
+ * cloud resends from there.
+ *
+ * @return True when the download is kept, false when there is nothing to resume.
+ */
+static bool _bluecherry_ota_prepare_resume(void)
+{
+  if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_RESUMING &&
+     (_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_DOWNLOADING ||
+      _bluecherry_opdata.ota_progress + _bluecherry_opdata.ota_buffer_pos == 0)) {
+    return false;
+  }
+
+  _bluecherry_opdata.ota_buffer_pos = 0;
+  _bluecherry_opdata.ota_state = BLUECHERRY_OTA_STATE_RESUMING;
+  _bluecherry_opdata.ota_resume_due = true;
+
+  ESP_LOGI(TAG, "OTA: resuming firmware v%d at %lu bytes", _bluecherry_opdata.ota_target_version,
+           (unsigned long) _bluecherry_opdata.ota_progress);
+  return true;
+}
+
+/**
+ * @brief Tell the cloud how much of the interrupted download is already written.
+ *
+ * ota_resume_due stays set until the cloud acknowledges the RESUME.
+ *
+ * @return None.
+ */
+static void _bluecherry_ota_queue_resume(void)
+{
+  const uint32_t offset = _bluecherry_opdata.ota_progress;
+  uint8_t payload[6];
+  size_t n = 0;
+
+  payload[n++] = BLUECHERRY_EVENT_TYPE_OTA_RESUME;
+  payload[n++] = (uint8_t) _bluecherry_opdata.ota_target_version;
+  payload[n++] = offset & 0xFF;
+  payload[n++] = (offset >> 8) & 0xFF;
+  payload[n++] = (offset >> 16) & 0xFF;
+  payload[n++] = (offset >> 24) & 0xFF;
+
+  _bluecherry_publish_event(payload, (uint8_t) n);
 }
 
 /**
@@ -1834,8 +1933,11 @@ static void _bluecherry_ota_process_initialize(uint8_t* data, uint16_t len)
     return;
   }
 
-  if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_IDLE &&
-     _bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_OFFERED) {
+  if(_bluecherry_opdata.ota_state == BLUECHERRY_OTA_STATE_RESUMING) {
+    ESP_LOGI(TAG, "OTA: the cloud restarted the update");
+    _bluecherry_opdata.ota_resume_due = false;
+  } else if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_IDLE &&
+            _bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_OFFERED) {
     ESP_LOGW(TAG, "OTA: already busy, ignoring re-offer");
     return;
   }
@@ -1904,6 +2006,17 @@ static void _bluecherry_ota_process_initialize(uint8_t* data, uint16_t len)
  */
 static void _bluecherry_ota_process_chunk(uint8_t* data, uint16_t len)
 {
+  if(_bluecherry_opdata.ota_state == BLUECHERRY_OTA_STATE_RESUMING) {
+    /* Chunks the cloud sent before it got the RESUME belong to another offset. */
+    if(_bluecherry_opdata.ota_resume_due) {
+      ESP_LOGD(TAG, "OTA: chunk from before the resume, ignoring");
+      return;
+    }
+    ESP_LOGI(TAG, "OTA: download resumed at %lu bytes",
+             (unsigned long) _bluecherry_opdata.ota_progress);
+    _bluecherry_opdata.ota_state = BLUECHERRY_OTA_STATE_DOWNLOADING;
+  }
+
   if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_DOWNLOADING) {
     ESP_LOGW(TAG, "OTA: chunk outside a download, ignoring");
     return;
@@ -1913,7 +2026,7 @@ static void _bluecherry_ota_process_chunk(uint8_t* data, uint16_t len)
   uint32_t& ota_size = _bluecherry_opdata.ota_size;
   uint32_t& ota_progress = _bluecherry_opdata.ota_progress;
 
-  if(len == 0 || ota_progress + len > ota_size) {
+  if(len == 0 || ota_progress + _bluecherry_opdata.ota_buffer_pos + len > ota_size) {
     ESP_LOGE(TAG, "OTA: chunk empty or beyond the announced size");
     _bluecherry_ota_fail(BLUECHERRY_OTA_ERR_CHUNK_OVERRUN);
     return;
@@ -1975,6 +2088,14 @@ static void _bluecherry_process_event(uint8_t* data, uint8_t len)
 
   switch(data[0]) {
   case BLUECHERRY_EVENT_TYPE_OTA_PROBE: {
+    /* While resuming, the RESUME is the answer. */
+    if(_bluecherry_opdata.ota_state == BLUECHERRY_OTA_STATE_RESUMING) {
+      ESP_LOGD(TAG, "OTA probe from the cloud, answered with a resume");
+      _bluecherry_opdata.ota_resume_due = true;
+      _bluecherry_ota_queue_resume();
+      break;
+    }
+
     /* Answer it and touch no OTA state: the cloud has not yet been told what we speak, and
      * treating this as an offer would clobber a transfer that may already be running. */
     ESP_LOGD(TAG, "OTA probe from the cloud, answered");
@@ -2012,55 +2133,6 @@ static void _bluecherry_process_event(uint8_t* data, uint8_t len)
     /* Benign on purpose. An unknown event must never abort a running update. */
     ESP_LOGW(TAG, "Ignoring unknown BlueCherry event type 0x%x from cloud server", data[0]);
     break;
-  }
-}
-
-/**
- * @brief Push whatever is staged in RAM into flash before the ESP32 loses it to deep sleep.
- *
- * The staging buffer is ordinary RAM, and the chunk stream carries no offset to resynchronise on,
- * so a partial sector left in it would be lost and every byte after it written at the wrong
- * offset. Flushing it out where it stands leaves the progress counter part way into a sector,
- * which _bluecherry_ota_buffer_to_flash handles by skipping the erase.
- *
- * Two cases cannot be flushed and are carried in RTC memory instead: fewer than
- * ENCRYPTED_BLOCK_SIZE bytes at the very start of an image, because the header extraction needs
- * the whole block, and the last few bytes of any flush, because esp_partition_write wants a length
- * it can round to a word.
- *
- * @return None.
- */
-static void _bluecherry_ota_sleep_flush(void)
-{
-  _bluecherry_rtc.ota_tail_len = 0;
-
-  if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_DOWNLOADING ||
-     _bluecherry_opdata.ota_buffer_pos == 0) {
-    return;
-  }
-
-  uint8_t* ota_buffer = _bluecherry_opdata.ota_buffer;
-
-  /* Too little to extract the withheld image header from: keep it all for the next wake. */
-  if(_bluecherry_opdata.ota_progress == 0 &&
-     _bluecherry_opdata.ota_buffer_pos < ENCRYPTED_BLOCK_SIZE) {
-    _bluecherry_rtc.ota_tail_len = (uint8_t) _bluecherry_opdata.ota_buffer_pos;
-    memcpy(_bluecherry_rtc.ota_tail, ota_buffer, _bluecherry_opdata.ota_buffer_pos);
-    return;
-  }
-
-  /* Hold back whatever keeps the write from ending on a word boundary. */
-  uint32_t keep = _bluecherry_opdata.ota_buffer_pos % sizeof(uint32_t);
-  if(keep > 0) {
-    _bluecherry_rtc.ota_tail_len = (uint8_t) keep;
-    memcpy(_bluecherry_rtc.ota_tail, ota_buffer + _bluecherry_opdata.ota_buffer_pos - keep, keep);
-    _bluecherry_opdata.ota_buffer_pos -= keep;
-  }
-
-  if(_bluecherry_opdata.ota_buffer_pos > 0 && !_bluecherry_ota_buffer_to_flash()) {
-    ESP_LOGE(TAG, "OTA: could not flush the staging buffer before sleeping, abandoning the update");
-    _bluecherry_rtc.ota_tail_len = 0;
-    _bluecherry_ota_reset();
   }
 }
 
@@ -2114,6 +2186,7 @@ static void _bluecherry_cleanup_session(void)
  */
 static int _bluecherry_mbed_dtls_read(unsigned char* buf, size_t len)
 {
+  _bluecherry_park_for_sleep();
   _bluecherry_tickle_watchdog();
 
   if(_bc_peer_closed) {
@@ -2146,10 +2219,16 @@ static int _bluecherry_mbed_dtls_read(unsigned char* buf, size_t len)
  */
 static int _bluecherry_mbed_dtls_write(const unsigned char* buf, size_t len)
 {
+  _bluecherry_park_for_sleep();
   _bluecherry_tickle_watchdog();
 
   if(_bluecherry_opdata.sock <= 0) {
     return MBEDTLS_ERR_NET_SEND_FAILED;
+  }
+
+  /* Every frame carries its CoAP message id in bytes 2 and 3. */
+  if(len >= 4) {
+    _bluecherry_opdata.sent_message_id = (uint16_t) ((buf[2] << 8) | buf[3]);
   }
 
   if(!WalterModem::socketSend(_bluecherry_opdata.sock, (uint8_t*) buf, (uint16_t) len,
@@ -3352,16 +3431,14 @@ static esp_err_t _bluecherry_sync_once(void)
 
       _bluecherry_opdata.cur_message_id = 0;
       _bluecherry_opdata.last_acked_message_id = 0;
+      _bluecherry_opdata.sent_message_id = 0;
 
-      /* Abandon any transfer in progress. The server restarts an update from chunk 0 on a new
-       * session, so keeping the progress counter would resume writing at a stale offset and
-       * quietly corrupt the image - and unfixable any other way, because sequential chunks carry
-       * no offset to re-sync against. A protocol reply from the dead session is equally
-       * meaningless, so the priority slot goes with it.
-       *
-       * This is why a deep sleep resume must NOT come through here: the session survived, so
-       * nothing about it is stale. */
-      _bluecherry_ota_reset();
+      /* A download the cloud already sent chunks for is resumed, anything else in progress is
+       * dropped. A protocol reply from the dead session is meaningless, so the priority slot goes
+       * too. A deep sleep resume does not come through here: the session survived. */
+      if(!_bluecherry_ota_prepare_resume()) {
+        _bluecherry_ota_reset();
+      }
       _bluecherry_opdata.pending_event_len = 0;
 
       /* Not IDLE: the new session still has to run this cycle's exchange. */
@@ -3371,6 +3448,11 @@ static esp_err_t _bluecherry_sync_once(void)
       /* Once per boot: the running image cannot change without a reset. */
       if(!_bluecherry_rtc.init_info_acked) {
         _bluecherry_send_init_info();
+      }
+
+      /* The RESUME goes out once the slot is free. */
+      if(_bluecherry_opdata.ota_resume_due && _bluecherry_opdata.pending_event_len == 0) {
+        _bluecherry_ota_queue_resume();
       }
     } else {
       return ESP_ERR_NOT_FINISHED;
@@ -3404,6 +3486,14 @@ static esp_err_t _bluecherry_sync_once(void)
     }
 
     _bluecherry_opdata.pending_event_len = 0;
+
+    /* A RESUME is done once acknowledged. Anything else sent first leaves it due. */
+    if(ev.data[BLUECHERRY_COAP_HEADER_SIZE + BLUECHERRY_MQTT_HEADER_SIZE] ==
+       BLUECHERRY_EVENT_TYPE_OTA_RESUME) {
+      _bluecherry_opdata.ota_resume_due = false;
+    } else if(_bluecherry_opdata.ota_resume_due) {
+      _bluecherry_ota_queue_resume();
+    }
 
     /* The round trip only returns ESP_OK once the ACK is in, so this is where a VERIFIED is known
      * to have landed - and therefore the only safe point to make the new image the boot target. */
@@ -3593,6 +3683,7 @@ static bool _bluecherry_session_resume(void)
   _bluecherry_opdata.pdp_ctx_id = _bluecherry_rtc.pdp_ctx_id;
   _bluecherry_opdata.cur_message_id = _bluecherry_rtc.cur_message_id;
   _bluecherry_opdata.last_acked_message_id = _bluecherry_rtc.last_acked_message_id;
+  _bluecherry_opdata.sent_message_id = _bluecherry_rtc.cur_message_id;
 
   _bluecherry_opdata.ota_state = (_bluecherry_ota_state) _bluecherry_rtc.ota_state;
   _bluecherry_opdata.ota_size = _bluecherry_rtc.ota_size;
@@ -3602,6 +3693,7 @@ static bool _bluecherry_session_resume(void)
   memcpy(_bluecherry_opdata.ota_expected_hash, _bluecherry_rtc.ota_expected_hash,
          BLUECHERRY_PARTITION_HASH_LEN);
   memcpy(_bluecherry_opdata.ota_skip_buffer, _bluecherry_rtc.ota_skip_buffer, ENCRYPTED_BLOCK_SIZE);
+  _bluecherry_opdata.ota_resume_due = _bluecherry_rtc.ota_resume_due;
 
   _bluecherry_opdata.pending_event_len = _bluecherry_rtc.pending_event_len;
   memcpy(_bluecherry_opdata.pending_event, _bluecherry_rtc.pending_event,
@@ -3612,17 +3704,12 @@ static bool _bluecherry_session_resume(void)
   _bluecherry_opdata.ota_partition = esp_ota_get_next_update_partition(NULL);
   _bluecherry_opdata.ota_buffer_pos = 0;
 
-  if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_IDLE) {
-    if(_bluecherry_opdata.ota_partition == NULL ||
-       _bluecherry_ota_slot_index(_bluecherry_opdata.ota_partition) !=
-           _bluecherry_rtc.ota_partition_slot) {
-      ESP_LOGW(TAG, "OTA: the target slot moved across the sleep, abandoning the update");
-      _bluecherry_ota_reset();
-    } else if(_bluecherry_rtc.ota_tail_len > 0) {
-      /* Bytes the sleep flush could not write, put back in front of the next chunk. */
-      memcpy(_bluecherry_opdata.ota_buffer, _bluecherry_rtc.ota_tail, _bluecherry_rtc.ota_tail_len);
-      _bluecherry_opdata.ota_buffer_pos = _bluecherry_rtc.ota_tail_len;
-    }
+  if(_bluecherry_opdata.ota_state != BLUECHERRY_OTA_STATE_IDLE &&
+     (_bluecherry_opdata.ota_partition == NULL ||
+      _bluecherry_ota_slot_index(_bluecherry_opdata.ota_partition) !=
+          _bluecherry_rtc.ota_partition_slot)) {
+    ESP_LOGW(TAG, "OTA: the target slot moved across the sleep, abandoning the update");
+    _bluecherry_ota_reset();
   }
 
   /* Empty the modem's socket buffer before the first exchange runs, so that nothing left over
@@ -3638,6 +3725,11 @@ static bool _bluecherry_session_resume(void)
   ESP_LOGI(TAG, "Resumed the BlueCherry session on socket %d at message %u",
            _bluecherry_opdata.sock, _bluecherry_opdata.cur_message_id);
 
+  /* The RESUME goes out once the slot is free. */
+  if(_bluecherry_opdata.ota_resume_due && _bluecherry_opdata.pending_event_len == 0) {
+    _bluecherry_ota_queue_resume();
+  }
+
   _bluecherry_set_state(BLUECHERRY_STATE_IDLE);
   return true;
 }
@@ -3649,20 +3741,50 @@ void WalterBlueCherry::_sleepPrepare()
     return;
   }
 
+  /* Stop the synchronisation task first, so nothing is sent or changed after the snapshot. */
+  portENTER_CRITICAL(&_bluecherry_state_lock);
+  _sleep_requested = true;
+  portEXIT_CRITICAL(&_bluecherry_state_lock);
+
+  bool parked = _sync_task == NULL;
+  if(!parked) {
+    xTaskNotifyGive(_sync_task);
+  }
+
+  for(int waited_ms = 0; !parked && waited_ms < BLUECHERRY_SLEEP_WAIT_MS; waited_ms += 10) {
+    portENTER_CRITICAL(&_bluecherry_state_lock);
+    parked = _sync_parked;
+    portEXIT_CRITICAL(&_bluecherry_state_lock);
+    if(parked) {
+      break;
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+
+  if(!parked) {
+    ESP_LOGW(TAG, "BlueCherry is still busy, the next boot starts a new session");
+    _bluecherry_rtc.magic = 0;
+    return;
+  }
+
   if(_bluecherry_opdata.state != BLUECHERRY_STATE_IDLE) {
     ESP_LOGW(TAG, "Sleeping while BlueCherry is not idle; queued data may be lost. Wait for "
                   "BLUECHERRY_STATE_IDLE before sleeping.");
   }
 
-  /* The staging buffer is ordinary RAM and does not survive, so whatever is in it goes to flash
-   * before the snapshot records how far the transfer got. */
-  _bluecherry_ota_sleep_flush();
+  /* The staging buffer does not survive deep sleep, so an interrupted download resumes from what
+   * is on flash after the wake. */
+  _bluecherry_ota_prepare_resume();
 
   _bluecherry_rtc.sock = (int8_t) _bluecherry_opdata.sock;
   _bluecherry_rtc.tls_profile_id = _bluecherry_opdata.tls_profile_id;
   _bluecherry_rtc.pdp_ctx_id = (uint8_t) _bluecherry_opdata.pdp_ctx_id;
-  _bluecherry_rtc.cur_message_id = _bluecherry_opdata.cur_message_id;
-  _bluecherry_rtc.last_acked_message_id = _bluecherry_opdata.last_acked_message_id;
+
+  /* The last frame sent counts as delivered, acknowledged or not: the first message after the wake
+   * then carries an id the server has not seen, and reports nothing lost, so the server answers it
+   * with new data instead of replaying its last frame. */
+  _bluecherry_rtc.cur_message_id = _bluecherry_opdata.sent_message_id;
+  _bluecherry_rtc.last_acked_message_id = _bluecherry_opdata.sent_message_id;
 
   _bluecherry_rtc.ota_state = (uint8_t) _bluecherry_opdata.ota_state;
   _bluecherry_rtc.ota_size = _bluecherry_opdata.ota_size;
@@ -3673,6 +3795,7 @@ void WalterBlueCherry::_sleepPrepare()
   memcpy(_bluecherry_rtc.ota_expected_hash, _bluecherry_opdata.ota_expected_hash,
          BLUECHERRY_PARTITION_HASH_LEN);
   memcpy(_bluecherry_rtc.ota_skip_buffer, _bluecherry_opdata.ota_skip_buffer, ENCRYPTED_BLOCK_SIZE);
+  _bluecherry_rtc.ota_resume_due = _bluecherry_opdata.ota_resume_due;
 
   _bluecherry_rtc.pending_event_len = (uint16_t) _bluecherry_opdata.pending_event_len;
   memcpy(_bluecherry_rtc.pending_event, _bluecherry_opdata.pending_event,
