@@ -162,9 +162,9 @@ CONFIG_UINT8(WALTER_MODEM_BUFFER_POOL_SIZE, 8)
 /**
  * @brief The size of an AT buffer, which holds one received AT line or URC, or one formatted AT
  * command. Received payloads are written straight into the caller's buffer and do not count
- * towards it.
+ * towards it. The default fits the GNSS fix report, the longest line the modem sends.
  */
-CONFIG_UINT16(WALTER_MODEM_AT_BUFFER_SIZE, 512)
+CONFIG_UINT16(WALTER_MODEM_AT_BUFFER_SIZE, 1500)
 
 /**
  * @brief The maximum numbers of characters of the APN.
