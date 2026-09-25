@@ -4606,7 +4606,8 @@ bool WalterModem::tlsConfigProfile(int profile_id, WalterModemTlsValidation tls_
                                    uint8_t client_ca_id, uint8_t client_priv_key_id,
                                    WalterModemRsp* rsp, walterModemCb cb, void* args)
 {
-  if(profile_id >= WALTER_MODEM_MAX_TLS_PROFILES) {
+  /* Profiles are numbered from 1 */
+  if(profile_id < 1 || profile_id > WALTER_MODEM_MAX_TLS_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
   }
 
