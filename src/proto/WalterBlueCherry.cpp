@@ -72,18 +72,26 @@
 #include <freertos/message_buffer.h>
 #include <freertos/queue.h>
 #include <freertos/task.h>
-#include <mbedtls/ctr_drbg.h>
-#include <mbedtls/ecp.h>
-#include <mbedtls/entropy.h>
 #include <mbedtls/net_sockets.h>
 #include <mbedtls/pem.h>
 #include <mbedtls/pk.h>
 #include <mbedtls/ssl.h>
+#include <mbedtls/version.h>
 #include <mbedtls/x509_crt.h>
 #include <mbedtls/x509_csr.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+
+/* Mbed TLS 4, which ESP-IDF 6 ships, made its own random generator private: randomness and key
+ * generation come from PSA, and the f_rng arguments are gone. */
+#if MBEDTLS_VERSION_MAJOR >= 4
+#include <psa/crypto.h>
+#else
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/ecp.h>
+#include <mbedtls/entropy.h>
+#endif
 
 #pragma region PRIVATE_CONSTANTS
 
@@ -468,8 +476,10 @@ typedef struct {
   mbedtls_x509write_csr ztp_mb_csr;
   mbedtls_x509_crt devcert;
   mbedtls_pk_context devkey;
+#if MBEDTLS_VERSION_MAJOR < 4
   mbedtls_ctr_drbg_context ctr_drbg;
   mbedtls_entropy_context entropy;
+#endif
 
   _bluecherry_ring_t out_ring;
 
@@ -2916,6 +2926,7 @@ static int _ztp_cbor_decode_certificate(const uint8_t* cbor_data, size_t cbor_si
   return 0;
 }
 
+#if MBEDTLS_VERSION_MAJOR < 4
 /**
  * @brief Gather entropy from the hardware random number generator.
  *
@@ -2932,6 +2943,7 @@ static int _bluecherry_ztp_hardware_random_entropy(void* data, unsigned char* ou
   esp_fill_random(output, len);
   return 0;
 }
+#endif
 
 /**
  * @brief Seed the deterministic random bit generator used to sign the CSR.
@@ -2940,10 +2952,17 @@ static int _bluecherry_ztp_hardware_random_entropy(void* data, unsigned char* ou
  * the TLS, so the only thing on this side that needs randomness is the key generation, and it gets
  * a generator of its own seeded from the hardware source.
  *
+ * Mbed TLS 4 has no generator to seed: PSA reads every byte straight from the hardware source, so
+ * that source stays enabled through key generation and signing, until _ztp_finish_csr_gen.
+ *
  * @return True on success, false on error.
  */
 static bool _bluecherry_ztp_seed_random(void)
 {
+#if MBEDTLS_VERSION_MAJOR >= 4
+  bootloader_random_enable();
+  return psa_crypto_init() == PSA_SUCCESS;
+#else
   mbedtls_entropy_init(&_bluecherry_opdata.entropy);
   mbedtls_ctr_drbg_init(&_bluecherry_opdata.ctr_drbg);
 
@@ -2954,6 +2973,7 @@ static bool _bluecherry_ztp_seed_random(void)
   bootloader_random_disable();
 
   return ret == 0;
+#endif
 }
 
 /**
@@ -2967,8 +2987,12 @@ static bool _ztp_finish_csr_gen(bool result)
 {
   mbedtls_pk_free(&_bluecherry_opdata.devkey);
   mbedtls_x509write_csr_free(&_bluecherry_opdata.ztp_mb_csr);
+#if MBEDTLS_VERSION_MAJOR >= 4
+  bootloader_random_disable();
+#else
   mbedtls_ctr_drbg_free(&_bluecherry_opdata.ctr_drbg);
   mbedtls_entropy_free(&_bluecherry_opdata.entropy);
+#endif
 
   if(!result) {
     ztp_pkey_buf[0] = '\0';
@@ -3131,6 +3155,26 @@ static bool _ztp_generate_key_and_csr(void)
     return _ztp_finish_csr_gen(false);
   }
 
+  /* Mbed TLS 4 generates keys in PSA only. The key is made exportable so it can be copied into the
+   * pk context the CSR is signed with, then destroyed so no key slot leaks per attempt. */
+#if MBEDTLS_VERSION_MAJOR >= 4
+  psa_key_attributes_t key_attr = PSA_KEY_ATTRIBUTES_INIT;
+  psa_set_key_type(&key_attr, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
+  psa_set_key_bits(&key_attr, 256);
+  psa_set_key_usage_flags(&key_attr, PSA_KEY_USAGE_SIGN_HASH | PSA_KEY_USAGE_EXPORT);
+  psa_set_key_algorithm(&key_attr, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+
+  mbedtls_svc_key_id_t psa_key = MBEDTLS_SVC_KEY_ID_INIT;
+  if(psa_generate_key(&key_attr, &psa_key) != PSA_SUCCESS) {
+    return _ztp_finish_csr_gen(false);
+  }
+
+  int copy_ret = mbedtls_pk_copy_from_psa(psa_key, &_bluecherry_opdata.devkey);
+  psa_destroy_key(psa_key);
+  if(copy_ret != 0) {
+    return _ztp_finish_csr_gen(false);
+  }
+#else
   if(mbedtls_pk_setup(&_bluecherry_opdata.devkey, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) !=
      0) {
     return _ztp_finish_csr_gen(false);
@@ -3140,6 +3184,7 @@ static bool _ztp_generate_key_and_csr(void)
                          mbedtls_ctr_drbg_random, &_bluecherry_opdata.ctr_drbg) != 0) {
     return _ztp_finish_csr_gen(false);
   }
+#endif
 
   if(mbedtls_pk_write_key_pem(&_bluecherry_opdata.devkey, (unsigned char*) ztp_pkey_buf,
                               BLUECHERRY_ZTP_PKEY_BUF_SIZE) != 0) {
@@ -3154,9 +3199,14 @@ static bool _ztp_generate_key_and_csr(void)
     return _ztp_finish_csr_gen(false);
   }
 
+#if MBEDTLS_VERSION_MAJOR >= 4
+  ret = mbedtls_x509write_csr_der(&_bluecherry_opdata.ztp_mb_csr, csr_buf,
+                                  BLUECHERRY_ZTP_CERT_BUF_SIZE);
+#else
   ret = mbedtls_x509write_csr_der(&_bluecherry_opdata.ztp_mb_csr, csr_buf,
                                   BLUECHERRY_ZTP_CERT_BUF_SIZE, mbedtls_ctr_drbg_random,
                                   &_bluecherry_opdata.ctr_drbg);
+#endif
   if(ret < 0) {
     ESP_LOGE(TAG, "Failed to write CSR DER: -0x%04X", -ret);
     return _ztp_finish_csr_gen(false);
