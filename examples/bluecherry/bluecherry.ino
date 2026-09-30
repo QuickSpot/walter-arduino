@@ -96,6 +96,20 @@ const char* edrxValue = "1101";
 const char* edrxPagingTimeWindow = "0000";
 
 /**
+ * @brief Leave confirming new firmware to BlueCherry.
+ *
+ * The Arduino core marks new firmware valid before setup runs, so bc.init would never raise
+ * BLUECHERRY_OTA_EVENT_FIRSTBOOT. Deferring that check hands the decision to the OTA handler
+ * below. It has to be extern "C" to replace the core's weak definition.
+ *
+ * @return True to defer the check.
+ */
+extern "C" bool verifyRollbackLater()
+{
+  return true;
+}
+
+/**
  * @brief This function checks if we are connected to the LTE network
  *
  * @return true when connected, false otherwise
@@ -298,13 +312,17 @@ void myMessageHandler(uint8_t topic, uint16_t len, const uint8_t* data, void* ar
 }
 
 /**
- * @brief Handle a firmware update event, taking both update decisions in the application.
+ * @brief Handle a firmware update event, taking all three update decisions in the application.
  *
- * Runs on the BlueCherry synchronisation task, so it must not block.
+ * Runs on the BlueCherry synchronisation task, or during bc.init for the events raised there, so
+ * it must not block.
  *
- * Two events carry a decision: AVAILABLE, where otaStart accepts the offer, and COMPLETE, where
- * the image is installed and only the restart is left. Returning false hands either back to the
- * library, which then downloads and restarts on its own. The other three are notifications.
+ * Three events carry a decision: DOWNLOAD_AVAILABLE, where otaStartDownload accepts the offer,
+ * DOWNLOAD_COMPLETE, where the image is downloaded and verified but nothing boots it until
+ * otaInstall, and FIRSTBOOT, where the new firmware runs for the first time and is rolled back on
+ * the next restart or deep sleep unless otaMarkValid is called. Returning false hands any of them
+ * back to the library, which then downloads, installs, restarts and keeps the new firmware on its
+ * own. The other three are notifications.
  *
  * @param event The event that occurred.
  * @param info Details for the event, valid only for the duration of the call.
@@ -315,25 +333,37 @@ void myMessageHandler(uint8_t topic, uint16_t len, const uint8_t* data, void* ar
 bool myOtaHandler(BlueCherryOtaEvent event, const BlueCherryOtaInfo* info, void* args)
 {
   switch(event) {
-  case BLUECHERRY_OTA_EVENT_AVAILABLE:
+  case BLUECHERRY_OTA_EVENT_DOWNLOAD_AVAILABLE:
     Serial.printf("OTA: firmware v%d available (%lu bytes), accepting\r\n", info->version,
                   (unsigned long) info->size);
-    bc.otaStart();
+    /* Accept now, or call this later to update when it suits you - there is no deadline, and
+     * this event repeats on every reconnect while the update is on offer. */
+    bc.otaStartDownload();
     return true;
 
-  case BLUECHERRY_OTA_EVENT_STARTED:
+  case BLUECHERRY_OTA_EVENT_DOWNLOAD_STARTED:
     Serial.printf("OTA: downloading firmware v%d\r\n", info->version);
     break;
 
-  case BLUECHERRY_OTA_EVENT_PROGRESS:
+  case BLUECHERRY_OTA_EVENT_DOWNLOAD_PROGRESS:
     Serial.printf("OTA: %lu / %lu bytes\r\n", (unsigned long) info->bytes_received,
                   (unsigned long) info->size);
     break;
 
-  case BLUECHERRY_OTA_EVENT_COMPLETE:
-    Serial.printf("OTA: firmware v%d installed, restarting\r\n", info->version);
+  case BLUECHERRY_OTA_EVENT_DOWNLOAD_COMPLETE:
+    Serial.printf("OTA: firmware v%d downloaded, installing and restarting\r\n", info->version);
+    /* Both calls can wait if a restart now would interrupt your application. Walter keeps running
+     * this firmware until then, and a download waiting for its install survives a deep sleep. */
+    bc.otaInstall();
     Serial.flush();
     ESP.restart();
+    return true;
+
+  case BLUECHERRY_OTA_EVENT_FIRSTBOOT:
+    Serial.println("OTA: first boot of new firmware, keeping it");
+    /* Or confirm it later, once your application has checked it works, but before the first deep
+     * sleep. bc.otaRollbackRestart() returns to the previous firmware instead. */
+    bc.otaMarkValid();
     return true;
 
   case BLUECHERRY_OTA_EVENT_FAILED:
@@ -401,6 +431,10 @@ static bool initializeBlueCherry()
     publishBuffer.size = 0;
   }
 
+  /* Optional: without it the library takes the update decisions itself. Registered before init,
+   * which can raise OTA events itself. */
+  bc.setOtaHandler(myOtaHandler, NULL);
+
   if(!bc.init(BC_TLS_PROFILE, BC_DEVICE_TYPE,
               publishBuffer.buffer != NULL ? &publishBuffer : NULL)) {
     Serial.println("Error: Could not initialize BlueCherry");
@@ -411,9 +445,7 @@ static bool initializeBlueCherry()
    * no default for it, the payloads being application data it cannot interpret. */
   bc.setMsgHandler(myMessageHandler, NULL);
 
-  /* Both optional: without them the library takes the update decisions itself, and bc.getState()
-   * answers what the state handler reports. */
-  bc.setOtaHandler(myOtaHandler, NULL);
+  /* Optional: bc.getState() answers what the state handler reports. */
   bc.setStateHandler(myStateHandler, NULL);
 
   Serial.println("Successfully initialized BlueCherry");
