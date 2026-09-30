@@ -267,31 +267,52 @@ typedef enum {
   /**
    * @brief An update is available, details are in BlueCherryOtaInfo.
    *
-   * Carries a decision: the download. Return true and nothing happens until otaStart is called,
-   * with no deadline. Raised again on every reconnect while the update is still on offer. A
-   * download that had already started resumes on reconnect without asking again.
+   * Carries a decision: the download. Return true and nothing happens until otaStartDownload is
+   * called, with no deadline. Raised again on every reconnect while the update is still on offer.
+   * A download that had already started resumes on reconnect without asking again.
+   *
+   * It is also raised for a different version while a download waits for its install. The
+   * waiting one stays installable until this one is started, which discards it.
    */
-  BLUECHERRY_OTA_EVENT_AVAILABLE,
+  BLUECHERRY_OTA_EVENT_DOWNLOAD_AVAILABLE,
 
   /**
    * @brief The download has begun. Carries no decision.
    */
-  BLUECHERRY_OTA_EVENT_STARTED,
+  BLUECHERRY_OTA_EVENT_DOWNLOAD_STARTED,
 
   /**
    * @brief bytes_received of size written so far. Carries no decision.
    *
    * Emitted once per batch that reaches flash, not once per received chunk.
    */
-  BLUECHERRY_OTA_EVENT_PROGRESS,
+  BLUECHERRY_OTA_EVENT_DOWNLOAD_PROGRESS,
 
   /**
-   * @brief The image is written, hashed, acknowledged by the server and the boot partition is
-   * set. Walter keeps running the old firmware until it restarts.
+   * @brief The image is written, hashed and acknowledged by the server, but nothing boots it yet.
    *
-   * Carries a decision: the reboot. Return true and it is yours to schedule with esp_restart.
+   * Carries a decision: the install. Return true and it is yours - call otaInstall when it suits
+   * you, then esp_restart. Meanwhile this version is not offered again, and a different one is
+   * raised as BLUECHERRY_OTA_EVENT_DOWNLOAD_AVAILABLE.
+   *
+   * A deep sleep before the install raises this event again from init, on the task that called
+   * it. After any other restart the update is downloaded again instead.
    */
-  BLUECHERRY_OTA_EVENT_COMPLETE,
+  BLUECHERRY_OTA_EVENT_DOWNLOAD_COMPLETE,
+
+  /**
+   * @brief New firmware is running for the first time, and the bootloader rolls it back on the
+   * next restart unless it is marked valid.
+   *
+   * Carries a decision: keeping it. Return true and it is yours - call otaMarkValid once the
+   * application is satisfied, or otaRollbackRestart to return to the previous firmware. A deep
+   * sleep counts as a restart here, so decide before the first one.
+   *
+   * Raised from init, on the task that called it, and only with
+   * CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE. Carries no details. On Arduino the core marks new
+   * firmware valid before setup runs, unless the sketch defines verifyRollbackLater to return true.
+   */
+  BLUECHERRY_OTA_EVENT_FIRSTBOOT,
 
   /**
    * @brief The update failed, error_code says why. Carries no decision.
@@ -326,7 +347,7 @@ typedef struct {
   uint8_t sha256[BLUECHERRY_PARTITION_HASH_LEN];
 
   /**
-   * @brief Bytes written to flash so far, for BLUECHERRY_OTA_EVENT_PROGRESS.
+   * @brief Bytes written to flash so far, for BLUECHERRY_OTA_EVENT_DOWNLOAD_PROGRESS.
    */
   uint32_t bytes_received;
 
@@ -398,11 +419,13 @@ typedef void (*blueCherryStateHandler)(BlueCherryState state, void* args);
  * @brief Handler for OTA events.
  *
  * Return true when this call took the decision the event carries, false to leave it to the
- * library. Two events carry one: BLUECHERRY_OTA_EVENT_AVAILABLE (start the download) and
- * BLUECHERRY_OTA_EVENT_COMPLETE (reboot). For the other three the return value is ignored.
+ * library. Three events carry one: BLUECHERRY_OTA_EVENT_DOWNLOAD_AVAILABLE (start the download),
+ * BLUECHERRY_OTA_EVENT_DOWNLOAD_COMPLETE (install and restart) and BLUECHERRY_OTA_EVENT_FIRSTBOOT
+ * (keep the new firmware). For the other three the return value is ignored.
  *
- * A handler that returns false everywhere is therefore equivalent to registering none at all, so
- * watching an update cannot accidentally stop one.
+ * A handler that returns false everywhere is therefore equivalent to registering none at all: the
+ * library downloads on offer, installs and restarts once the download is complete, and marks the
+ * new firmware valid on its first boot, so watching an update cannot accidentally stop one.
  *
  * @param event The event that occurred.
  * @param info Details for the event, valid only for the duration of the call.
@@ -436,17 +459,18 @@ public:
    * must be called on every boot, including after deep sleep: it is what resumes a session that
    * survived the sleep, which does not persist on its own.
    *
-   * Handlers are installed separately once this returns, with setMsgHandler, setOtaHandler and
-   * setStateHandler. They do not survive a deep sleep either, so they are re-installed on the
-   * same path.
+   * Handlers are installed separately, with setMsgHandler, setOtaHandler and setStateHandler. They
+   * do not survive a deep sleep either, so they are re-installed on the same path. The OTA handler
+   * goes in before this call: it raises BLUECHERRY_OTA_EVENT_FIRSTBOOT, and
+   * BLUECHERRY_OTA_EVENT_DOWNLOAD_COMPLETE for a download a deep sleep interrupted.
    *
    * When the modem holds no device credentials the state becomes BLUECHERRY_STATE_NOT_PROVISIONED
    * and the first sync runs Zero-Touch Provisioning, which requires device_type_id.
    *
    * Firmware updates are accepted by default. An application that does not want them installs an
-   * OTA handler with setOtaHandler and, on BLUECHERRY_OTA_EVENT_AVAILABLE, either returns true
-   * without ever calling otaStart - which defers the update indefinitely - or calls otaAbort to
-   * refuse it outright.
+   * OTA handler with setOtaHandler and, on BLUECHERRY_OTA_EVENT_DOWNLOAD_AVAILABLE, either returns
+   * true without ever calling otaStartDownload - which defers the update indefinitely - or calls
+   * otaAbort to refuse it outright.
    *
    * @param tls_profile_id The modem TLS profile to use. BlueCherry owns NVM slots 0, 5 and 6.
    * @param device_type_id The 8 character BlueCherry Type ID, required for provisioning only.
@@ -558,8 +582,12 @@ public:
   /**
    * @brief Install a handler for OTA events.
    *
-   * Optional. Without one the library downloads an update as soon as it is offered and reboots
-   * when it is installed, and a handler that returns false everywhere behaves identically.
+   * Optional. Without one the library downloads an update as soon as it is offered, installs and
+   * reboots as soon as it is complete, and marks the new firmware valid on its first boot, and a
+   * handler that returns false everywhere behaves identically.
+   *
+   * Runs on the synchronisation task, or on the caller of init for the events raised there, and
+   * must not block. Install it before init so those events are not missed.
    *
    * @param handler The handler, or NULL to remove the current one.
    * @param args Optional user arguments for the handler.
@@ -571,15 +599,35 @@ public:
   /**
    * @brief Accept an offered firmware update.
    *
-   * Only needed when an OTA handler took the BLUECHERRY_OTA_EVENT_AVAILABLE decision. There is no
-   * deadline, so an application may defer the download to a convenient moment.
+   * Only needed when an OTA handler took the BLUECHERRY_OTA_EVENT_DOWNLOAD_AVAILABLE decision.
+   * There is no deadline, so an application may defer the download to a convenient moment.
    *
-   * @return True when the download was requested, false when no update is on offer.
+   * Starting a download discards one that was waiting for its install.
+   *
+   * @return True when the download was requested, false when no update is on offer, or after
+   * otaInstall until the restart.
    */
-  static bool otaStart();
+  static bool otaStartDownload();
+
+  /**
+   * @brief Make the downloaded update the firmware Walter boots next.
+   *
+   * Only needed when an OTA handler took the BLUECHERRY_OTA_EVENT_DOWNLOAD_COMPLETE decision.
+   * Walter keeps running the current firmware until it restarts, so follow this with esp_restart
+   * when it suits you. No download starts in between. Safe to call from any task.
+   *
+   * A newer update on offer does not stop it; only starting that one does.
+   *
+   * @return True when the new firmware is set to boot, false when no download is waiting for its
+   * install or the boot partition could not be set, which is also reported to the cloud.
+   */
+  static bool otaInstall();
 
   /**
    * @brief Abandon the firmware update in progress and tell the cloud why.
+   *
+   * With an update on offer this declines that one, and a download waiting for its install stays.
+   * Otherwise it gives up the download itself, including one waiting for its install.
    *
    * The cloud allows three attempts before it stops offering the update.
    *
@@ -588,6 +636,26 @@ public:
    * @return True when the abort was queued, false when no update is in progress.
    */
   static bool otaAbort(uint8_t error_code = BLUECHERRY_OTA_ERR_APP_ABORTED);
+
+  /**
+   * @brief Keep the running firmware, cancelling the rollback.
+   *
+   * Wraps esp_ota_mark_app_valid_cancel_rollback. Only needed when an OTA handler took the
+   * BLUECHERRY_OTA_EVENT_FIRSTBOOT decision, for example to confirm the new firmware only once it
+   * has reached the cloud.
+   *
+   * @return True on success, false on error.
+   */
+  static bool otaMarkValid();
+
+  /**
+   * @brief Reject the running firmware and restart into the previous one.
+   *
+   * Wraps esp_ota_mark_app_invalid_rollback_and_reboot, so it does not return on success.
+   *
+   * @return False, on failure.
+   */
+  static bool otaRollbackRestart();
 
   /**
    * @brief Close the BlueCherry session and release the modem socket.
