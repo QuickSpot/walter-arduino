@@ -4410,10 +4410,21 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
 
 #endif
 
-  esp_sleep_wakeup_cause_t wakeupReason;
-  wakeupReason = esp_sleep_get_wakeup_cause();
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(6, 0, 0)
 
-  if(wakeupReason == ESP_SLEEP_WAKEUP_UNDEFINED) {
+  /* A boot that is not a wake reports UNDEFINED, a wake from an unrecognised source reports
+   * nothing, and the deprecated esp_sleep_get_wakeup_cause returned UNDEFINED for both. */
+  const uint32_t wakeupCauses = esp_sleep_get_wakeup_causes();
+  const bool wokeFromSleep =
+      wakeupCauses != 0 && !(wakeupCauses & (1UL << ESP_SLEEP_WAKEUP_UNDEFINED));
+
+#else
+
+  const bool wokeFromSleep = esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED;
+
+#endif
+
+  if(!wokeFromSleep) {
     if(!reset()) {
       return false;
     }
