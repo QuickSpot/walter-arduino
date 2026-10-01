@@ -83,6 +83,18 @@ WalterModemSocket* WalterModem::_socketGet(int id)
   return NULL;
 }
 
+void WalterModem::_socketReset(WalterModemSocket* sock)
+{
+  *sock = {};
+  sock->pdpContextId = 1;
+  sock->id = 1;
+  sock->mtu = 300;
+  sock->exchangeTimeout = 90;
+  sock->connTimeout = 60;
+  sock->sendDelayMs = 5000;
+  sock->protocol = WALTER_MODEM_SOCKET_PROTO_UDP;
+}
+
 bool WalterModem::_socketUpdateStates()
 {
   WalterModemRsp* rsp = NULL;

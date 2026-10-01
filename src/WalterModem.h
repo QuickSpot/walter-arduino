@@ -1493,6 +1493,9 @@ typedef struct {
 
 /**
  * @brief This structure represents a PDP context.
+ *
+ * Defaults that are not zero are set by WalterModem::_pdpContextReset() rather than by member
+ * initializers, which would store the whole context set in the firmware image.
  */
 typedef struct {
   /**
@@ -1506,9 +1509,9 @@ typedef struct {
   int id = 0;
 
   /**
-   * @brief The type of packet data protocol.
+   * @brief The type of packet data protocol, IP by default.
    */
-  WalterModemPDPType type = WALTER_MODEM_PDP_TYPE_IP;
+  WalterModemPDPType type;
 
   /**
    * @brief The APN to use.
@@ -1526,14 +1529,14 @@ typedef struct {
   char pdpAddress2[WALTER_MODEM_PDP_ADDR_BUF_SIZE] = { 0 };
 
   /**
-   * @brief The header compression used in the PDP context.
+   * @brief The header compression used in the PDP context, unspecified by default.
    */
-  WalterModemPDPHeaderCompression headerComp = WALTER_MODEM_PDP_HCOMP_UNSPEC;
+  WalterModemPDPHeaderCompression headerComp;
 
   /**
-   * @brief The data compression method used in the PDP context.
+   * @brief The data compression method used in the PDP context, unspecified by default.
    */
-  WalterModemPDPDataCompression dataComp = WALTER_MODEM_PDP_DCOMP_UNSPEC;
+  WalterModemPDPDataCompression dataComp;
 
   /**
    * @brief The IPv4 address allocation method used in the PDP context.
@@ -1949,9 +1952,9 @@ typedef struct {
 
 typedef struct {
   /**
-   * @brief is the topic in use/subscribed to.
+   * @brief Whether the topic is unused. Initialized in WalterModem::begin().
    */
-  bool free = true;
+  bool free;
 
   /**
    * @brief Qos ofr the subscription.
@@ -1971,6 +1974,9 @@ typedef struct {
 
 /**
  * @brief This structure represents a socket.
+ *
+ * Defaults that are not zero are set by WalterModem::_socketReset() rather than by member
+ * initializers, which would store the whole socket set in the firmware image.
  */
 typedef struct {
   /**
@@ -1979,44 +1985,44 @@ typedef struct {
   WalterModemSocketState state = WALTER_MODEM_SOCKET_STATE_FREE;
 
   /**
-   * @brief PDP context id to use.
+   * @brief PDP context id to use, 1 by default.
    */
-  int pdpContextId = 1;
+  int pdpContextId;
 
   /**
-   * @brief The socket identifier.
+   * @brief The socket identifier, 1 by default and assigned when the socket is reserved.
    */
-  int id = 1;
+  int id;
 
   /**
-   * @brief Maximum transmission unit used by the TCP/UDP/IP stack.
+   * @brief Maximum transmission unit used by the TCP/UDP/IP stack, 300 by default.
    */
-  uint16_t mtu = 300;
+  uint16_t mtu;
 
   /**
    * @brief The socket exchange timeout in seconds. When no data is exchanged within the timeout
    * the socket is automatically closed. When this is set to 0 the timeout is disabled. The
-   * maximum exchange timeout is 65535 seconds.
+   * maximum exchange timeout is 65535 seconds. 90 by default.
    */
-  uint16_t exchangeTimeout = 90;
+  uint16_t exchangeTimeout;
 
   /**
    * @brief The connection timeout in seconds. When a connection to the remote host could not be
    * established within the given timeout an error will be generated. When this is set to 0 the
-   * timeout is disabled. The maximum connection timeout is 120 seconds.
+   * timeout is disabled. The maximum connection timeout is 120 seconds. 60 by default.
    */
-  uint16_t connTimeout = 60;
+  uint16_t connTimeout;
 
   /**
    * @brief The number of milliseconds after which the transmit buffer is effectively transmitted.
-   * The maximum delay is 25500 milliseconds.
+   * The maximum delay is 25500 milliseconds. 5000 by default.
    */
-  uint16_t sendDelayMs = 5000;
+  uint16_t sendDelayMs;
 
   /**
-   * @brief The protocol to use.
+   * @brief The protocol to use, UDP by default.
    */
-  WalterModemSocketProto protocol = WALTER_MODEM_SOCKET_PROTO_UDP;
+  WalterModemSocketProto protocol;
 
   /**
    * @brief How to handle data from other hosts than the remote host and port that the socket is
@@ -2696,8 +2702,9 @@ typedef struct {
   /**
    * @brief This volatile flag is set to true when the buffer is currently
    * not in use and can be used to store the next response in.
+   * Initialized in WalterModem::begin().
    */
-  volatile bool free = true;
+  volatile bool free;
 } WalterModemBuffer;
 
 /**
@@ -3492,6 +3499,15 @@ private:
    */
   static void _loadRTCPdpContextSet(walter_modem_pdp_context_t* _pdpCtxSetRTC = NULL);
 
+  /**
+   * @brief Return a PDP context to its defaults.
+   *
+   * @param ctx The PDP context to reset.
+   *
+   * @return None.
+   */
+  static void _pdpContextReset(walter_modem_pdp_context_t* ctx);
+
 #pragma endregion
 #pragma region CLASS PRIVATE METHODS PROTO SOCKETS
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
@@ -3517,6 +3533,15 @@ private:
    * @return Pointer to the socket with the given id or NULL.
    */
   static WalterModemSocket* _socketGet(int id = -1);
+
+  /**
+   * @brief Return a socket to its defaults.
+   *
+   * @param sock The socket to reset.
+   *
+   * @return None.
+   */
+  static void _socketReset(WalterModemSocket* sock);
 
   /**
    * @brief this function retrieves and updates all the socketStates

@@ -153,21 +153,27 @@ struct WalterModemStpResponseTransferBlock stpResponseTransferBlock;
 
 #endif
 
-RTC_DATA_ATTR walter_modem_pdp_context_t _pdpCtxSetRTC[WALTER_MODEM_MAX_PDP_CTXTS] = {};
+/* The context mirrors below are only read after _sleepPrepare filled them, so they need no
+ * initial value: RTC_NOINIT_ATTR keeps them out of the firmware image, where RTC_DATA_ATTR stores
+ * every byte of them. This flag says whether they were filled, and is reset on every boot but a
+ * deep-sleep wake. */
+RTC_DATA_ATTR static bool _rtcContextsSaved = false;
+
+RTC_NOINIT_ATTR walter_modem_pdp_context_t _pdpCtxSetRTC[WALTER_MODEM_MAX_PDP_CTXTS];
 
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
-RTC_DATA_ATTR WalterModemCoapContext _coapCtxSetRTC[WALTER_MODEM_MAX_COAP_PROFILES] = {};
+RTC_NOINIT_ATTR WalterModemCoapContext _coapCtxSetRTC[WALTER_MODEM_MAX_COAP_PROFILES];
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 
-RTC_DATA_ATTR WalterModemMqttTopic _mqttTopicSetRTC[WALTER_MODEM_MQTT_MAX_TOPICS] = {};
+RTC_NOINIT_ATTR WalterModemMqttTopic _mqttTopicSetRTC[WALTER_MODEM_MQTT_MAX_TOPICS];
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
-RTC_DATA_ATTR WalterModemSocket _socketCtxSetRTC[WALTER_MODEM_MAX_SOCKETS] = {};
+RTC_NOINIT_ATTR WalterModemSocket _socketCtxSetRTC[WALTER_MODEM_MAX_SOCKETS];
 
 #endif
 #pragma endregion
@@ -1171,6 +1177,14 @@ void WalterModem::_loadRTCPdpContextSet(walter_modem_pdp_context_t* _pdpCtxSetRT
   }
 
   _pdpCtx = _pdpCtxSet;
+}
+
+void WalterModem::_pdpContextReset(walter_modem_pdp_context_t* ctx)
+{
+  *ctx = {};
+  ctx->type = WALTER_MODEM_PDP_TYPE_IP;
+  ctx->headerComp = WALTER_MODEM_PDP_HCOMP_UNSPEC;
+  ctx->dataComp = WALTER_MODEM_PDP_DCOMP_UNSPEC;
 }
 
 #pragma endregion // STATE_PDP_CONTEXT
@@ -4192,6 +4206,9 @@ void WalterModem::_sleepPrepare()
   memcpy(_socketCtxSetRTC, _socketSet, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
 
 #endif
+
+  _rtcContextsSaved = true;
+
 #if CONFIG_BLUECHERRY_ENABLE
 
   WalterBlueCherry::_sleepPrepare();
@@ -4204,21 +4221,25 @@ void WalterModem::_sleepWakeup()
 
   WalterModem::checkComm();
 
-  memcpy(_pdpCtxSet, _pdpCtxSetRTC,
-         WALTER_MODEM_MAX_PDP_CTXTS * sizeof(walter_modem_pdp_context_t));
+  /* A deep sleep entered without _sleepPrepare left the mirrors unfilled, and the sets keep the
+   * defaults begin gave them. */
+  if(_rtcContextsSaved) {
+    memcpy(_pdpCtxSet, _pdpCtxSetRTC,
+           WALTER_MODEM_MAX_PDP_CTXTS * sizeof(walter_modem_pdp_context_t));
 
 #if CONFIG_WALTER_MODEM_ENABLE_COAP
 
-  memcpy(_coapContextSet, _coapCtxSetRTC,
-         WALTER_MODEM_MAX_COAP_PROFILES * sizeof(WalterModemCoapContext));
+    memcpy(_coapContextSet, _coapCtxSetRTC,
+           WALTER_MODEM_MAX_COAP_PROFILES * sizeof(WalterModemCoapContext));
 
 #endif
 #if CONFIG_WALTER_MODEM_ENABLE_MQTT
 
-  memcpy(_mqttTopics, _mqttTopicSetRTC,
-         WALTER_MODEM_MQTT_MAX_TOPICS * sizeof(WalterModemMqttTopic));
+    memcpy(_mqttTopics, _mqttTopicSetRTC,
+           WALTER_MODEM_MQTT_MAX_TOPICS * sizeof(WalterModemMqttTopic));
 
 #endif
+  }
 
   for(size_t i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; i++) {
     if(_pdpCtxSet[i].state == WALTER_MODEM_PDP_CONTEXT_STATE_ACTIVE) {
@@ -4233,7 +4254,9 @@ void WalterModem::_sleepWakeup()
 
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
-  memcpy(_socketSet, _socketCtxSetRTC, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
+  if(_rtcContextsSaved) {
+    memcpy(_socketSet, _socketCtxSetRTC, WALTER_MODEM_MAX_SOCKETS * sizeof(WalterModemSocket));
+  }
   WalterModem::socketGetState();
 
 #endif
@@ -4257,6 +4280,33 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
   if(_initialized) {
     return true;
   }
+
+  /* Set here rather than by member initializers: a pool with any non-zero initializer is stored in
+   * full in the firmware image, where a zeroed one costs nothing. Before the tasks start, and
+   * before a deep-sleep wake restores the context sets over these defaults. */
+  for(int i = 0; i < WALTER_MODEM_BUFFER_POOL_SIZE; ++i) {
+    _bufferPool[i].free = true;
+    _bufferPool[i].size = 0;
+  }
+
+  for(int i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; ++i) {
+    _pdpContextReset(&_pdpCtxSet[i]);
+  }
+
+#if CONFIG_WALTER_MODEM_ENABLE_MQTT
+
+  for(int i = 0; i < WALTER_MODEM_MQTT_MAX_TOPICS; ++i) {
+    _mqttTopics[i].free = true;
+  }
+
+#endif
+#if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
+
+  for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
+    _socketReset(&_socketSet[i]);
+  }
+
+#endif
 
   _watchdogTimeout = watchdogTimeout;
   if(_watchdogTimeout) {
@@ -4421,13 +4471,13 @@ bool WalterModem::softReset(WalterModemRsp* rsp, walterModemCb cb, void* args)
   _simPIN = NULL;
 
   for(int i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; ++i) {
-    _pdpCtxSet[i] = {};
+    _pdpContextReset(&_pdpCtxSet[i]);
   }
 
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
   for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
-    _socketSet[i] = {};
+    _socketReset(&_socketSet[i]);
   }
 
 #endif
@@ -4480,13 +4530,13 @@ bool WalterModem::reset(WalterModemRsp* rsp, walterModemCb cb, void* args)
   _simPIN = NULL;
 
   for(int i = 0; i < WALTER_MODEM_MAX_PDP_CTXTS; ++i) {
-    _pdpCtxSet[i] = {};
+    _pdpContextReset(&_pdpCtxSet[i]);
   }
 
 #if CONFIG_WALTER_MODEM_ENABLE_SOCKETS
 
   for(int i = 0; i < WALTER_MODEM_MAX_SOCKETS; ++i) {
-    _socketSet[i] = {};
+    _socketReset(&_socketSet[i]);
   }
 
 #endif
