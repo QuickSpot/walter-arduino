@@ -4125,7 +4125,7 @@ public:
    * any initialisation must be repeated after waking up from deep sleep. Deep sleep is
    * typically combined with PSM and/or eDRX.
    *
-   * @param sleep_time_s The duration of deep sleep in seconds.
+   * @param sleep_time_s The duration of the sleep in seconds.
    * @param is_light_sleep When set to true Walter will only go to light sleep.
    *
    * @return None.

@@ -4589,7 +4589,8 @@ void WalterModem::sleep(uint32_t sleep_time_s, bool is_light_sleep)
 
 #endif
 
-    esp_sleep_enable_timer_wakeup(sleep_time_s * 1000000);
+    /* Widened before the multiplication: a 32-bit product wraps above 4294 seconds. */
+    esp_sleep_enable_timer_wakeup((uint64_t) sleep_time_s * 1000000ULL);
     esp_light_sleep_start();
 
     /* Re-enable RTS after waking up */
@@ -4611,7 +4612,7 @@ void WalterModem::sleep(uint32_t sleep_time_s, bool is_light_sleep)
   } else {
     _sleepPrepare();
     vTaskDelay(pdMS_TO_TICKS(1000));
-    esp_deep_sleep(sleep_time_s * 1000000);
+    esp_deep_sleep((uint64_t) sleep_time_s * 1000000ULL);
   }
 }
 
