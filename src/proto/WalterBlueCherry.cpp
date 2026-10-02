@@ -3498,13 +3498,15 @@ static bool _ztp_request_signed_certificate(void)
  * certificate and key the modem holds. Note the argument order - the DEVICE certificate goes in
  * the client CA slot, which is what the modem expects.
  *
+ * DTLS 1.3 for the cloud session. Provisioning keeps 1.2: it talks to a different service.
+ *
  * @return True on success, false on error.
  */
 static bool _bluecherry_configure_own_cert(void)
 {
   return WalterModem::tlsConfigProfile(_bluecherry_opdata.tls_profile_id,
                                        WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
-                                       WALTER_MODEM_TLS_VERSION_12, BLUECHERRY_SLOT_CA,
+                                       WALTER_MODEM_TLS_VERSION_13, BLUECHERRY_SLOT_CA,
                                        BLUECHERRY_SLOT_DEVCERT, BLUECHERRY_SLOT_PRIVKEY);
 }
 
@@ -3684,6 +3686,12 @@ static esp_err_t _bluecherry_sync_once(void)
     int64_t elapsed_ms = (now_us - last_retry_time_us) / 1000;
     if(elapsed_ms >= retry_interval_ms) {
       last_retry_time_us = now_us;
+
+      _bluecherry_cleanup_session();
+      if(!_bluecherry_configure_own_cert()) {
+        ESP_LOGW(TAG, "Could not update the device TLS profile, dialing with the stored one");
+      }
+
       if(!_bluecherry_dtls_connect(BLUECHERRY_HOST, BLUECHERRY_PORT)) {
         ESP_LOGE(TAG, "Could not connect to BlueCherry server");
         retry_interval_ms = (retry_interval_ms < 30000) ? retry_interval_ms * 2 : 30000;
