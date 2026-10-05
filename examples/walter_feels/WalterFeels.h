@@ -1,8 +1,8 @@
 /**
  * @file WalterFeels.h
  * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 21 September 2026
- * @version 1.5.1
+ * @date 2 October 2026
+ * @version 1.6.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *

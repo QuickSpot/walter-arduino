@@ -1,8 +1,8 @@
 /**
  * @file mota.ino
  * @author Jonas Maes <jonas@dptechnics.com>
- * @date 21 September 2026
- * @version 1.5.1
+ * @date 2 October 2026
+ * @version 1.6.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem offline OTA update
  *
