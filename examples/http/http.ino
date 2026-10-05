@@ -1,8 +1,8 @@
 /**
  * @file http.ino
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 21 September 2026
- * @version 1.5.1
+ * @date 2 October 2026
+ * @version 1.6.0
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
@@ -346,7 +346,7 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.printf("\r\n\r\n=== WalterModem HTTP example (Arduino v1.5.1) ===\r\n\r\n");
+  Serial.printf("\r\n\r\n=== WalterModem HTTP example (Arduino v1.6.0) ===\r\n\r\n");
 
   /* Start the modem */
   if(modem.begin(&Serial2)) {

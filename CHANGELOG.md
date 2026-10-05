@@ -270,3 +270,39 @@ This is the Changelog for WalterModem
 - [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(mqtt): add missing lteConnect call in mqtts example ([#147](https://github.com/QuickSpot/walter-arduino/pull/147))
 - [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(mqtt): add missing lteConnect call in aws_mqtt example ([#148](https://github.com/QuickSpot/walter-arduino/pull/148))
 - [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] fix(GNSS): lteConnected check in GNSS assistance ([#144](https://github.com/QuickSpot/walter-arduino/pull/144))
+
+## [v1.6.0](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.6.0) - MAJOR UPDATE
+
+> A major update for BlueCherry users, with breaking changes to the BlueCherry API. Applications that do not use BlueCherry need little to no changes. Read the release notes before updating.
+
+### Features
+
+- feat(BlueCherry): standalone client with async sync and schedulable OTA [BREAKING] ([#181](https://github.com/QuickSpot/walter-esp-idf/pull/181))
+- feat(WalterModem): stream received payloads straight into the caller's buffer ([#183](https://github.com/QuickSpot/walter-esp-idf/pull/183))
+- feat(BlueCherry): resume an interrupted download after a reconnect or deep sleep ([#185](https://github.com/QuickSpot/walter-esp-idf/pull/185))
+- feat(BlueCherry): install on demand and confirm on first boot ([#189](https://github.com/QuickSpot/walter-esp-idf/pull/189))
+- feat(BlueCherry): connect to the cloud over DTLS 1.3 ([#194](https://github.com/QuickSpot/walter-esp-idf/pull/194))
+
+### Bug Fixes
+
+- fix(BlueCherry): read datagrams on ring and reduce CoAP retransmissions ([#184](https://github.com/QuickSpot/walter-esp-idf/pull/184))
+- fix(WalterModem): raise the default AT buffer to 1500 bytes so the GNSS fix report fits ([#186](https://github.com/QuickSpot/walter-esp-idf/pull/186))
+- fix(WalterModem): allow TLS profiles 1 to 6 on ESP-IDF and Arduino ([#187](https://github.com/QuickSpot/walter-esp-idf/pull/187))
+- fix(BlueCherry): build provisioning against Mbed TLS 4 for ESP-IDF 6 ([#188](https://github.com/QuickSpot/walter-esp-idf/pull/188))
+- fix(WalterModem): clear the ESP-IDF 6 build warnings from the library, Kconfig and test harness ([#192](https://github.com/QuickSpot/walter-esp-idf/pull/192))
+- fix(WalterModem): sleep longer than 71 minutes without the duration wrapping ([#193](https://github.com/QuickSpot/walter-esp-idf/pull/193))
+
+### Refactors
+
+- refactor(BlueCherry): remove the deprecated WalterModem BlueCherry methods [BREAKING] ([#190](https://github.com/QuickSpot/walter-esp-idf/pull/190))
+- refactor(WalterModem): initialize the static pools at runtime to shrink the firmware image ([#191](https://github.com/QuickSpot/walter-esp-idf/pull/191))
+
+### Examples
+
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(BlueCherry): update BlueCherry example for the new library API ([#154](https://github.com/QuickSpot/walter-arduino/pull/154))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(HTTP&MQTT): update the HTTP(S) and MQTT(S) examples to use large payloads ([#155](https://github.com/QuickSpot/walter-arduino/pull/155))
+- [[walter-arduino](https://github.com/QuickSpot/walter-arduino)] example(BlueCherry): install on demand and confirm on first boot ([#156](https://github.com/QuickSpot/walter-arduino/pull/156))
+
+### Tests
+
+- [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] test(WalterModem): add a Windows harness that runs the examples on real hardware ([#182](https://github.com/QuickSpot/walter-esp-idf/pull/182))
