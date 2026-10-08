@@ -2,8 +2,8 @@
  * @file WalterBlueCherry.cpp
  * @author Daan Pape <daan@dptechnics.com>
  * @author Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 2 October 2026
- * @version 1.6.0
+ * @date 8 October 2026
+ * @version 1.6.1
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library
  *
@@ -110,7 +110,7 @@ static const char* TAG = "[BlueCherry]";
 #define BLUECHERRY_LIB_NAME "WalterModem"
 #define BLUECHERRY_LIB_VERSION_MAJOR 1
 #define BLUECHERRY_LIB_VERSION_MINOR 6
-#define BLUECHERRY_LIB_VERSION_PATCH 0
+#define BLUECHERRY_LIB_VERSION_PATCH 1
 
 /**
  * @brief The MCU reported to the cloud in INIT_INFO.
