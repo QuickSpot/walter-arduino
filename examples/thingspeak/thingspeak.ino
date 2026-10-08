@@ -1,8 +1,8 @@
 /**
  * @file thingspeak.ino
  * @author Daan Pape <daan@dptechnics.com>
- * @date 2 October 2026
- * @version 1.6.0
+ * @date 8 October 2026
+ * @version 1.6.1
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
@@ -312,7 +312,7 @@ void setup()
   Serial.begin(115200);
   delay(2000);
 
-  Serial.println("\r\n\r\n=== Walter ThingSpeak example (Arduino v1.6.0) ===\r\n\r\n");
+  Serial.println("\r\n\r\n=== Walter ThingSpeak example (Arduino v1.6.1) ===\r\n\r\n");
 
   if(modem.begin(&Serial2)) {
     Serial.println("Modem initialization OK");

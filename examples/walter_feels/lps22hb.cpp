@@ -1,8 +1,8 @@
 /**
  * @file lps22hb.cpp
  * @author Daan Pape <daan@dptechnics.com> Arnoud Devoogdt <arnoud@dptechnics.com>
- * @date 2 October 2026
- * @version 1.6.0
+ * @date 8 October 2026
+ * @version 1.6.1
  * @copyright DPTechnics bv <info@dptechnics.com>
  * @brief Walter Modem library examples
  *
