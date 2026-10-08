@@ -3201,6 +3201,13 @@ private:
   static inline WalterModemRAT _ratType = WALTER_MODEM_RAT_UNKNOWN;
 
   /**
+   * @brief The modem firmware revision as reported by ATI1 in begin, e.g. "LR8.2.1.0-61488".
+   *
+   * Empty when the modem could not be asked.
+   */
+  static inline char _modemFirmwareVersion[32] = {};
+
+  /**
    * @brief The PIN code when required for the installed SIM or NULL when no PIN code is used.
    */
   static inline const char* _simPIN = NULL;
@@ -3943,6 +3950,35 @@ private:
   static bool _tlsIsCredentialPresent(bool isPrivateKey, uint8_t slotIdx);
 
   /**
+   * @brief Read the modem firmware revision into _modemFirmwareVersion.
+   *
+   * @return True on "OK" response, false otherwise.
+   */
+  static bool _readModemFirmwareVersion();
+
+  /**
+   * @brief Check if the modem runs LR<major>.<minor>.<patch>.<build> or later.
+   *
+   * An unknown version counts as older.
+   *
+   * @param major The minimum major version.
+   * @param minor The minimum minor version.
+   * @param patch The minimum patch version.
+   * @param build The minimum build version.
+   *
+   * @return True when the modem firmware is the given version or later.
+   */
+  static bool _modemFirmwareAtLeast(unsigned int major, unsigned int minor, unsigned int patch,
+                                    unsigned int build);
+
+  /**
+   * @brief Check if the modem firmware runs TLS 1.3 reliably, which takes LR8.2.2.1 or later.
+   *
+   * @return True on LR8.2.2.1 or later.
+   */
+  static bool _modemTls13Stable();
+
+  /**
    * @brief Calculate the Luhn checksum for a 14-digit IMEI.
    *
    * This function will return the Luhn checksum for a 14-digit IMEI number and return it as
@@ -4235,6 +4271,8 @@ public:
    * optional client auth certificates, validation level (none/url/ca/url and ca) and TLS
    * version. Later HTTP/MQTT/CoAP/BlueCherry/Socket sessions can then use these preconfigured
    * profile ids.
+   *
+   * @note TLS 1.3 needs modem firmware LR8.2.2.1 or later. On older firmware a warning is logged.
    *
    * @param[in] profile_id Security profile id (1-6)
    * @param[in] tls_valid TLS validation level: nothing, URL, CA + period or all

@@ -713,6 +713,20 @@ public:
   static bool _networkUp();
 
   /**
+   * @brief The modem firmware revision read by WalterModem::begin.
+   *
+   * @return The revision, e.g. "LR8.2.1.0-61488", or an empty string when unknown.
+   */
+  static const char* _modemFirmwareVersion();
+
+  /**
+   * @brief Whether the modem firmware runs DTLS 1.3 reliably.
+   *
+   * @return True on LR8.2.2.1 or later.
+   */
+  static bool _modemTls13Stable();
+
+  /**
    * @brief Lend the staging buffer to the modem firmware upgrade.
    *
    * The ESP32 update reaches it as an ordinary member; this exists only because the STP transfer

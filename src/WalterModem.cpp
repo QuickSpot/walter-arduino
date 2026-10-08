@@ -2727,6 +2727,13 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
     goto after_processing_logic;
   }
 
+  /* Modem firmware revision, the LR line of the ATI1 response */
+  if(cmdHasPrefix(cmd, "ATI1") && _buffStartsWith(buff, "LR")) {
+    const char* rspStr = _buffStr(buff);
+    _strncpy_s(_modemFirmwareVersion, rspStr, sizeof(_modemFirmwareVersion));
+    goto after_processing_logic;
+  }
+
   /* IoT Mode activation response */
   if(_buffStartsWith(buff, "+SQNMODEACTIVE: ")) {
     const char* rspStr = _buffStr(buff);
@@ -4058,6 +4065,41 @@ bool WalterModem::_tlsIsCredentialPresent(bool isPrivateKey, uint8_t slotIdx)
   _returnAfterReply();
 }
 
+bool WalterModem::_readModemFirmwareVersion()
+{
+  WalterModemRsp* rsp = NULL;
+  walterModemCb cb = NULL;
+  void* args = NULL;
+
+  _runCmd(arr("ATI1"), "OK", rsp, cb, args);
+  _returnAfterReply();
+}
+
+bool WalterModem::_modemFirmwareAtLeast(unsigned int major, unsigned int minor, unsigned int patch,
+                                        unsigned int build)
+{
+  const unsigned int wanted[4] = { major, minor, patch, build };
+  unsigned int version[4];
+
+  if(sscanf(_modemFirmwareVersion, "LR%u.%u.%u.%u", &version[0], &version[1], &version[2],
+            &version[3]) != 4) {
+    return false;
+  }
+
+  for(int i = 0; i < 4; ++i) {
+    if(version[i] != wanted[i]) {
+      return version[i] > wanted[i];
+    }
+  }
+
+  return true;
+}
+
+bool WalterModem::_modemTls13Stable()
+{
+  return _modemFirmwareAtLeast(8, 2, 2, 1);
+}
+
 char WalterModem::_getLuhnChecksum(const char* imei)
 {
   int sum = 0;
@@ -4441,6 +4483,14 @@ bool WalterModem::begin(uart_port_t uartNo, uint16_t watchdogTimeout)
     return false;
   }
 
+  /* Best effort: an unknown firmware is treated as older, it does not fail begin. LR8.2.3.1 is the
+   * latest release. */
+  _readModemFirmwareVersion();
+  if(_modemFirmwareVersion[0] != '\0' && !_modemFirmwareAtLeast(8, 2, 3, 1)) {
+    ESP_LOGD("WalterModem", "A newer modem version is available. Go to www.quickspot.io to flash "
+                            "and update to the latest modem version.");
+  }
+
   _initialized = true;
   return true;
 }
@@ -4671,6 +4721,12 @@ bool WalterModem::tlsConfigProfile(int profile_id, WalterModemTlsValidation tls_
   /* Profiles are numbered from 1 */
   if(profile_id < 1 || profile_id > WALTER_MODEM_MAX_TLS_PROFILES) {
     _returnState(WALTER_MODEM_STATE_NO_SUCH_PROFILE);
+  }
+
+  if(tls_version == WALTER_MODEM_TLS_VERSION_13 && !_modemTls13Stable()) {
+    ESP_LOGW("WalterModem",
+             "TLS 1.3 might not be stable on modem firmware %s, LR8.2.2.1 or later is recommended",
+             _modemFirmwareVersion[0] != '\0' ? _modemFirmwareVersion : "unknown");
   }
 
   WalterModemBuffer* stringsBuffer = _getFreeBuffer();

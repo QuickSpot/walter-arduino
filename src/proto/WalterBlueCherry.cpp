@@ -139,6 +139,7 @@ static const char* TAG = "[BlueCherry]";
 #define BLUECHERRY_INFO_BIT_MCU (1 << 8)           /* 1B len + UTF-8 */
 #define BLUECHERRY_INFO_BIT_OTA_SLOT (1 << 9)      /* 2B  running slot, target slot */
 #define BLUECHERRY_INFO_BIT_RESET_REASON (1 << 10) /* 1B len + UTF-8 */
+#define BLUECHERRY_INFO_BIT_MODEM_FW (1 << 11)     /* 1B len + UTF-8 */
 
 /**
  * @brief The longest string an INIT_INFO field carries.
@@ -2114,6 +2115,11 @@ static void _bluecherry_send_init_info(void)
     present |= BLUECHERRY_INFO_BIT_RESET_REASON;
   }
 
+  const char* modem_fw = WalterBlueCherry::_modemFirmwareVersion();
+  if(modem_fw[0] != '\0' && _bluecherry_info_add_str(payload, sizeof(payload), &n, modem_fw)) {
+    present |= BLUECHERRY_INFO_BIT_MODEM_FW;
+  }
+
   payload[bitmap_at] = present & 0xFF;
   payload[bitmap_at + 1] = (present >> 8) & 0xFF;
 
@@ -3498,16 +3504,24 @@ static bool _ztp_request_signed_certificate(void)
  * certificate and key the modem holds. Note the argument order - the DEVICE certificate goes in
  * the client CA slot, which is what the modem expects.
  *
- * DTLS 1.3 for the cloud session. Provisioning keeps 1.2: it talks to a different service.
+ * DTLS 1.3 for the cloud session, or 1.2 on modem firmware older than LR8.2.2.1, which does not
+ * run 1.3 reliably. Provisioning keeps 1.2: it talks to a different service.
  *
  * @return True on success, false on error.
  */
 static bool _bluecherry_configure_own_cert(void)
 {
-  return WalterModem::tlsConfigProfile(_bluecherry_opdata.tls_profile_id,
-                                       WALTER_MODEM_TLS_VALIDATION_URL_AND_CA,
-                                       WALTER_MODEM_TLS_VERSION_13, BLUECHERRY_SLOT_CA,
-                                       BLUECHERRY_SLOT_DEVCERT, BLUECHERRY_SLOT_PRIVKEY);
+  WalterModemTlsVersion version = WALTER_MODEM_TLS_VERSION_13;
+  if(!WalterBlueCherry::_modemTls13Stable()) {
+    const char* modem_fw = WalterBlueCherry::_modemFirmwareVersion();
+    ESP_LOGD(TAG, "Modem firmware %s predates stable DTLS 1.3, using DTLS 1.2",
+             modem_fw[0] != '\0' ? modem_fw : "unknown");
+    version = WALTER_MODEM_TLS_VERSION_12;
+  }
+
+  return WalterModem::tlsConfigProfile(
+      _bluecherry_opdata.tls_profile_id, WALTER_MODEM_TLS_VALIDATION_URL_AND_CA, version,
+      BLUECHERRY_SLOT_CA, BLUECHERRY_SLOT_DEVCERT, BLUECHERRY_SLOT_PRIVKEY);
 }
 
 /**
@@ -4091,6 +4105,16 @@ void WalterBlueCherry::_sleepPrepare()
 bool WalterBlueCherry::_networkUp()
 {
   return WalterModem::_networkAttached;
+}
+
+const char* WalterBlueCherry::_modemFirmwareVersion()
+{
+  return WalterModem::_modemFirmwareVersion;
+}
+
+bool WalterBlueCherry::_modemTls13Stable()
+{
+  return WalterModem::_modemTls13Stable();
 }
 
 int WalterBlueCherry::_reserveSocket()
