@@ -306,3 +306,9 @@ This is the Changelog for WalterModem
 ### Tests
 
 - [[walter-esp-idf](https://github.com/QuickSpot/walter-esp-idf)] test(WalterModem): add a Windows harness that runs the examples on real hardware ([#182](https://github.com/QuickSpot/walter-esp-idf/pull/182))
+
+## [v1.6.1](https://github.com/QuickSpot/walter-arduino/releases/tag/v1.6.1)
+
+### Bug Fixes
+
+- fix(WalterModem): use TLS 1.3 only on modem firmware LR8.2.2.1 and later ([#198](https://github.com/QuickSpot/walter-esp-idf/pull/198))
