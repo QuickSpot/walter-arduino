@@ -177,7 +177,18 @@ RTC_NOINIT_ATTR WalterModemSocket _socketCtxSetRTC[WALTER_MODEM_MAX_SOCKETS];
 
 #endif
 #pragma endregion
-#if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
+
+/* Whether the AT traffic is traced at DEBUG. LOG_LOCAL_LEVEL may be an esp_log_level_t name, which
+ * an #if reads as 0, so the trace is switched in code and the compiler drops it when off. */
+#ifdef ARDUINO
+
+static constexpr bool _logTrace = ARDUHAL_LOG_LEVEL >= ARDUHAL_LOG_LEVEL_DEBUG;
+
+#else
+
+static constexpr bool _logTrace = LOG_LOCAL_LEVEL >= ESP_LOG_DEBUG;
+
+#endif
 
 /**
  * @brief Static buffer for escaping data for logging purposes.
@@ -185,7 +196,6 @@ RTC_NOINIT_ATTR WalterModemSocket _socketCtxSetRTC[WALTER_MODEM_MAX_SOCKETS];
  */
 static uint8_t _logEscapeBuffer[WALTER_MODEM_AT_BUFFER_SIZE * 2];
 
-#endif
 #pragma region HELPER_FUNCTIONS
 
 /**
@@ -624,8 +634,6 @@ static bool cmdHasPrefix(const WalterModemCmd* cmd, const char* prefix)
          strncmp(cmd->atCmd[0], prefix, strlen(prefix)) == 0;
 }
 
-#if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
-
 /**
  * @brief Check whether payloads are logged in full (VERBOSE) instead of as a byte count (DEBUG).
  *
@@ -724,7 +732,6 @@ static void logWithPayload(bool rx, const uint8_t* line, size_t lineLen, size_t 
   }
 }
 
-#endif
 #pragma endregion
 #pragma region PRIVATE_METHODS
 #pragma region MODEM_UPGRADE
@@ -2076,22 +2083,21 @@ TickType_t WalterModem::_processModemCMD(WalterModemCmd* cmd, bool queueError)
 
 void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
 {
-
-#if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
-  if(buff == _parserData.sink.hdrBuf) {
-    WalterModemPayloadSink* sink = &_parserData.sink;
-    logWithPayload(true, buff->data, buff->size, sink->hdrAt, sink->buf, sink->written,
-                   sink->dropped);
-    sink->hdrBuf = NULL;
-  } else {
-    Buffer* escaped =
-        escapeBuffer((const uint8_t*) buff->data, buff->size, WALTER_MODEM_AT_BUFFER_SIZE,
-                     _logEscapeBuffer, sizeof(_logEscapeBuffer));
-    if(escaped) {
-      ESP_LOGD("WalterModem", "RX: %.*s", escaped->size, escaped->data);
+  if(_logTrace) {
+    if(buff == _parserData.sink.hdrBuf) {
+      WalterModemPayloadSink* sink = &_parserData.sink;
+      logWithPayload(true, buff->data, buff->size, sink->hdrAt, sink->buf, sink->written,
+                     sink->dropped);
+      sink->hdrBuf = NULL;
+    } else {
+      Buffer* escaped =
+          escapeBuffer((const uint8_t*) buff->data, buff->size, WALTER_MODEM_AT_BUFFER_SIZE,
+                       _logEscapeBuffer, sizeof(_logEscapeBuffer));
+      if(escaped) {
+        ESP_LOGD("WalterModem", "RX: %.*s", escaped->size, escaped->data);
+      }
     }
   }
-#endif
 
   // Skip leading \r\n if present
   if(buff->size >= 2 && buff->data[0] == '\r' && buff->data[1] == '\n') {
@@ -2356,10 +2362,9 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
   /* Data prompt for data transmission */
   if(_buffStartsWith(buff, "> ") || _buffStartsWith(buff, ">>>")) {
     if(cmd != NULL && cmd->type == WALTER_MODEM_CMD_TYPE_DATA_TX_WAIT && cmd->payload != NULL) {
-
-#if CONFIG_LOG_MAXIMUM_LEVEL >= ESP_LOG_DEBUG
-      logWithPayload(false, NULL, 0, 0, cmd->payload, cmd->payloadSize, 0);
-#endif
+      if(_logTrace) {
+        logWithPayload(false, NULL, 0, 0, cmd->payload, cmd->payloadSize, 0);
+      }
 
 #ifdef ARDUINO
 
