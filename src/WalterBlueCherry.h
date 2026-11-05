@@ -209,11 +209,17 @@ typedef enum {
    * @brief Allocated, but the modem holds no device credentials yet.
    *
    * The next sync runs Zero-Touch Provisioning before connecting.
+   *
+   * Reported to the state handler only when a synchronisation request ends here, which means that
+   * provisioning failed.
    */
   BLUECHERRY_STATE_NOT_PROVISIONED,
 
   /**
    * @brief Credentials are present but there is no live session.
+   *
+   * Reported to the state handler only when a synchronisation request ends here, which means that
+   * the connection could not be made.
    */
   BLUECHERRY_STATE_AWAIT_CONNECTION,
 
@@ -408,6 +414,11 @@ typedef void (*blueCherryMsgHandler)(uint8_t topic, uint16_t len, const uint8_t*
  * publish or a sync request reports the work it just created before returning, so it can also run
  * on whichever task made that call.
  *
+ * BLUECHERRY_STATE_NOT_PROVISIONED and BLUECHERRY_STATE_AWAIT_CONNECTION are the exception: they
+ * are reported once when a synchronisation request ends in them, and never on the way in. Every
+ * request therefore ends in exactly one report: BLUECHERRY_STATE_IDLE when it succeeded, one of
+ * those two when it failed.
+ *
  * @param state The state just entered.
  * @param args The argument given to setStateHandler.
  *
@@ -513,6 +524,10 @@ public:
    * next synchronisation. The bound is bytes rather than messages, and a full buffer fails the
    * call without dropping anything already queued.
    *
+   * With automatic synchronisation on and a session up, one is scheduled here. Without a session
+   * the message waits for the next one, so a busy publisher cannot turn into a stream of
+   * connection attempts.
+   *
    * @param topic The single byte topic index the cloud maps to an MQTT topic. 0x00 is reserved.
    * @param len The number of bytes in data, at most BLUECHERRY_MAX_PUBLISH_LEN.
    * @param data The payload, which is copied.
@@ -531,8 +546,15 @@ public:
    * The state leaves BLUECHERRY_STATE_IDLE before this returns, so a caller may poll it straight
    * away without racing the task.
    *
-   * Without automatic synchronisation, the first call is what connects: init does not. With the
-   * network not attached yet, the task waits for it and dials as soon as it is.
+   * Without automatic synchronisation, the first call is what connects: init does not.
+   *
+   * Provisioning and connecting are attempted once per call. A failed attempt, including one
+   * skipped because the modem is not attached to a network, ends the request in
+   * BLUECHERRY_STATE_NOT_PROVISIONED or BLUECHERRY_STATE_AWAIT_CONNECTION, reported to the state
+   * handler, and nothing is retried until the next call or automatic synchronisation. The one
+   * exception is a session that was up before the call and fails on its first message, which is
+   * how a session that died while idle or asleep shows itself: that gets one reconnect and one
+   * more try.
    *
    * @return True when the task was signalled, false when BlueCherry is not initialized.
    */
@@ -545,7 +567,9 @@ public:
    * sleepy device normally leaves this off and calls sync itself, so that it controls how many
    * cycles run before it sleeps.
    *
-   * Enabling it before synchronisation has started starts the first one now.
+   * Enabling it before the first synchronisation starts one now. Each automatic synchronisation
+   * makes the same single attempt as sync, so without a session the interval is also the pace of
+   * attempts to provision or connect.
    *
    * @param interval_sec The interval in seconds, or 0 to disable.
    *
