@@ -82,6 +82,11 @@ WalterBlueCherry bc;
 volatile bool bc_synchronized = false;
 
 /**
+ * @brief Flag used to signal when a synchronisation could not reach the BlueCherry cloud.
+ */
+volatile bool bc_sync_failed = false;
+
+/**
  * @brief The binary configuration settings for PSM.
  * These can be calculated using e.g.
  * https://www.soracom.io/psm-calculation-tool/
@@ -379,7 +384,8 @@ bool myOtaHandler(BlueCherryOtaEvent event, const BlueCherryOtaInfo* info, void*
  *
  * Runs on the BlueCherry synchronisation task, so it must not block. Publish and sync report the
  * transitions they make themselves, so it can also run on the calling task. IDLE is the only state
- * in which it is safe to sleep.
+ * in which it is safe to sleep. The two states without a session are only reported when a
+ * synchronisation could not reach the cloud.
  *
  * @param state The state that was just entered.
  * @param args User arguments.
@@ -390,11 +396,13 @@ void myStateHandler(BlueCherryState state, void* args)
 {
   switch(state) {
   case BLUECHERRY_STATE_NOT_PROVISIONED:
-    Serial.println("BlueCherry holds no credentials yet, provisioning...");
+    Serial.println("BlueCherry could not provision this device");
+    bc_sync_failed = true;
     break;
 
   case BLUECHERRY_STATE_AWAIT_CONNECTION:
-    Serial.println("BlueCherry is connecting...");
+    Serial.println("BlueCherry could not connect");
+    bc_sync_failed = true;
     break;
 
   case BLUECHERRY_STATE_IDLE:
@@ -552,11 +560,13 @@ void setup()
    * how many exchanges run before it sleeps. Nothing has been exchanged before this line: init
    * does not start a synchronisation. */
   bc_synchronized = false;
+  bc_sync_failed = false;
   bc.sync();
 
-  /* No time-out on purpose: an unsettled exchange is still retrying, or still pulling a firmware
-   * update down, and sleeping through either costs the transfer its progress. */
-  while(!bc_synchronized) {
+  /* No time-out on purpose: the request ends on its own, in IDLE or with a report that it could
+   * not reach the cloud. One still running may be pulling a firmware update down, and sleeping
+   * through that costs the transfer its progress. A failed one is tried again on the next wake. */
+  while(!bc_synchronized && !bc_sync_failed) {
     delay(100);
   }
 
