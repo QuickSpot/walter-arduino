@@ -753,6 +753,16 @@ static portMUX_TYPE _bluecherry_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool _sync_requested = false;
 
 /**
+ * @brief Whether the application has started synchronising.
+ *
+ * Set by the task when it runs a cycle, which only a sync request or an automatic synchronisation
+ * makes it do. Until then a missing session or missing credentials are no reason to run one: init
+ * leaves the network alone, and the application decides when its network is ready. close clears it
+ * again, so a session closed on purpose stays closed until the next request.
+ */
+static bool _sync_started = false;
+
+/**
  * @brief Raised by _sleepPrepare. The synchronisation task stops at its next step and does not
  * run again before the deep sleep.
  */
@@ -1266,17 +1276,26 @@ static uint32_t _bluecherry_sync_wait_ms(void)
  * @brief Whether a cycle is due without anything having asked for one.
  *
  * The wait is capped so the watchdog stays fed, so it expiring says nothing about whether there is
- * work: this is the actual test. Provisioning and connecting are always due, because their own
- * backoff gates decide whether the cycle does anything.
+ * work: this is the actual test. An automatic synchronisation is due in any state. Provisioning
+ * and connecting are retried on their own backoff gates, but only once synchronisation has started.
  *
  * @return True when the task should run a cycle of its own accord.
  */
 static bool _bluecherry_sync_due(void)
 {
-  switch(_bluecherry_opdata.state) {
-  case BLUECHERRY_STATE_UNINITIALIZED:
+  if(_bluecherry_opdata.state == BLUECHERRY_STATE_UNINITIALIZED) {
     return false;
+  }
 
+  if(_auto_sync_interval_sec > 0 && esp_timer_get_time() >= _next_auto_sync_us) {
+    return true;
+  }
+
+  if(!_sync_started) {
+    return false;
+  }
+
+  switch(_bluecherry_opdata.state) {
   case BLUECHERRY_STATE_NOT_PROVISIONED:
     return esp_timer_get_time() >= _next_provision_us;
 
@@ -1284,10 +1303,8 @@ static bool _bluecherry_sync_due(void)
     return true;
 
   default:
-    break;
+    return false;
   }
-
-  return _auto_sync_interval_sec > 0 && esp_timer_get_time() >= _next_auto_sync_us;
 }
 
 /**
@@ -1340,6 +1357,8 @@ static void _bluecherry_sync_task(void* args)
     if(triggered == 0 && !_bluecherry_sync_due()) {
       continue;
     }
+
+    _sync_started = true;
 
     /* Cleared as the cycle starts rather than when it ends, so a publish or a sync that arrives
      * while this one is running still holds the state out of idle afterwards. */
@@ -4262,22 +4281,14 @@ bool WalterBlueCherry::init(uint8_t tls_profile_id, const char* device_type_id,
 
   /* A session that survived a deep sleep is picked up here rather than in the modem's own wake
    * path, because that runs before the application has re-supplied any of the above. */
-  if(_bluecherry_session_resume()) {
-    /* Deliberately without a first cycle. The session is already up, so there is nothing left to
-     * establish, and an exchange the application did not ask for costs it data and raises a state
-     * change it has no reason to expect. A device that wakes every few seconds to read a sensor
-     * and publishes once a day would spend its entire budget confirming a connection it was not
-     * about to use. Downlink still arrives on the next requested sync, or on the auto sync
-     * interval where one is set. */
-    return true;
+  if(!_bluecherry_session_resume()) {
+    _bluecherry_set_state(isProvisioned() ? BLUECHERRY_STATE_AWAIT_CONNECTION
+                                          : BLUECHERRY_STATE_NOT_PROVISIONED);
   }
 
-  _bluecherry_set_state(isProvisioned() ? BLUECHERRY_STATE_AWAIT_CONNECTION
-                                        : BLUECHERRY_STATE_NOT_PROVISIONED);
-
-  /* A cold start has a connection or a provisioning run still ahead of it, so start the first
-   * cycle rather than wait it out. */
-  xTaskNotifyGive(_sync_task);
+  /* Deliberately without a first cycle. An exchange the application did not ask for costs it
+   * data, raises state changes it has no reason to expect, and can come before its network is up.
+   * The first one waits for a sync request or automatic synchronisation. */
   return true;
 }
 
@@ -4375,10 +4386,10 @@ bool WalterBlueCherry::setAutoSync(uint32_t interval_sec)
   _bluecherry_arm_auto_sync();
 
   if(interval_sec > 0) {
-    /* Only when the new interval leaves one already overdue. Setting a schedule is not the same
-     * as asking for a synchronisation, and anything still in the future is picked up by the
-     * task's next wake anyway. */
-    if(esp_timer_get_time() >= _next_auto_sync_us) {
+    /* Run one now if the new interval leaves one overdue, or if synchronisation has not started
+     * yet: enabling it is then what starts it. Anything still in the future is picked up by the
+     * task's next wake. */
+    if(!_sync_started || esp_timer_get_time() >= _next_auto_sync_us) {
       xTaskNotifyGive(_sync_task);
     }
     ESP_LOGI(TAG, "Automatic synchronisation every %lu s", (unsigned long) interval_sec);
@@ -4492,6 +4503,7 @@ bool WalterBlueCherry::close()
 {
   _bluecherry_cleanup_session();
   _bluecherry_rtc.magic = 0;
+  _sync_started = false;
 
   if(_bluecherry_opdata.state != BLUECHERRY_STATE_UNINITIALIZED &&
      _bluecherry_opdata.state != BLUECHERRY_STATE_NOT_PROVISIONED) {

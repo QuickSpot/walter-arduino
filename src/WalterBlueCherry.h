@@ -455,7 +455,8 @@ public:
    * @brief Initialize BlueCherry and start the synchronisation task.
    *
    * Performs no network I/O and cannot fail because the cloud is unreachable, so it needs no
-   * retry loop. It does talk to the modem, so WalterModem::begin must have succeeded first. It
+   * retry loop. It starts no synchronisation either: the first exchange waits for sync or
+   * setAutoSync. It does talk to the modem, so WalterModem::begin must have succeeded first. It
    * must be called on every boot, including after deep sleep: it is what resumes a session that
    * survived the sleep, which does not persist on its own.
    *
@@ -530,6 +531,9 @@ public:
    * The state leaves BLUECHERRY_STATE_IDLE before this returns, so a caller may poll it straight
    * away without racing the task.
    *
+   * Without automatic synchronisation, the first call is what connects: init does not. With the
+   * network not attached yet, the task waits for it and dials as soon as it is.
+   *
    * @return True when the task was signalled, false when BlueCherry is not initialized.
    */
   static bool sync();
@@ -540,6 +544,8 @@ public:
    * The interval is the worst case latency for downlink delivery on a device that stays awake. A
    * sleepy device normally leaves this off and calls sync itself, so that it controls how many
    * cycles run before it sleeps.
+   *
+   * Enabling it before synchronisation has started starts the first one now.
    *
    * @param interval_sec The interval in seconds, or 0 to disable.
    *
@@ -661,7 +667,8 @@ public:
    * @brief Close the BlueCherry session and release the modem socket.
    *
    * Only needed to drop a session deliberately. Deep sleep keeps the modem powered, so a session
-   * normally survives it and is resumed by the next init without a new handshake.
+   * normally survives it and is resumed by the next init without a new handshake. A closed
+   * session stays closed until the next sync or automatic synchronisation opens a new one.
    *
    * @return True on success, false on error.
    */
