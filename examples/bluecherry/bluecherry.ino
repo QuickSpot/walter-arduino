@@ -549,8 +549,8 @@ void setup()
   }
 
   /* 7. Synchronise. A sleepy device drives this itself rather than with setAutoSync, so it decides
-   * how many exchanges run before it sleeps. The flag is cleared here and not next to the publish:
-   * an idle reported before this line answers an exchange the task ran on its own. */
+   * how many exchanges run before it sleeps. Nothing has been exchanged before this line: init
+   * does not start a synchronisation. */
   bc_synchronized = false;
   bc.sync();
 
