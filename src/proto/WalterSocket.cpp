@@ -156,6 +156,12 @@ bool WalterModem::socketConfigExtended(int socket_id, WalterModemSocketRingMode 
     _returnState(WALTER_MODEM_STATE_NO_SUCH_SOCKET);
   }
 
+  /* The ring data would arrive as hex text, which the ring event does not decode */
+  if(ring_mode == WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW &&
+     recv_mode == WALTER_MODEM_SOCKET_RECV_MODE_HEX) {
+    _returnState(WALTER_MODEM_STATE_ERROR);
+  }
+
   _runCmd(arr("AT+SQNSCFGEXT=", _digitStr(socket_id), ",", _digitStr(ring_mode), ",",
               _digitStr(recv_mode), ",", _digitStr(keep_alive), ",", _digitStr(listen_mode), ",",
               _digitStr(send_mode)),

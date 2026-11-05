@@ -905,7 +905,13 @@ typedef enum {
  */
 typedef enum {
   WALTER_MODEM_SOCKET_RING_MODE_NORMAL = 0,
-  WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT = 1
+  WALTER_MODEM_SOCKET_RING_MODE_DATA_AMOUNT = 1,
+
+  /**
+   * @brief The ring event carries the received bytes in its data, up to 1500 per event. Requires
+   * WALTER_MODEM_SOCKET_RECV_MODE_TEXT.
+   */
+  WALTER_MODEM_SOCKET_RING_MODE_DATA_VIEW = 2
 } WalterModemSocketRingMode;
 
 /**
@@ -2198,7 +2204,16 @@ struct WMGNSSEventData {
 struct WMSocketEventData {
   uint8_t conn_id;
   WMURCSocketConnRC rc;
+
+  /**
+   * @brief For a ring event, the number of bytes waiting to be read with socketReceive. In the
+   * data view ring mode, the number of received bytes in data instead.
+   */
   uint16_t data_len;
+
+  /**
+   * @brief The received bytes of a ring event in the data view ring mode.
+   */
   uint8_t data[1500];
 };
 
@@ -2840,6 +2855,27 @@ typedef struct {
 } WalterModemCmdFsm;
 
 /**
+ * @brief The payload of a ring in the data view ring mode. It arrives on the URC line itself, so
+ * no command owns it: the RX task stores it in a pool buffer that travels with the ring line.
+ */
+typedef struct {
+  /**
+   * @brief The number of payload bytes still to be received.
+   */
+  size_t remaining = 0;
+
+  /**
+   * @brief The pool buffer the payload is stored in, NULL when none was free.
+   */
+  WalterModemBuffer* buf = NULL;
+
+  /**
+   * @brief The pool buffer holding the ring line, which takes buf along when it is queued.
+   */
+  WalterModemBuffer* hdrBuf = NULL;
+} WalterModemRingPayload;
+
+/**
  * @brief The destination of a received payload. The RX task streams payload bytes straight into
  * the buffer of the command that requested them, instead of into a pool buffer.
  */
@@ -2903,6 +2939,11 @@ typedef struct {
    * @brief The destination of the payload currently being received.
    */
   WalterModemPayloadSink sink = {};
+
+  /**
+   * @brief The payload of the ring currently being received.
+   */
+  WalterModemRingPayload ring = {};
 } walter_modem_at_parser_data_t;
 
 /**
@@ -2918,6 +2959,11 @@ typedef struct {
    * @brief The AT command pointer in case rsp is NULL.
    */
   WalterModemCmd* cmd = NULL;
+
+  /**
+   * @brief The payload that arrived on the rsp line itself, or NULL.
+   */
+  WalterModemBuffer* payload = NULL;
 } walter_modem_cmd_queue_t;
 
 /**
@@ -3652,6 +3698,46 @@ private:
   static void _disarmPayloadSink(WalterModemCmd* owner);
 
   /**
+   * @brief Find the end of a ring header that is followed by its payload,
+   * "+SQNSRING: <connId>,<recData>,". The header may be split over the parser buffer and the
+   * incoming bytes.
+   *
+   * @param data The incoming bytes, not yet in the parser buffer.
+   * @param length The number of incoming bytes.
+   * @param payloadLen Output, set to recData when the header is found.
+   *
+   * @return The number of incoming bytes up to and including the comma that opens the payload, 0
+   * when the line is no such header or the header is not complete yet.
+   */
+  static size_t _ringHeaderEnd(const char* data, size_t length, size_t* payloadLen);
+
+  /**
+   * @brief Start receiving the payload of a ring whose header the parser buffer now holds.
+   *
+   * @param length The number of payload bytes the ring announced.
+   *
+   * @return None.
+   */
+  static void _armRingPayload(size_t length);
+
+  /**
+   * @brief Store received ring payload bytes. Bytes that do not fit are discarded.
+   *
+   * @param data The payload bytes.
+   * @param length The number of payload bytes, at most the number still expected.
+   *
+   * @return None.
+   */
+  static void _addRingBytes(const char* data, size_t length);
+
+  /**
+   * @brief Discard the ring payload being received and release its buffer.
+   *
+   * @return None.
+   */
+  static void _dropRingPayload();
+
+  /**
    * @brief Check whether the current command expects a response without a length header.
    *
    * @param cmd Optional output, set to the current command when it does.
@@ -3860,10 +3946,13 @@ private:
    *
    * @param cmd The pending command or NULL when no command is pending.
    * @param rsp The AT response.
+   * @param payload The payload that arrived on the response line itself, or NULL. The caller
+   * releases it.
    *
    * @return None.
    */
-  static void _processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* rsp);
+  static void _processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* rsp,
+                               WalterModemBuffer* payload);
 
 #pragma endregion
 #pragma region CLASS PRIVATE FIRMWARE TRANSFER STATE
@@ -4835,7 +4924,8 @@ public:
    * This function configures the socket extended parameters.
    *
    * @param[in] socket_id The id of the socket. (1-6)
-   * @param[in] ring_mode The format of the ring notification.
+   * @param[in] ring_mode The format of the ring notification. The data view mode delivers the
+   * received bytes in the ring event and only works with WALTER_MODEM_SOCKET_RECV_MODE_TEXT.
    * @param[in] recv_mode The data recv mode of the socket
    * @param[in] keep_alive The keepAlive time (currently unused)
    * @param[in] listen_mode Should the socket auto accept incoming connections.

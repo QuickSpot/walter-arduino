@@ -1374,12 +1374,115 @@ void WalterModem::_disarmPayloadSink(WalterModemCmd* owner)
   portEXIT_CRITICAL(&_sinkLock);
 }
 
+size_t WalterModem::_ringHeaderEnd(const char* data, size_t length, size_t* payloadLen)
+{
+  static const char prefix[] = "+SQNSRING: ";
+  const size_t prefixLen = sizeof(prefix) - 1;
+
+  const uint8_t* line = NULL;
+  size_t lineLen = 0;
+  if(_parserData.buf != NULL) {
+    line = _parserData.buf->data;
+    lineLen = _parserData.buf->size;
+    if(lineLen >= 2 && line[0] == '\r' && line[1] == '\n') {
+      line += 2;
+      lineLen -= 2;
+    }
+  }
+
+  size_t recData = 0;
+  size_t digits = 0;
+  size_t commas = 0;
+
+  for(size_t i = 0; i < lineLen + length; ++i) {
+    char c = i < lineLen ? (char) line[i] : data[i - lineLen];
+
+    if(i < prefixLen) {
+      if(c != prefix[i]) {
+        return 0;
+      }
+    } else if(c >= '0' && c <= '9') {
+      if(++digits > 4) {
+        return 0;
+      }
+      if(commas == 1) {
+        recData = recData * 10 + (c - '0');
+      }
+    } else if(c == ',' && digits > 0) {
+      digits = 0;
+      if(++commas == 2) {
+        /* Already buffered, so its payload was counted when this comma arrived */
+        if(i < lineLen) {
+          return 0;
+        }
+        *payloadLen = recData;
+        return i - lineLen + 1;
+      }
+    } else {
+      return 0;
+    }
+  }
+
+  return 0;
+}
+
+void WalterModem::_armRingPayload(size_t length)
+{
+  WalterModemRingPayload* ring = &_parserData.ring;
+
+  _dropRingPayload();
+  ring->remaining = length;
+  ring->hdrBuf = _parserData.buf;
+
+  /* Without the ring line there is nothing to deliver the payload with, it is only counted */
+  if(ring->hdrBuf != NULL) {
+    ring->buf = _getFreeBuffer();
+  }
+
+  if(ring->buf != NULL && length > sizeof(ring->buf->data)) {
+    ESP_LOGW("WalterParser", "Ring payload of %u bytes does not fit a buffer, dropping the excess",
+             (unsigned) length);
+  }
+}
+
+void WalterModem::_addRingBytes(const char* data, size_t length)
+{
+  WalterModemRingPayload* ring = &_parserData.ring;
+  WalterModemBuffer* buf = ring->buf;
+
+  if(buf != NULL) {
+    size_t space = sizeof(buf->data) - buf->size;
+    size_t n = length < space ? length : space;
+    memcpy(buf->data + buf->size, data, n);
+    buf->size += n;
+  }
+
+  ring->remaining -= length;
+}
+
+void WalterModem::_dropRingPayload()
+{
+  WalterModemRingPayload* ring = &_parserData.ring;
+
+  if(ring->buf != NULL) {
+    ring->buf->free = true;
+  }
+  *ring = {};
+}
+
 void WalterModem::_queueRxBuffer()
 {
   if(_parserData.buf != NULL) {
     if(_parserData.buf->size > 0) {
       walter_modem_cmd_queue_t qItem = {};
       qItem.rsp = _parserData.buf;
+
+      if(_parserData.ring.hdrBuf == _parserData.buf) {
+        qItem.payload = _parserData.ring.buf;
+        _parserData.ring.buf = NULL;
+        _parserData.ring.hdrBuf = NULL;
+      }
+
       // ESP_LOGV("WalterParser", "Queued the buffer (size: %u bytes)", _parserData.buf->size);
       if(xQueueSend(_taskQueue.handle, &qItem, 0) != pdTRUE) {
         /*
@@ -1388,6 +1491,9 @@ void WalterModem::_queueRxBuffer()
          * consumer.
          */
         _parserData.buf->free = true;
+        if(qItem.payload != NULL) {
+          qItem.payload->free = true;
+        }
         ESP_LOGW("WalterParser", "unable to queue the buffer");
       }
     } else {
@@ -1655,6 +1761,16 @@ void WalterModem::_parseRxData(char* rx_data, size_t rx_len)
     size_t message_len = 0;
     bool payloadSizeKnown = (_receivedPayloadSize != SIZE_MAX);
 
+    /* Receiving the payload of a ring. It is counted apart from command payloads, which the
+     * command task ends when a command times out. */
+    if(_parserData.ring.remaining > 0) {
+      size_t remaining = _parserData.ring.remaining;
+      message_len = remaining < rx_remaining ? remaining : rx_remaining;
+      _addRingBytes(message, message_len);
+      offset += message_len;
+      continue;
+    }
+
     /* Receiving binary payload with a known total size */
     /* Here we count the amount of bytes to read, and stream them into the payload sink. The header
      * stays in the buffer, which is queued once the trailing CRLF arrives */
@@ -1667,6 +1783,19 @@ void WalterModem::_parseRxData(char* rx_data, size_t rx_len)
         _receivingPayload = false;
       }
       continue;
+    }
+
+    /* A ring in the data view ring mode carries its payload on the line, where it may hold a CRLF.
+     * Buffer the header up to the comma that opens the payload, then count the payload. */
+    size_t ringPayloadLen;
+    if(!_receivingPayload) {
+      size_t headerEnd = _ringHeaderEnd(message, rx_remaining, &ringPayloadLen);
+      if(headerEnd > 0) {
+        _addATBytesToBuffer(message, headerEnd);
+        offset += headerEnd;
+        _armRingPayload(ringPayloadLen);
+        continue;
+      }
     }
 
     /* Receiving messages with undefined size (AT-commands, URCs, payloads with unknown size) */
@@ -1843,7 +1972,10 @@ void WalterModem::_cmdProcessingTask(void* args)
           }
         }
       } else if(qItem.rsp != NULL) {
-        _processModemRSP(_curCmd, qItem.rsp);
+        _processModemRSP(_curCmd, qItem.rsp, qItem.payload);
+        if(qItem.payload != NULL) {
+          qItem.payload->free = true;
+        }
       }
     }
 
@@ -2097,10 +2229,18 @@ static WalterModemEvent& _newEvent()
   return _rspEvent;
 }
 
-void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
+void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff,
+                                   WalterModemBuffer* payload)
 {
   if(_logTrace) {
-    if(buff == _parserData.sink.hdrBuf) {
+    if(payload != NULL) {
+      /* The payload was cut out of the line right after its last comma */
+      size_t at = buff->size;
+      while(at > 0 && buff->data[at - 1] != ',') {
+        at--;
+      }
+      logWithPayload(true, buff->data, buff->size, at, payload->data, payload->size, 0);
+    } else if(buff == _parserData.sink.hdrBuf) {
       WalterModemPayloadSink* sink = &_parserData.sink;
       logWithPayload(true, buff->data, buff->size, sink->hdrAt, sink->buf, sink->written,
                      sink->dropped);
@@ -3552,6 +3692,20 @@ void WalterModem::_processModemRSP(WalterModemCmd* cmd, WalterModemBuffer* buff)
     newEvent.socket.event = WALTER_MODEM_SOCKET_EVENT_RING;
     newEvent.socket.data.conn_id = sockId;
     newEvent.socket.data.data_len = dataReceived;
+
+    /* In the data view ring mode the received bytes follow a second comma, and were stored in
+     * payload. Count only the bytes that were stored. */
+    if(strchr(start, ',') != NULL) {
+      size_t n = payload != NULL ? payload->size : 0;
+      if(n > sizeof(newEvent.socket.data.data)) {
+        n = sizeof(newEvent.socket.data.data);
+      }
+      if(n > 0) {
+        memcpy(newEvent.socket.data.data, payload->data, n);
+      }
+      newEvent.socket.data.data_len = n;
+    }
+
     xQueueSend(_eventQueue.handle, &newEvent, 0);
     goto after_processing_logic;
   }
@@ -4541,6 +4695,7 @@ bool WalterModem::softReset(WalterModemRsp* rsp, walterModemCb cb, void* args)
   }
   _receivingPayload = false;
   _disarmPayloadSink(NULL);
+  _dropRingPayload();
 
   _runCmd({ "AT^RESET" }, "+SYSSTART", rsp, cb, args);
 
@@ -4599,6 +4754,7 @@ bool WalterModem::reset(WalterModemRsp* rsp, walterModemCb cb, void* args)
   }
   _receivingPayload = false;
   _disarmPayloadSink(NULL);
+  _dropRingPayload();
 
   _runCmd({}, "+SYSSTART", rsp, cb, args, NULL, NULL, WALTER_MODEM_CMD_TYPE_TX_WAIT);
   _hardwareReset = false;
