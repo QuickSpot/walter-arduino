@@ -1,0 +1,55 @@
+name: CI
+
+# Two stages: the checks, then the example build, which starts only when the checks passed.
+
+# Documentation alone runs nothing. Run the workflow by hand to build again.
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE"]
+  workflow_dispatch:
+
+# A newer push to the same branch or pull request cancels the run still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      # Pinned: clang-format releases lay some code out differently. The examples are not checked
+      # yet; mqtt and mqtts are not formatted.
+      - name: Formatting of src/ (clang-format 22.1.8)
+        run: >
+          find src \( -name '*.c' -o -name '*.h' -o -name '*.cpp' \) -print0
+          | xargs -0 pipx run --spec clang-format==22.1.8 clang-format --dry-run --Werror
+
+  # Everything is compiled in on Arduino, so this builds every protocol together. walter-esp-idf
+  # covers the opposite: each example with only its own.
+  arduino:
+    name: "Arduino: build the examples (Walter)"
+    needs: checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Every sketch in examples/
+        uses: arduino/compile-sketches@v1
+        with:
+          fqbn: esp32:esp32:walter
+          platforms: |
+            - name: esp32:esp32
+              source-url: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          libraries: |
+            - source-path: ./
+          sketch-paths: |
+            - examples
