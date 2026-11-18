@@ -36,7 +36,8 @@ jobs:
       - name: Checkout walter-esp-idf via SSH
         uses: actions/checkout@v4
         with:
-          repository: QuickSpot/walter-esp-idf
+          # QuickSpot's, or a fork's when the variable WALTER_ESP_IDF_REPO names one.
+          repository: ${{ vars.WALTER_ESP_IDF_REPO || 'QuickSpot/walter-esp-idf' }}
           ssh-key: ${{ secrets.SRC_REPO_SYNC_KEY }}
           path: walter-esp-idf
 
@@ -45,11 +46,14 @@ jobs:
           rm -rf walter-esp-idf/src
           cp -R src walter-esp-idf/src
 
+      # The title comes in through the environment: pasted into the script, a title could run
+      # commands with the deploy key.
       - name: Prepare commit info
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          PR_TITLE="${{ github.event.pull_request.title }}"
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          PR_LINK="https://github.com/QuickSpot/walter-arduino/pull/${PR_NUMBER}"
+          PR_LINK="${{ github.server_url }}/${{ github.repository }}/pull/${PR_NUMBER}"
 
           COMMIT_MESSAGE="SYNC: src update from walter-arduino (${PR_LINK})"
           COMMIT_DESCRIPTION="PR title: \"${PR_TITLE}\", nr: ${PR_NUMBER}"
