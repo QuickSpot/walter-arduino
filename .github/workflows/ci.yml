@@ -25,6 +25,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # src/bluecherry/ is bluecherry-sdk's. It reaches this repository only through walter-esp-idf:
+      # the SDK's CI updates a pull request there, and the src sync brings it here once merged.
+      - name: src/bluecherry/ only changes through the bluecherry-sdk sync
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --name-only "$BASE" HEAD | grep -q '^src/bluecherry/'; then
+            echo "::error::src/bluecherry/ is copied from bluecherry-sdk. Change it there; it arrives here through walter-esp-idf."
+            exit 1
+          fi
 
       # Pinned: clang-format releases lay some code out differently. The examples are not checked
       # yet; mqtt and mqtts are not formatted.
